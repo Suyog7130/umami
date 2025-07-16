@@ -800,8 +800,14 @@ class CustomDataset(Dataset):
         self.returnattr = kwargs.get('returnattr', False)
 
         if approximant not in APPROXIMANTS:
-            raise ValueError(f"Invalid approximant: {approximant}. \
-                              Choose from {APPROXIMANTS}")
+            if approximant.split('-')[0][-7:]=='padinfo':
+                # If the approximant is of the form `IMRPhenomDpadinfo-<something>.hdf`,
+                self.approximant = approximant.split('-')[0].removesuffix('padinfo')
+                logging.warning(f"Approximant {approximant} is a padded info \
+                                approximant. Using {self.approximant} instead.")
+            else:
+                raise ValueError(f"Invalid approximant: {approximant}. \
+                                Choose from {APPROXIMANTS}")
         else:
             self.approximant = approximant
         # # Automatically initialize kwargs as attributes
@@ -921,6 +927,7 @@ class CustomDataset(Dataset):
             - keys: np.ndarray
                 The keys as a 2D numpy array with shape (2, 2).
         """
+        logging.debug(f'Reading strain data from HDF5 file {self.hdf_fname}.hdf for sample {idx}')
         with h5py.File(self.hdf_fname+'.hdf', 'r') as hf:
             data = hf[f'sample{idx}']
             logging.debug(data.keys())
@@ -1700,10 +1707,10 @@ if __name__=="__main__":
             args.approximant = args.approximant[0]
         fname = args.approximant + args.fname
         ttsplits = get_mass(splitTT=True, plot=False)
-        write_data_to_hdf(fname+'-train', masses=ttsplits[0],
-                          approximant=args.approximant)
-        write_data_to_hdf(fname+'-valid', masses=ttsplits[1],
-                          approximant=args.approximant)
+        # write_data_to_hdf(fname+'-train', masses=ttsplits[0],
+        #                   approximant=args.approximant)
+        # write_data_to_hdf(fname+'-valid', masses=ttsplits[1],
+        #                   approximant=args.approximant)
         write_data_to_hdf(fname+'-test', masses=ttsplits[2],
                           approximant=args.approximant)
 
