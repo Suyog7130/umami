@@ -1294,6 +1294,7 @@ def m1_duration_vs_srate_plot(approximant='SEOBNRv4', m2=10):
     ax.set_title(f'Duration vs $m_1$ for $m_2={m2}$, {approximant}')
     ax.legend(loc='best', fontsize=8)
     ax.grid(True, which='both', linestyle='--', alpha=0.5)
+    ax.set_xscale('log')
 
     # Plot up to 4 time-series examples in the subplots
     for i, (idx, t, h, srate) in enumerate(ts_examples[1:4]):
