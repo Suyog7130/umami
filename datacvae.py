@@ -802,9 +802,10 @@ class CustomDataset(Dataset):
         if approximant not in APPROXIMANTS:
             if approximant.split('-')[0][-7:]=='padinfo':
                 # If the approximant is of the form `IMRPhenomDpadinfo-<something>.hdf`,
-                self.approximant = approximant.split('-')[0].removesuffix('padinfo')
-                logging.warning(f"Approximant {approximant} is a padded info \
-                                approximant. Using {self.approximant} instead.")
+                # self.approximant = approximant.split('-')[0].removesuffix('padinfo')
+                # logging.warning(f"Approximant {approximant} is a padded info \
+                #                 approximant. Using {self.approximant} instead.")
+                logging.info('Approximant is a padded info approximant.')
             else:
                 raise ValueError(f"Invalid approximant: {approximant}. \
                                 Choose from {APPROXIMANTS}")
