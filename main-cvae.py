@@ -147,9 +147,9 @@ def train(args):
     #                                          train_device=device)
     logging.info(f"Initialing Data with arguments:\n{args.__dict__}")
     train_set = CustomDataset(forwhat='train', approximant=args.approximant,
-                            convert=args.convert, hdf_fname=args.hdf_fname+args.approximant+'-train',)
+                            convert=args.convert, hdf_fname=args.datadir+args.approximant+'-train',)
     valid_set = CustomDataset(forwhat='valid', approximant=args.approximant,
-                            convert=args.convert, hdf_fname=args.hdf_fname+args.approximant+'-valid',)
+                            convert=args.convert, hdf_fname=args.datadir+args.approximant+'-valid',)
     logging.info(f"Train set size: {len(train_set)}")
     logging.info(f"Validation set size: {len(valid_set)}")
 
@@ -276,7 +276,8 @@ class Test:
         #     setattr(self, arg, args.__dict__[arg])
         self.approximant = args.approximant
         self.convert = args.convert
-        self.hdf_fname = args.hdf_fname
+        self.datadir = args.datadir
+
         self.batch_size = args.batch_size
         self.noshow = args.noshow
         self.nosave = args.nosave
@@ -290,7 +291,7 @@ class Test:
         Set up the DataLoader for the test dataset.
         """
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
-                                convert=self.convert, hdf_fname=self.hdf_fname+self.approximant+'-test',
+                                convert=self.convert, hdf_fname=self.datadir+self.approximant+'-test',
                                 returnzeroloc=True)
         test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=True)
         logging.info(f'Test set size: {len(test_set)}')
@@ -620,8 +621,8 @@ if __name__ == "__main__":
     parser.add_argument('--sample-duration', action='store', default=1.0, type=float,
                             help='default=%(default)s sec')
     
-    parser.add_argument('--hdf-fname', action='store', default='data/',
-                            help='hdf5 file name to save the data')
+    parser.add_argument('--datadir', action='store', default='../data/',
+                            help='directory where data is stored (default=%(default)s)')
 
     parser.add_argument('--test', action='store_true', default=False,
                             help='whether to test?')
