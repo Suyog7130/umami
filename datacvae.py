@@ -970,13 +970,28 @@ class CustomDataset(Dataset):
         tag1_batch = []
         tag2_batch = []
         tag3_batch = []
-        feat_dict_batch = []
-        print(f'Batch size: {len(batch)}')
+        feat_dict_batch = {}
+        logging.debug(f'Batch size: {len(batch)}')
         for tag1, tag2, tag3, feat_dict in batch:
+            logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}')
+            # convert to tensors and move to the training device
+            tag1 = torch.tensor(tag1, device=self.train_device, dtype=torch.float32)
+            tag2 = torch.tensor(tag2, device=self.train_device, dtype=torch.float32)
+            tag3 = torch.tensor(tag3, device=self.train_device, dtype=torch.float32)
+            # Append to the batch lists
             tag1_batch.append(tag1)
             tag2_batch.append(tag2)
             tag3_batch.append(tag3)
-            feat_dict_batch.append(feat_dict)
+            # Append the feature dict to the batch dict
+            for key, value in feat_dict.items():
+                if key not in feat_dict_batch:
+                    feat_dict_batch[key] = []
+                feat_dict_batch[key].append(value)
+        # Convert lists to tensors
+        tag1_batch = torch.stack(tag1_batch).to(device=self.train_device, dtype=torch.float32)
+        tag2_batch = torch.stack(tag2_batch).to(device=self.train_device, dtype=torch.float32)
+        tag3_batch = torch.stack(tag3_batch).to(device=self.train_device, dtype=torch.float32)
+        # Ensure all tensors are of the same shape
         return (tag1_batch, tag2_batch, tag3_batch, feat_dict_batch)
 
     def __getitem__(self, idx):
