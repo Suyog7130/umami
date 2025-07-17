@@ -293,9 +293,10 @@ class Test:
         """
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
                                 convert=self.convert, hdf_fname=self.datadir+self.approximant+'-test',
-                                returnzeroloc=True)
+                                returnattr=True)
         logging.info(f'Reading test data from {self.datadir+self.approximant+"-test.hdf"}')
-        test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=True)
+        test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=True,
+                                 collate_fn=test_set.collate_fn)
         logging.info(f'Test set size: {len(test_set)}')
         return test_loader
 
@@ -313,6 +314,7 @@ class Test:
 
         for _ in range(self.epochs):
             x, labels, keys, attr = next(iter(self.test_loader))
+            logging.debug(attr)
 
             plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
             if not self.noshow:

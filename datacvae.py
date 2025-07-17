@@ -703,6 +703,7 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4'):
             if 'truncated' in data[-1]:
                 hfgrp.attrs['truncated'] = data[-1]['truncated']
                 hfgrp.attrs['truncated_len'] = data[-1]['truncated_len']
+            # TODO: Should be saving this for all the waveforms, as Boolean!
             if 'padded' in data[-1]:
                 hfgrp.attrs['padded'] = data[-1]['padded']
                 # This is the length of the original waveform
@@ -948,6 +949,7 @@ class CustomDataset(Dataset):
             logging.debug(f"Frequency Keys: {freq_keys}")
             amp = (amp - np.mean(amp)) / np.std(amp)
             freq = (freq - np.mean(freq)) / np.std(freq)
+            logging.debug(f'data.attrs: {dict(data.attrs)}')
             if self.returnattr:
                 # also return the loc of padding or truncation
                 return (np.vstack((amp, freq)).astype(np.float32), 
@@ -957,7 +959,25 @@ class CustomDataset(Dataset):
             return (np.vstack((amp, freq)).astype(np.float32), 
                     np.array([m1,m2]).astype(np.float32), 
                     np.array([amp_keys, freq_keys]).astype(np.float32))
-
+        
+    def collate_fn(self, batch):
+        """ 
+        Custom collate function to handle the batch data.
+        Because `KeyError` arose when 'padded' is not found in the `data.attr`
+        for some samples. The feature_batch and tag_batch should have the same
+        length, so we can use the defaul collate function for both.
+        """
+        tag1_batch = []
+        tag2_batch = []
+        tag3_batch = []
+        feat_dict_batch = []
+        print(f'Batch size: {len(batch)}')
+        for tag1, tag2, tag3, feat_dict in batch:
+            tag1_batch.append(tag1)
+            tag2_batch.append(tag2)
+            tag3_batch.append(tag3)
+            feat_dict_batch.append(feat_dict)
+        return (tag1_batch, tag2_batch, tag3_batch, feat_dict_batch)
 
     def __getitem__(self, idx):
         # logging.debug(idx)
