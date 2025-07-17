@@ -293,7 +293,7 @@ class Test:
         """
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
                                 convert=self.convert, hdf_fname=self.datadir+self.approximant+'-test',
-                                returnattr=True)
+                                returnattr=True, train_device=args.device, )
         logging.info(f'Reading test data from {self.datadir+self.approximant+"-test.hdf"}')
         test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=True,
                                  collate_fn=test_set.collate_fn)
@@ -314,11 +314,11 @@ class Test:
 
         for _ in range(self.epochs):
             x, labels, keys, attr = next(iter(self.test_loader))
-            logging.debug(attr)
+            logging.info(attr)
 
-            plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
-            if not self.noshow:
-                plt.show()
+            # plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
+            # if not self.noshow:
+            #     plt.show()
             
             # Move labels to the appropriate device
             labels = labels.to(device)
@@ -331,7 +331,8 @@ class Test:
                 z1 = model.reparameterize(z1_mean, z1_log_var)
                 z1p = model.reparameterize(z1p_mean, z1p_log_var)
                 reconst = model.decode(z1, z1p, labels)
-            print(x.shape, reconst.shape, keys.shape)
+            logging.debug(x.shape, reconst.shape, keys.shape)
+            logging.info('Test for current epoch completed.')
             x, reconst = removezeros(x, reconst, attr)
             plot_reconstruct_data(reconst, labels, keys,
                                   savename=None if self.nosave else self.savedir+'/reconst')
