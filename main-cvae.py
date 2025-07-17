@@ -283,6 +283,7 @@ class Test:
         self.nosave = args.nosave
         self.savedir = '../results/'
         self.test_loader = self.setdataloader()
+        logging.info('Test DataLoader set up.')
         self.epochs = 1
         self.model_path = args.model
 
@@ -293,6 +294,7 @@ class Test:
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
                                 convert=self.convert, hdf_fname=self.datadir+self.approximant+'-test',
                                 returnzeroloc=True)
+        logging.info(f'Reading test data from {self.datadir+self.approximant+"-test.hdf"}')
         test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=True)
         logging.info(f'Test set size: {len(test_set)}')
         return test_loader
@@ -626,7 +628,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--test', action='store_true', default=False,
                             help='whether to test?')
-    parser.add_argument('--model', action='store', default='trained-models/model-20250526_070915-1',
+    parser.add_argument('--model', action='store', default='../trained-models/model-20250526_070915-1',
                         help='path to already trained model.')
 
     parser.add_argument('--noshow', action='store_true', default=False,
