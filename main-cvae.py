@@ -313,8 +313,10 @@ class Test:
         logging.info("Model loaded and set to evaluation mode.")
 
         for _ in range(self.epochs):
+            # `next(iter(self.test_loader))` gives us a batch of data!
+            # Thus, `shape(x)` is (batch_size, 2, PRESET_ARRAY_SIZE) etc.
             x, labels, keys, attr = next(iter(self.test_loader))
-            logging.info(attr)
+            logging.debug(attr)
 
             # plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
             # if not self.noshow:
@@ -367,6 +369,7 @@ def removezeros(x, reconst, attr):
         Reconstructed data without zero padding.
     """
     if attr['truncated']:
+        print(x.shape, reconst.shape, attr['truncated_len'])
         x = x[:, :, :attr['truncated_len']]
         reconst = reconst[:, :, :attr['truncated_len']]
     if attr['padded']:

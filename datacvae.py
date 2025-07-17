@@ -986,7 +986,7 @@ class CustomDataset(Dataset):
             for key, value in feat_dict.items():
                 if key not in feat_dict_batch:
                     feat_dict_batch[key] = []
-                feat_dict_batch[key].append(value)
+                feat_dict_batch[key] = value
         # Convert lists to tensors
         tag1_batch = torch.stack(tag1_batch).to(device=self.train_device, dtype=torch.float32)
         tag2_batch = torch.stack(tag2_batch).to(device=self.train_device, dtype=torch.float32)
