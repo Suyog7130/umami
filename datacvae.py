@@ -633,6 +633,8 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     # append the extra info to the end of the data
     extra['truncated'] = extra.get('truncated', False)
     extra['padded'] = extra.get('padded', False)
+    extra['truncated_len'] = extra.get('truncated_len', None)
+    extra['padded_at'] = extra.get('padded_at', None)
     extra['eccentricity'] = waveform_kwargs.get('eccentricity', None)
     extra['coa_phase'] = waveform_kwargs.get('coa_phase', None)
     extra['inclination'] = waveform_kwargs.get('inclination', None)
@@ -713,20 +715,26 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
             hfgrp.attrs['f_lower'] = f_lower
             if approximant == 'EccentricTD':
                 hfgrp.attrs['eccentricity'] = ecc
+
+            if otherparams:
+                hfgrp.attrs['coa_phase'] = data[-1]['coa_phase']
+                hfgrp.attrs['inclination'] = data[-1]['inclination']
+
             # extra info like truncated or padded
+            # save these for all samples, with `False` vals when no padding.
             logging.info(f'extra: {data[-1]}')
-            if 'truncated' in data[-1]:
-                hfgrp.attrs['truncated'] = data[-1]['truncated']
+            hfgrp.attrs['truncated'] = data[-1]['truncated']
+            hfgrp.attrs['padded'] = data[-1]['padded']
+            # This is the length of the original waveform
+            # before padding.
+            # This is useful to know how much padding was done.
+            # If the waveform was truncated, this will not be present.
+            # If the waveform was padded, this will be present.
+            if data[-1]['truncated_len'] is not None:
                 hfgrp.attrs['truncated_len'] = data[-1]['truncated_len']
-            # TODO: Should be saving this for all the waveforms, as Boolean!
-            if 'padded' in data[-1]:
-                hfgrp.attrs['padded'] = data[-1]['padded']
-                # This is the length of the original waveform
-                # before padding.
-                # This is useful to know how much padding was done.
-                # If the waveform was truncated, this will not be present.
-                # If the waveform was padded, this will be present.
+            if data[-1]['padded_at'] is not None:
                 hfgrp.attrs['padded_at'] = data[-1]['padded_at']
+
             write_hdf_grp(hf, data, grpname)
         logging.info(f"Data written to {fname} successfully.")
         hf.close()
