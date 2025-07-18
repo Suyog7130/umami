@@ -527,7 +527,8 @@ def get_fd_strain(m1, m2, approximant='IMRPhenomD', plot=False):
     return (strains, np.array([m1,m2]), np.array([spkeys, sckeys]))
 
 
-def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None):
+def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
+                    otherparams=False):
     """
     It is taken care of that the `hp` and `hc` are of the same length
     and the `amp` and `phase` and `freq` are of the same length.
@@ -536,20 +537,25 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None):
     These are the full waveforms, i.e. the ringdown part is not cut-off.
     The amplitudes are not rescaled to 10^20.
     """
+    # Initialize random distributions.
+    angles = np_gen.uniform(0., 2*np.pi, 3)
+
     extra = {}
     waveform_kwargs = {'approximant': approximant,
                         'mass1': m1,
                         'mass2': m2,
                         'f_lower': f_lower,
                         'delta_t': DELTA_T,
-                        # 'coa_phase': angles[0],
-                        # 'inclination': angles[1],
                         # 'right_ascension': angles[2],
                         # 'declination': angles[3],
                         # 'pol_angle': angles[4],
                         }
     if eccentricity is not None:
         waveform_kwargs['eccentricity'] = eccentricity
+    if otherparams:
+        waveform_kwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
+        # TODO: check if the inclination has to be in this range ??
+        waveform_kwargs['inclination'] = np_gen.uniform(0., np.pi)
     logging.info(waveform_kwargs)
     hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
 
@@ -624,6 +630,13 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None):
     # hc = hc * 10**20
     # amp = amp * 10**20
 
+    # append the extra info to the end of the data
+    extra['truncated'] = extra.get('truncated', False)
+    extra['padded'] = extra.get('padded', False)
+    extra['eccentricity'] = waveform_kwargs.get('eccentricity', None)
+    extra['coa_phase'] = waveform_kwargs.get('coa_phase', None)
+    extra['inclination'] = waveform_kwargs.get('inclination', None)
+
     return [hp, hc, amp, phase, freq, extra]
 
 
@@ -663,7 +676,8 @@ def write_hdf_grp(hf, data, grpname):
         raise ValueError("Data must be a numpy array or a list of arrays or \
                           a dictionary of arrays.")
 
-def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4'):
+def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
+                      otherparams=False):
     fname = fname + '.hdf'
     logging.info(f'Writing data to HDF5 file {fname}')
     if os.path.exists(fname):
@@ -682,7 +696,8 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4'):
                 ecc = np.random.choice(np.random.uniform(0.01, 0.25, 200), size=1)[0]
             else:
                 ecc = None
-            data = get_vals_for_hdf(m1, m2, approximant, eccentricity=ecc)
+            data = get_vals_for_hdf(m1, m2, approximant, eccentricity=ecc,
+                                    otherparams=otherparams)
             # plt.plot(range(len(data[0])), data[0], label=f'{m1} & {m2}')
             # plt.legend()
             # plt.show()
@@ -1608,6 +1623,9 @@ if __name__=="__main__":
                         help='Generate example frequency-domain strain data to check code.')
     parser.add_argument('--approximant', nargs='+', default=['IMRPhenomD'],
                         help='Approximant(s) to use. Can be a single value or a list.')
+    parser.add_argument('--otherparams', action='store_true', default=False,
+                        help='Use other parameters for the waveform generation.')
+    
     parser.add_argument('--example', action='store_true', default=False,
                         help='Reproduce PyCBC documentation example.')
     parser.add_argument('--example2', action='store_true', default=False,
@@ -1741,14 +1759,18 @@ if __name__=="__main__":
     if args.savedata:
         if type(args.approximant) is list:
             args.approximant = args.approximant[0]
-        fname = args.approximant + args.fname
+        fname = '../data/' + args.approximant
+        if args.otherparams:
+            fname += '-coa&incli'
+        fname += args.fname
         ttsplits = get_mass(splitTT=True, plot=False)
-        # write_data_to_hdf(fname+'-train', masses=ttsplits[0],
-        #                   approximant=args.approximant)
-        # write_data_to_hdf(fname+'-valid', masses=ttsplits[1],
-        #                   approximant=args.approximant)
+        write_data_to_hdf(fname+'-train', masses=ttsplits[0],
+                          approximant=args.approximant, otherparams=args.otherparams)
+        write_data_to_hdf(fname+'-valid', masses=ttsplits[1],
+                          approximant=args.approximant, otherparams=args.otherparams)
         write_data_to_hdf(fname+'-test', masses=ttsplits[2],
-                          approximant=args.approximant)
+                          approximant=args.approximant,
+                          otherparams=args.otherparams)
 
     if args.checkhdf:
         fname = args.approximant+'-train'
