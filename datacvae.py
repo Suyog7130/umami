@@ -703,6 +703,7 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4'):
             if 'truncated' in data[-1]:
                 hfgrp.attrs['truncated'] = data[-1]['truncated']
                 hfgrp.attrs['truncated_len'] = data[-1]['truncated_len']
+            # TODO: Should be saving this for all the waveforms, as Boolean!
             if 'padded' in data[-1]:
                 hfgrp.attrs['padded'] = data[-1]['padded']
                 # This is the length of the original waveform
@@ -948,6 +949,7 @@ class CustomDataset(Dataset):
             logging.debug(f"Frequency Keys: {freq_keys}")
             amp = (amp - np.mean(amp)) / np.std(amp)
             freq = (freq - np.mean(freq)) / np.std(freq)
+            logging.debug(f'data.attrs: {dict(data.attrs)}')
             if self.returnattr:
                 # also return the loc of padding or truncation
                 return (np.vstack((amp, freq)).astype(np.float32), 
@@ -957,7 +959,40 @@ class CustomDataset(Dataset):
             return (np.vstack((amp, freq)).astype(np.float32), 
                     np.array([m1,m2]).astype(np.float32), 
                     np.array([amp_keys, freq_keys]).astype(np.float32))
-
+        
+    def collate_fn(self, batch):
+        """ 
+        Custom collate function to handle the batch data.
+        Because `KeyError` arose when 'padded' is not found in the `data.attr`
+        for some samples. The feature_batch and tag_batch should have the same
+        length, so we can use the defaul collate function for both.
+        """
+        tag1_batch = []
+        tag2_batch = []
+        tag3_batch = []
+        feat_dict_batch = {}
+        logging.debug(f'Batch size: {len(batch)}')
+        for tag1, tag2, tag3, feat_dict in batch:
+            logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}')
+            # convert to tensors and move to the training device
+            tag1 = torch.tensor(tag1, device=self.train_device, dtype=torch.float32)
+            tag2 = torch.tensor(tag2, device=self.train_device, dtype=torch.float32)
+            tag3 = torch.tensor(tag3, device=self.train_device, dtype=torch.float32)
+            # Append to the batch lists
+            tag1_batch.append(tag1)
+            tag2_batch.append(tag2)
+            tag3_batch.append(tag3)
+            # Append the feature dict to the batch dict
+            for key, value in feat_dict.items():
+                if key not in feat_dict_batch:
+                    feat_dict_batch[key] = []
+                feat_dict_batch[key] = value
+        # Convert lists to tensors
+        tag1_batch = torch.stack(tag1_batch).to(device=self.train_device, dtype=torch.float32)
+        tag2_batch = torch.stack(tag2_batch).to(device=self.train_device, dtype=torch.float32)
+        tag3_batch = torch.stack(tag3_batch).to(device=self.train_device, dtype=torch.float32)
+        # Ensure all tensors are of the same shape
+        return (tag1_batch, tag2_batch, tag3_batch, feat_dict_batch)
 
     def __getitem__(self, idx):
         # logging.debug(idx)

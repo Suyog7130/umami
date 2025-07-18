@@ -293,9 +293,10 @@ class Test:
         """
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
                                 convert=self.convert, hdf_fname=self.datadir+self.approximant+'-test',
-                                returnzeroloc=True)
+                                returnattr=True, train_device=args.device, )
         logging.info(f'Reading test data from {self.datadir+self.approximant+"-test.hdf"}')
-        test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=True)
+        test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=True,
+                                 collate_fn=test_set.collate_fn)
         logging.info(f'Test set size: {len(test_set)}')
         return test_loader
 
@@ -312,11 +313,14 @@ class Test:
         logging.info("Model loaded and set to evaluation mode.")
 
         for _ in range(self.epochs):
+            # `next(iter(self.test_loader))` gives us a batch of data!
+            # Thus, `shape(x)` is (batch_size, 2, PRESET_ARRAY_SIZE) etc.
             x, labels, keys, attr = next(iter(self.test_loader))
+            logging.debug(attr)
 
-            plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
-            if not self.noshow:
-                plt.show()
+            # plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
+            # if not self.noshow:
+            #     plt.show()
             
             # Move labels to the appropriate device
             labels = labels.to(device)
@@ -329,10 +333,13 @@ class Test:
                 z1 = model.reparameterize(z1_mean, z1_log_var)
                 z1p = model.reparameterize(z1p_mean, z1p_log_var)
                 reconst = model.decode(z1, z1p, labels)
-            print(x.shape, reconst.shape, keys.shape)
+            logging.debug(x.shape, reconst.shape, keys.shape)
+            logging.info('Test for current epoch completed. Removing zero padding if any.')
             x, reconst = removezeros(x, reconst, attr)
-            plot_reconstruct_data(reconst, labels, keys,
-                                  savename=None if self.nosave else self.savedir+'/reconst')
+            logging.info(f'Removed zero padding from input and reconstructed data.')
+            logging.info(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}')
+            # plot_reconstruct_data(reconst, labels, keys,
+            #                       savename=None if self.nosave else self.savedir+'/reconst')
             plot_overplot(x, reconst, labels, keys, 
                           savename=None if self.nosave else self.savedir+'overplot')
             test_mismatch(x, reconst, labels, keys,
@@ -363,12 +370,15 @@ def removezeros(x, reconst, attr):
     reconst : torch.Tensor
         Reconstructed data without zero padding.
     """
-    if attr['truncated']:
-        x = x[:, :, :attr['truncated_len']]
-        reconst = reconst[:, :, :attr['truncated_len']]
+    # if attr['truncated']:
+    # nothing to do for truncation, as we assume the data is already truncated.
+    #     print(x.shape, reconst.shape, attr['truncated_len'])
+    #     x = x[:, :, :attr['truncated_len']]
+    #     reconst = reconst[:, :, :attr['truncated_len']]
     if attr['padded']:
-        x = x[:, :, :-attr['padded_at']]
-        reconst = reconst[:, :, :-attr['padded_at']]
+        # padding is always at the end of the data.
+        x = x[:, :, :attr['padded_at']]
+        reconst = reconst[:, :, :attr['padded_at']]
     return x, reconst
 
 def plot_reconstruct_data(reconst, labels, keys, savename='../results/reconst'):
@@ -433,7 +443,8 @@ def plot_reconstruct_data(reconst, labels, keys, savename='../results/reconst'):
     plt.show()
 
 
-def plot_overplot(x, reconst, labels, keys, savename='../results/overplot'):
+def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
+                  reshape2orig=False):
     """
     Overplot the original data and the reconstructed data from the CVAE.
     Plots two panel with, say three, random samples of the original and 
@@ -468,8 +479,15 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot'):
     
     for j in range(1):
         i = np.random.randint(0, 49, size=1)
-        orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
-        recon_data = reconst[i].reshape([2,PRESET_ARRAY_SIZE])
+        if reshape2orig:
+            # Reshape to original data shape
+            orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
+            reconst = reconst.reshape([2,PRESET_ARRAY_SIZE])
+        else:
+            # Use the original shape of the data
+            print(x.shape, reconst.shape)
+            orig_data = x[i].reshape([2,x.shape[2]])
+            recon_data = reconst[i].reshape([2,reconst.shape[2]])
         
         orig_amp, orig_freq = orig_data[0], orig_data[1]
         recon_amp, recon_freq = recon_data[0], recon_data[1]
