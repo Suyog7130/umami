@@ -342,7 +342,7 @@ class Test:
             #                       savename=None if self.nosave else self.savedir+'/reconst')
             plot_overplot(x, reconst, labels, keys, 
                           savename=None if self.nosave else self.savedir+'overplot')
-            test_mismatch(x, reconst, labels, keys,
+            plot_mismatch(x, reconst, labels, keys,
                           savename=None if self.nosave else self.savedir+'/mismatch')
 
 def removezeros(x, reconst, attr):
@@ -547,14 +547,20 @@ def calculate_mismatch(target, reconstructed):
         target = target.detach().cpu().numpy()
     if isinstance(reconstructed, torch.Tensor):
         reconstructed = reconstructed.detach().cpu().numpy()
-    # use `ligoazero`
+    # TODO: use PSD to whiten the recombined waveform and then calculate the mismatch.
+    # calculate the fitting factor
+    inner_product = np.sum(target * reconstructed, axis=-1)
+    target_norm = np.sqrt(np.sum(target * target, axis=-1))
+    reconstructed_norm = np.sqrt(np.sum(reconstructed * reconstructed, axis=-1))
+    # Calculate the match
+    match = inner_product / (target_norm * reconstructed_norm)
     mismatch = 1 - match
     return mismatch
 
-def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch',
+def plot_mismatch(x, reconst, labels, keys, savename='../results/mismatch',
                   reshape2orig=False):
     """
-    Test the mismatch between the original and reconstructed data.
+    Plot the mismatch between the original and reconstructed data.
     Plots two panel with, say three, random samples of the original and 
     reconstructed data. The panels are for Amplitude and Frequency, respectively.
 
@@ -583,11 +589,15 @@ def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch',
     reconst = reconst.cpu().numpy()
     labels = labels.cpu().numpy()
     keys = keys.cpu().numpy()
-
-    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
     
-    for j in range(1):
-        i = np.random.randint(0, 49, size=1)
+    chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
+    mismatch_amp = np.zeros((x.shape[0], 1))
+    mismatch_freq = np.zeros((x.shape[0], 1))
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+
+    # TODO: Maybe remove this `for` loop and use vectorized operations?
+    for i in range(x.shape[0]):
+        # i = np.random.randint(0, 49, size=1)
         if reshape2orig:
             # Reshape to original data shape
             orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
@@ -614,10 +624,31 @@ def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch',
         recon_freq = (recon_freq * freq_std) + freq_mean
         
         # Calculate mismatch
-        mismatch_amp = calculate_mismatch(orig_amp, recon_amp)
-        mismatch_freq = calculate_mismatch(orig_freq, recon_freq)
-        print(mismatch_amp.shape, mismatch_freq.shape)
-        print(f"Mismatch for Amplitude: {mismatch_amp}, Frequency: {mismatch_freq}")
+        mismatch_amp[i] = calculate_mismatch(orig_amp, recon_amp)
+        mismatch_freq[i] = calculate_mismatch(orig_freq, recon_freq)
+        logging.info(f"Mismatch for Amplitude: {mismatch_amp[i]}, Frequency: {mismatch_freq[i]}")
+
+        # Calculate chirp mass
+        m1, m2 = labels[i][0], labels[i][1]
+        chirp_mass = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+        logging.debug(f"Chirp mass for sample {i}: {chirp_mass}")
+        chirpmasses[i] = chirp_mass
+    
+    ax.plot(chirpmasses, mismatch_amp, '.', label='Amplitude Mismatch', markeredgewidth=0.75,
+            alpha=0.75)
+    ax.plot(chirpmasses, mismatch_freq, '.', label='Frequency Mismatch')
+    ax.set_xlabel('Chirp Mass', fontsize=12)
+    ax.set_ylabel('Mismatch', fontsize=12)
+    plt.title('Mismatch between Original and Reconstructed Data', fontsize=12)
+    plt.legend()
+    # plt.tight_layout()
+    putils.beautifyPlot([ax])
+    if savename:
+        savename += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        plt.savefig(savename+'.png', dpi=300, bbox_inches='tight')
+        print(f"Mismatch plot saved to {savename}")
+    plt.close()
+
 
 
 if __name__ == "__main__":

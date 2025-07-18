@@ -673,10 +673,10 @@ def write_hdf_grp(hf, data, grpname):
                 hf[grpname].create_dataset(name, data=d)
             else:
                 raise ValueError(f"Data for {name} is not a numpy array.")
-            
     else:
         raise ValueError("Data must be a numpy array or a list of arrays or \
                           a dictionary of arrays.")
+    
 
 def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                       otherparams=False):
