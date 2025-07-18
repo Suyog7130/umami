@@ -639,14 +639,15 @@ def plot_mismatch(x, reconst, labels, keys, savename='../results/mismatch',
     ax.plot(chirpmasses, mismatch_freq, '.', label='Frequency Mismatch')
     ax.set_xlabel('Chirp Mass', fontsize=12)
     ax.set_ylabel('Mismatch', fontsize=12)
+    ax.set_yscale('log')  # Set y-axis to logarithmic scale
     plt.title('Mismatch between Original and Reconstructed Data', fontsize=12)
     plt.legend()
     # plt.tight_layout()
-    putils.beautifyPlot([ax])
-    if savename:
+    # putils.beautifyPlot([ax])
+    if savename or savename is not None:
         savename += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(savename+'.png', dpi=300, bbox_inches='tight')
-        print(f"Mismatch plot saved to {savename}")
+        logging.info(f"Mismatch plot saved to {savename}")
     plt.close()
 
 
