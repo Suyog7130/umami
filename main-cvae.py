@@ -547,19 +547,12 @@ def calculate_mismatch(target, reconstructed):
         target = target.detach().cpu().numpy()
     if isinstance(reconstructed, torch.Tensor):
         reconstructed = reconstructed.detach().cpu().numpy()
-    # Flatten if needed
-    target = target.reshape(target.shape[0], -1)
-    reconstructed = reconstructed.reshape(reconstructed.shape[0], -1)
-    # Inner products
-    inner_prod = np.sum(target * reconstructed, axis=1)
-    aa = np.sum(target * target, axis=1)
-    bb = np.sum(reconstructed * reconstructed, axis=1)
-    denom = np.sqrt(aa + bb) + 1e-12  # Avoid division by zero
-    overlap = inner_prod / denom
-    mismatch = 1 - overlap
+    # use `ligoazero`
+    mismatch = 1 - match
     return mismatch
 
-def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch'):
+def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch',
+                  reshape2orig=False):
     """
     Test the mismatch between the original and reconstructed data.
     Plots two panel with, say three, random samples of the original and 
@@ -575,6 +568,8 @@ def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch'):
         Labels associated with the original data.
     keys : torch.Tensor
         Keys associated with the original data.
+    reshape2orig : bool, optional
+        If True, reshapes the data to the original shape before calculating mismatch.
 
     Returns:
     --------
@@ -593,8 +588,15 @@ def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch'):
     
     for j in range(1):
         i = np.random.randint(0, 49, size=1)
-        orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
-        recon_data = reconst[i].reshape([2,PRESET_ARRAY_SIZE])
+        if reshape2orig:
+            # Reshape to original data shape
+            orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
+            reconst = reconst.reshape([2,PRESET_ARRAY_SIZE])
+        else:
+            # Use the original shape of the data
+            print(x.shape, reconst.shape)
+            orig_data = x[i].reshape([2,x.shape[2]])
+            recon_data = reconst[i].reshape([2,reconst.shape[2]])
         
         orig_amp, orig_freq = orig_data[0], orig_data[1]
         recon_amp, recon_freq = recon_data[0], recon_data[1]
