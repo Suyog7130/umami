@@ -63,7 +63,7 @@ sys.path.append('~Dropbox/plotutils-work/plotutils/')
 from plotutils import putils
 
 from datacvae import CustomDataset
-from datacvae import PRESET_ARRAY_SIZE
+from datacvae import PRESET_ARRAY_SIZE, SAMPLE_RATE, DELTA_T, f_lower, sample_len
 from cvae import CVAE
 
 
@@ -303,6 +303,7 @@ class Test:
     def test(self):
         """
         Test the trained CVAE model using only labels as input.
+        TODO: Create a test dir in results in dir and a subfolder with timestamp !!
         """
         # Load the trained model
         model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=2, 
@@ -342,7 +343,9 @@ class Test:
             #                       savename=None if self.nosave else self.savedir+'/reconst')
             plot_overplot(x, reconst, labels, keys, 
                           savename=None if self.nosave else self.savedir+'overplot')
-            plot_mismatch(x, reconst, labels, keys, phase)
+            plot_mismatch(x, reconst, labels, keys)
+            plot_polarization_mismatch(x, reconst, labels, keys, phase)
+
 
 def removezeros(x, reconst, attr):
     """
@@ -556,44 +559,10 @@ def calculate_mismatch(target, reconstructed):
     mismatch = 1 - match
     return mismatch
 
-def calc_polarization_mismatch(hp_orig, hp_recon):
-    """
-    Calculate the mismatch between the original and reconstructed hplus/hcross waveforms.
-    Mismatch = 1 - ( <h+|h+> / sqrt(<h+|h+> + <h+|h->) )
-    where <h+|h-> is the inner product (dot product).
-
-    Parameters:
-    -----------
-    hp_orig : np.ndarray or torch.Tensor
-        The original hplus waveform.
-    hp_recon : np.ndarray or torch.Tensor
-        The reconstructed hplus waveform.
-
-    Returns:
-    --------
-    mismatch : float
-        The mismatch value, 0 means perfect match, 1 means orthogonal.
-    """
-    if isinstance(hp_orig, torch.Tensor):
-        hp_orig = hp_orig.detach().cpu().numpy()
-    if isinstance(hp_recon, torch.Tensor):
-        hp_recon = hp_recon.detach().cpu().numpy()
-    
-    from pycbc.filter import match as matchfunc
-    from pycbc.psd import aLIGOZeroDetHighPower
-    psd = aLIGOZeroDetHighPower(, 1.0)
-    mismatch_hplus = matchfunc(hp_orig, hp_recon, low_frequency_cutoff=20.0,
-                                high_frequency_cutoff=2048.0, sample_rate=args.sample_rate)
-    mismatch = 1 - match
-    return mismatch
-
-
-def plot_mismatch(x, reconst, labels, keys, phase,
+def plot_mismatch(x, reconst, labels, keys,
                   savedir='../results/', reshape2orig=False):
     """
     Plot the mismatch between the original and reconstructed data.
-    Plots two panel with, say three, random samples of the original and 
-    reconstructed data. The panels are for Amplitude and Frequency, respectively.
 
     Parameters:
     -----------
@@ -620,7 +589,6 @@ def plot_mismatch(x, reconst, labels, keys, phase,
     reconst = reconst.cpu().numpy()
     labels = labels.cpu().numpy()
     keys = keys.cpu().numpy()
-    phase = phase.cpu().numpy()
     
     chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
     totalmasses = np.zeros((labels.shape[0], 1))  # Store total masses for each sample
@@ -661,20 +629,6 @@ def plot_mismatch(x, reconst, labels, keys, phase,
         mismatch_freq[i] = calculate_mismatch(orig_freq, recon_freq)
         logging.debug(f"Mismatch for Amplitude: {mismatch_amp[i]}, Frequency: {mismatch_freq[i]}")
 
-        # Combine original Amp/Freq to hplus/hcross
-        hp_orig = orig_amp * np.cos(phase)  # this is original phase
-        hc_orig = orig_amp * np.sin(phase)
-
-        # Calculate phase of reconstructed data
-        phase_recon = 2 * np.pi * np.cumsum(recon_freq) / args.sample_rate
-        hp_recon = recon_amp * np.cos(phase)
-        hc_recon = recon_amp * np.sin(phase)
-
-        # Calculate mismatch for hplus and hcross
-        mismatch_hp = calc_polarization_mismatch(hp_orig, hp_recon)
-        mismatch_hc = calc_polarization_mismatch(hc_orig, hc_recon)
-        logging.info(f"Mismatch for hplus: {mismatch_hp}, hcross: {mismatch_hc}")
-
         # Calculate chirp mass
         m1, m2 = labels[i][0], labels[i][1]
         chirp_mass = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
@@ -704,6 +658,175 @@ def plot_mismatch(x, reconst, labels, keys, phase,
         logging.info(f"Mismatch plot saved to {savedir+savename}.png")
         plt.close()
 
+
+def calc_polarization_mismatch(hp_orig, hp_recon):
+    """
+    Calculate the mismatch between the original and reconstructed hplus/hcross waveforms.
+
+    Parameters:
+    -----------
+    hp_orig : np.ndarray or torch.Tensor
+        The original hplus waveform.
+    hp_recon : np.ndarray or torch.Tensor
+        The reconstructed hplus waveform.
+
+    Returns:
+    --------
+    mismatch : float
+        The mismatch value, 0 means perfect match, 1 means orthogonal.
+    """
+    if isinstance(hp_orig, torch.Tensor):
+        hp_orig = hp_orig.detach().cpu().numpy()
+    if isinstance(hp_recon, torch.Tensor):
+        hp_recon = hp_recon.detach().cpu().numpy()
+    
+    from pycbc.filter import match as matchfunc
+    from pycbc.psd import aLIGOZeroDetHighPower
+    psd = aLIGOZeroDetHighPower(length=sample_len,
+                                delta_f=1.0/hp_recon.duration,
+                                low_freq_cutoff=f_lower)
+    match = matchfunc(hp_orig, hp_recon, psd=psd, low_frequency_cutoff=f_lower)
+    mismatch = 1 - match
+    return mismatch
+
+def phase_from_frequency(freq, dt, theta0=0.0):
+    """
+    Compute gravitational-wave phase from a frequency time series.
+
+    Parameters
+    ----------
+    freq : array_like
+        Instantaneous frequency time series (Hz).
+    dt : float
+        Time step between samples (seconds).
+    phi0 : float, optional
+        Initial phase (radians). Default is 0.
+        
+    Returns
+    -------
+    phase : ndarray
+        Phase time series (radians).
+    """
+    from scipy.integrate import cumulative_trapezoid
+    # Integrate frequency using trapezoidal rule
+    theta_integral = cumulative_trapezoid(freq, dx=dt, initial=0.0)
+    # Multiply by 2π and add initial phase
+    return theta0 + 2 * np.pi * theta_integral
+
+
+def polarizations_from_ampfreq(amp, freq, orig_phase=None):
+    """
+    Convert amplitude and frequency to hplus and hcross polarizations.
+    """
+    phase = phase_from_frequency(freq, dt=1.0/SAMPLE_RATE)
+    hplus = amp * np.cos(phase)
+    hcross = amp * np.sin(phase)
+    return hplus, hcross
+
+def plot_polarization_mismatch(x, reconst, labels, keys, phase,
+                                savedir='../results/', reshape2orig=False):
+    """
+    Plot the mismatch between the original and reconstructed hplus/hcross waveforms.
+
+    Parameters:
+    -----------
+    x : torch.Tensor
+        Original data input to the CVAE.
+    reconst : torch.Tensor
+        Reconstructed data generated by the CVAE.
+    labels : torch.Tensor
+        Labels associated with the original data.
+    keys : torch.Tensor
+        Keys associated with the original data.
+    phase : torch.Tensor
+        Phase information associated with the original data.
+
+    Returns:
+    --------
+    None
+
+    Outputs:
+    -------
+    Displays a plot of the polarization mismatch values.
+    """
+    x = x.cpu().numpy()
+    reconst = reconst.cpu().numpy()
+    labels = labels.cpu().numpy()
+    keys = keys.cpu().numpy()
+    phase = phase.cpu().numpy()
+
+    chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
+    totalmasses = np.zeros((labels.shape[0], 1))  # Store total masses for each sample
+    massratios = np.zeros((labels.shape[0], 1))  # Store mass ratios for each sample
+    mismatch_hplus = np.zeros((x.shape[0], 1))
+    mismatch_hcross = np.zeros((x.shape[0], 1))
+
+    for i in range(x.shape[0]):
+        if reshape2orig:
+            # Reshape to original data shape
+            orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
+            reconst = reconst.reshape([2,PRESET_ARRAY_SIZE])
+        else:
+            # Use the original shape of the data
+            logging.debug(x.shape, reconst.shape)
+            orig_data = x[i].reshape([2,x.shape[2]])
+            recon_data = reconst[i].reshape([2,reconst.shape[2]])
+
+        orig_amp, orig_freq = orig_data[0], orig_data[1]
+        recon_amp, recon_freq = recon_data[0], recon_data[1]
+        
+        # Obtain the keys for normalization
+        key = keys[i].reshape([2,2])
+        amp_mean, amp_std = key[0][0], key[0][1]
+        freq_mean, freq_std = key[1][0], key[1][1]
+
+        # De-normalize the original data!
+        orig_amp = (orig_amp * amp_std) + amp_mean
+        orig_freq = (orig_freq * freq_std) + freq_mean
+        # De-normalize the reconstructed data!
+        recon_amp = (recon_amp * amp_std) + amp_mean
+        recon_freq = (recon_freq * freq_std) + freq_mean
+        
+        # Combine original Amp/Freq to hplus/hcross
+        hp_orig = orig_amp * np.cos(phase)  # this is original phase
+        hc_orig = orig_amp * np.sin(phase)
+
+        # Calculate hplus/hcross for reconstructed data
+        hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq, phase)
+
+        # Calculate mismatch for hplus and hcross
+        mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon)
+        mismatch_hcross[i] = calc_polarization_mismatch(hc_orig, hc_recon)
+        logging.info(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
+
+        # Calculate chirp mass
+        m1, m2 = labels[i][0], labels[i][1]
+        chirp_mass = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+        logging.debug(f"Chirp mass for sample {i}: {chirp_mass}")
+        chirpmasses[i] = chirp_mass
+        totalmasses[i] = m1 + m2
+        massratios[i] = m1 / m2
+
+    for massarr, xname in zip([chirpmasses, totalmasses, massratios],
+                               ['Chirp Mass', 'Total Mass', 'Mass Ratio']):
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        ax.plot(massarr, mismatch_hplus, '.', label='$h_{+}$',
+                markeredgewidth=0.75, alpha=0.75)
+        ax.plot(massarr, mismatch_hcross, '.', label='$h_{\\times}$',
+                markeredgewidth=0.75, alpha=0.75)
+        ax.set_xlabel(xname, fontsize=12)
+        ax.set_ylabel('Mismatch', fontsize=12)
+        ax.set_yscale('log')  # Set y-axis to logarithmic scale
+        # show minor ticks on x-axis
+        # ax.xaxis.set_minor_locator(plt.AutoLocator())
+        ax.xaxis.set_major_locator(plt.MaxNLocator(10))
+        plt.legend()
+        # plt.tight_layout()
+        # putils.beautifyPlot([ax])
+        savename = 'mismatch-hphc-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
+        logging.info(f"Mismatch plot saved to {savedir+savename}.png")
+        plt.close()
 
 
 if __name__ == "__main__":
