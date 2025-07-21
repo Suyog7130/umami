@@ -978,7 +978,7 @@ class CustomDataset(Dataset):
                 return (np.vstack((amp, freq)).astype(np.float32), 
                         np.array([m1,m2]).astype(np.float32), 
                         np.array([amp_keys, freq_keys]).astype(np.float32), 
-                        dict(data.attrs))
+                        dict(data.attrs), np.array(data['phase']))
             return (np.vstack((amp, freq)).astype(np.float32), 
                     np.array([m1,m2]).astype(np.float32), 
                     np.array([amp_keys, freq_keys]).astype(np.float32))
