@@ -305,6 +305,7 @@ class Test:
         Test the trained CVAE model using only labels as input.
         TODO: Create a test dir in results in dir and a subfolder with timestamp !!
         """
+        logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
         model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=2, 
                     key_shape=(2,2)).to(args.device)
@@ -883,13 +884,16 @@ if __name__ == "__main__":
                             level=log_level, datefmt='%y-%m-%d %H:%M:%S',
                             force=True)
     
-    device = (
-        "cuda"
-        if torch.cuda.is_available()
-        else "mps"
-        if torch.backends.mps.is_available()
-        else "cpu"
-    )
+    # TODO: Sometimes, `cuda` is not available, and `torch.cuda.is_available()` just goes dead,
+    # with no error message. This last happended on 2025-07-22, right during and after a maintanence!
+    # device = (
+    #     "cuda"
+    #     if torch.cuda.is_available()
+    #     else "mps"
+    #     if torch.backends.mps.is_available()
+    #     else "cpu"
+    # )
+    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
     args.device = device
     logging.info(f"using {device} device !")
 
