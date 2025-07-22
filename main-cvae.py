@@ -348,9 +348,9 @@ class Test:
             #                       savename=None if self.nosave else self.savedir+'/reconst')
             plot_overplot(x, reconst, labels, keys, 
                           savename=None if self.nosave else self.savedir+'overplot')
-            plot_mismatch(x, reconst, labels, keys, savedir=self.savedir)
-            plot_polarization_mismatch(x, reconst, labels, keys, phase, savedir=self.savedir)
-            print(f"Test completed for epoch {_+1}.")
+            # plot_mismatch(x, reconst, labels, keys, savedir=self.savedir)
+            # plot_polarization_mismatch(x, reconst, labels, keys, phase, savedir=self.savedir)
+            print(f"Test completed for batch {_+1}.")
 
 
 def removezeros(x, reconst, phase, attr):
@@ -453,7 +453,7 @@ def plot_reconstruct_data(reconst, labels, keys, savename='../results/reconst'):
 
 
 def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
-                  reshape2orig=False):
+                  reshape2orig=False, transparent=True):
     """
     Overplot the original data and the reconstructed data from the CVAE.
     Plots two panel with, say three, random samples of the original and 
@@ -484,7 +484,7 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
     labels = labels.cpu().numpy()
     keys = keys.cpu().numpy()
     
-    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(5, 2))
     
     for j in range(1):
         i = np.random.randint(0, 49, size=1)
@@ -522,14 +522,17 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
     for i, axlabel in enumerate(['Amplitude', 'Frequency']):
         axes[i].set_xlabel('Sample length', fontsize=12)
         axes[i].set_ylabel(axlabel, fontsize=12)
-        axes[i].set_title(f'Overplot {axlabel}', fontsize=12)
-        axes[i].legend(title=f'({float(labels[i][0]), float(labels[i][1])})', fontsize=12)
+    axes[1].set_title(f'$m_1$={float(labels[i][0])}, $m_2$={float(labels[i][1])}', fontsize=8)
+    axes[1].legend(fontsize=8, loc='upper left')
     plt.tight_layout()
-    plt.subplots_adjust(wspace=0.2)
-    putils.beautifyPlot(axes)
+    # plt.subplots_adjust(wspace=0.2)
+    # putils.beautifyPlot(axes)
     if savename:
         savename += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
-        plt.savefig(savename+'.png', dpi=300)
+        if transparent:
+            plt.savefig(savename+'.png', dpi=300, bbox_inches='tight', transparent=True)
+        else:
+            plt.savefig(savename+'.png', dpi=300, bbox_inches='tight')
         logging.info(f"Overplot saved to {savename}")
     plt.show()
 
