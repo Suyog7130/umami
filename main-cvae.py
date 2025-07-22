@@ -49,7 +49,7 @@ from torch.utils.data import DataLoader
 # from torchsummary import summary
 
 import pycbc.noise
-import pycbc.psd
+import pycbc
 from pycbc.waveform import get_td_waveform
 import pycbc.waveform, pycbc.noise, pycbc.psd, pycbc.distributions, \
      pycbc.detector
@@ -63,7 +63,7 @@ sys.path.append('~Dropbox/plotutils-work/plotutils/')
 from plotutils import putils
 
 from datacvae import CustomDataset
-from datacvae import PRESET_ARRAY_SIZE
+from datacvae import PRESET_ARRAY_SIZE, SAMPLE_RATE, DELTA_T, f_lower, sample_len
 from cvae import CVAE
 
 
@@ -281,7 +281,11 @@ class Test:
         self.batch_size = args.batch_size
         self.noshow = args.noshow
         self.nosave = args.nosave
-        self.savedir = '../results/'
+
+        today = datetime.today().strftime('%Y%m%d')
+        if not os.path.isdir(f'../results/{today}/'):
+            os.makedirs(f'../results/{today}/')
+        self.savedir = f'../results/{today}/'
         self.test_loader = self.setdataloader()
         logging.info('Test DataLoader set up.')
         self.epochs = 1
@@ -303,7 +307,9 @@ class Test:
     def test(self):
         """
         Test the trained CVAE model using only labels as input.
+        TODO: Create a test dir in results in dir and a subfolder with timestamp !!
         """
+        logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
         model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=2, 
                     key_shape=(2,2)).to(args.device)
@@ -315,7 +321,7 @@ class Test:
         for _ in range(self.epochs):
             # `next(iter(self.test_loader))` gives us a batch of data!
             # Thus, `shape(x)` is (batch_size, 2, PRESET_ARRAY_SIZE) etc.
-            x, labels, keys, attr = next(iter(self.test_loader))
+            x, labels, keys, phase, attr = next(iter(self.test_loader))
             logging.debug(attr)
 
             # plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
@@ -335,17 +341,19 @@ class Test:
                 reconst = model.decode(z1, z1p, labels)
             logging.debug(x.shape, reconst.shape, keys.shape)
             logging.info('Test for current epoch completed. Removing zero padding if any.')
-            x, reconst = removezeros(x, reconst, attr)
+            x, reconst, phase = removezeros(x, reconst, phase, attr)
             logging.info(f'Removed zero padding from input and reconstructed data.')
             logging.info(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}')
             # plot_reconstruct_data(reconst, labels, keys,
             #                       savename=None if self.nosave else self.savedir+'/reconst')
             plot_overplot(x, reconst, labels, keys, 
                           savename=None if self.nosave else self.savedir+'overplot')
-            test_mismatch(x, reconst, labels, keys,
-                          savename=None if self.nosave else self.savedir+'/mismatch')
+            plot_mismatch(x, reconst, labels, keys, savedir=self.savedir)
+            plot_polarization_mismatch(x, reconst, labels, keys, phase, savedir=self.savedir)
+            print(f"Test completed for epoch {_+1}.")
 
-def removezeros(x, reconst, attr):
+
+def removezeros(x, reconst, phase, attr):
     """
     Remove zero padding from the input and reconstructed data.
     This is useful for visualizing the actual waveform data without padding.
@@ -379,7 +387,8 @@ def removezeros(x, reconst, attr):
         # padding is always at the end of the data.
         x = x[:, :, :attr['padded_at']]
         reconst = reconst[:, :, :attr['padded_at']]
-    return x, reconst
+        phase = phase[:, :attr['padded_at']]
+    return x, reconst, phase
 
 def plot_reconstruct_data(reconst, labels, keys, savename='../results/reconst'):
     """
@@ -485,7 +494,7 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
             reconst = reconst.reshape([2,PRESET_ARRAY_SIZE])
         else:
             # Use the original shape of the data
-            print(x.shape, reconst.shape)
+            logging.debug(x.shape, reconst.shape)
             orig_data = x[i].reshape([2,x.shape[2]])
             recon_data = reconst[i].reshape([2,reconst.shape[2]])
         
@@ -521,7 +530,7 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
     if savename:
         savename += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(savename+'.png', dpi=300)
-        print(f"Overplot saved to {savename}")
+        logging.info(f"Overplot saved to {savename}")
     plt.show()
 
 
@@ -547,23 +556,19 @@ def calculate_mismatch(target, reconstructed):
         target = target.detach().cpu().numpy()
     if isinstance(reconstructed, torch.Tensor):
         reconstructed = reconstructed.detach().cpu().numpy()
-    # Flatten if needed
-    target = target.reshape(target.shape[0], -1)
-    reconstructed = reconstructed.reshape(reconstructed.shape[0], -1)
-    # Inner products
-    inner_prod = np.sum(target * reconstructed, axis=1)
-    aa = np.sum(target * target, axis=1)
-    bb = np.sum(reconstructed * reconstructed, axis=1)
-    denom = np.sqrt(aa + bb) + 1e-12  # Avoid division by zero
-    overlap = inner_prod / denom
-    mismatch = 1 - overlap
+    # TODO: use PSD to whiten the recombined waveform and then calculate the mismatch.
+    # calculate the fitting factor
+    inner_product = np.sum(target * reconstructed, axis=-1)
+    target_norm = np.sqrt(np.sum(target * target, axis=-1))
+    reconstructed_norm = np.sqrt(np.sum(reconstructed * reconstructed, axis=-1))
+    # Calculate the match
+    match = inner_product / (target_norm * reconstructed_norm)
+    mismatch = 1 - match
     return mismatch
 
-def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch'):
+def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../results/'):
     """
-    Test the mismatch between the original and reconstructed data.
-    Plots two panel with, say three, random samples of the original and 
-    reconstructed data. The panels are for Amplitude and Frequency, respectively.
+    Plot the mismatch between the original and reconstructed data.
 
     Parameters:
     -----------
@@ -575,6 +580,8 @@ def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch'):
         Labels associated with the original data.
     keys : torch.Tensor
         Keys associated with the original data.
+    reshape2orig : bool, optional
+        If True, reshapes the data to the original shape before calculating mismatch.
 
     Returns:
     --------
@@ -588,13 +595,25 @@ def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch'):
     reconst = reconst.cpu().numpy()
     labels = labels.cpu().numpy()
     keys = keys.cpu().numpy()
-
-    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
     
-    for j in range(1):
-        i = np.random.randint(0, 49, size=1)
-        orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
-        recon_data = reconst[i].reshape([2,PRESET_ARRAY_SIZE])
+    chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
+    totalmasses = np.zeros((labels.shape[0], 1))  # Store total masses for each sample
+    massratios = np.zeros((labels.shape[0], 1))  # Store mass ratios for each sample
+    mismatch_amp = np.zeros((x.shape[0], 1))
+    mismatch_freq = np.zeros((x.shape[0], 1))
+
+    # TODO: Maybe remove this `for` loop and use vectorized operations?
+    for i in range(x.shape[0]):
+        # i = np.random.randint(0, 49, size=1)
+        if reshape2orig:
+            # Reshape to original data shape
+            orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
+            reconst = reconst.reshape([2,PRESET_ARRAY_SIZE])
+        else:
+            # Use the original shape of the data
+            logging.debug(x.shape, reconst.shape)
+            orig_data = x[i].reshape([2,x.shape[2]])
+            recon_data = reconst[i].reshape([2,reconst.shape[2]])
         
         orig_amp, orig_freq = orig_data[0], orig_data[1]
         recon_amp, recon_freq = recon_data[0], recon_data[1]
@@ -612,10 +631,224 @@ def test_mismatch(x, reconst, labels, keys, savename='../results/mismatch'):
         recon_freq = (recon_freq * freq_std) + freq_mean
         
         # Calculate mismatch
-        mismatch_amp = calculate_mismatch(orig_amp, recon_amp)
-        mismatch_freq = calculate_mismatch(orig_freq, recon_freq)
-        print(mismatch_amp.shape, mismatch_freq.shape)
-        print(f"Mismatch for Amplitude: {mismatch_amp}, Frequency: {mismatch_freq}")
+        mismatch_amp[i] = calculate_mismatch(orig_amp, recon_amp)
+        mismatch_freq[i] = calculate_mismatch(orig_freq, recon_freq)
+        logging.debug(f"Mismatch for Amplitude: {mismatch_amp[i]}, Frequency: {mismatch_freq[i]}")
+
+        # Calculate chirp mass
+        m1, m2 = labels[i][0], labels[i][1]
+        chirp_mass = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+        logging.debug(f"Chirp mass for sample {i}: {chirp_mass}")
+        chirpmasses[i] = chirp_mass
+        totalmasses[i] = m1 + m2
+        massratios[i] = m1 / m2
+
+    for massarr, xname in zip([chirpmasses, totalmasses, massratios],
+                               ['Chirp Mass', 'Total Mass', 'Mass Ratio']):
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        ax.plot(massarr, mismatch_amp, '.', label=f'Amplitude',
+                markeredgewidth=0.75, alpha=0.75)
+        ax.plot(massarr, mismatch_freq, '.', label=f'Frequency',
+                markeredgewidth=0.75, alpha=0.75)
+        ax.set_xlabel(xname, fontsize=12)
+        ax.set_ylabel('Mismatch', fontsize=12)
+        ax.set_yscale('log')  # Set y-axis to logarithmic scale
+        # show minor ticks on x-axis
+        # ax.xaxis.set_minor_locator(plt.AutoLocator())
+        ax.xaxis.set_major_locator(plt.MaxNLocator(10))
+        plt.legend()
+        # plt.tight_layout()
+        # putils.beautifyPlot([ax])
+        savename = 'mismatch-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
+        logging.debug(f"Mismatch plot saved to {savedir+savename}.png")
+        plt.close()
+
+
+def calc_polarization_mismatch(hp_orig, hp_recon):
+    """
+    Calculate the mismatch between the original and reconstructed hplus/hcross waveforms.
+
+    Parameters:
+    -----------
+    hp_orig : np.ndarray or torch.Tensor
+        The original hplus waveform.
+    hp_recon : np.ndarray or torch.Tensor
+        The reconstructed hplus waveform.
+
+    Returns:
+    --------
+    mismatch : float
+        The mismatch value, 0 means perfect match, 1 means orthogonal.
+    """
+    from pycbc.filter import match as matchfunc
+    from pycbc.psd import aLIGOZeroDetHighPower
+    from pycbc.types import TimeSeries
+
+    if isinstance(hp_orig, torch.Tensor):
+        hp_orig = hp_orig.detach().cpu().numpy()
+    if isinstance(hp_recon, torch.Tensor):
+        hp_recon = hp_recon.detach().cpu().numpy()
+    
+    psd = aLIGOZeroDetHighPower(length=sample_len,
+                                delta_f=1.0/(len(hp_orig)*DELTA_T),  # NOT sample_len = duration * sample_rate
+                                low_freq_cutoff=f_lower)
+    
+    logging.debug(1.0/(len(hp_orig)*DELTA_T))
+    # Ensure all arrays are float64 for precision match
+    hp_orig = np.asarray(hp_orig, dtype=np.float64)
+    hp_recon = np.asarray(hp_recon, dtype=np.float64)
+    psd = psd.astype(np.float64)
+
+    hp_orig = TimeSeries(hp_orig, delta_t=DELTA_T)
+    hp_recon = TimeSeries(hp_recon, delta_t=DELTA_T)
+    logging.debug(hp_orig.sample_rate, hp_recon.sample_rate)
+    logging.debug(hp_orig.delta_f)
+
+    match, i = matchfunc(hp_orig, hp_recon, psd=psd, low_frequency_cutoff=f_lower)
+    logging.debug(f"Match value: {match}, Index: {i}")
+    mismatch = 1 - match
+    return mismatch
+
+
+def phase_from_frequency(freq, dt, theta0=0.0):
+    """
+    Compute gravitational-wave phase from a frequency time series.
+
+    Parameters
+    ----------
+    freq : array_like
+        Instantaneous frequency time series (Hz).
+    dt : float
+        Time step between samples (seconds).
+    phi0 : float, optional
+        Initial phase (radians). Default is 0.
+        
+    Returns
+    -------
+    phase : ndarray
+        Phase time series (radians).
+    """
+    from scipy.integrate import cumulative_trapezoid
+    # Integrate frequency using trapezoidal rule
+    theta_integral = cumulative_trapezoid(freq, dx=dt, initial=0.0)
+    # Multiply by 2π and add initial phase
+    return theta0 + 2 * np.pi * theta_integral
+
+
+def polarizations_from_ampfreq(amp, freq, orig_phase=None):
+    """
+    Convert amplitude and frequency to hplus and hcross polarizations.
+    """
+    phase = phase_from_frequency(freq, dt=1.0/SAMPLE_RATE)
+    hplus = amp * np.cos(phase)
+    hcross = amp * np.sin(phase)
+    return hplus, hcross
+
+def plot_polarization_mismatch(x, reconst, labels, keys, phase, reshape2orig=False,
+                               savedir='../results/'):
+    """
+    Plot the mismatch between the original and reconstructed hplus/hcross waveforms.
+
+    Parameters:
+    -----------
+    x : torch.Tensor
+        Original data input to the CVAE.
+    reconst : torch.Tensor
+        Reconstructed data generated by the CVAE.
+    labels : torch.Tensor
+        Labels associated with the original data.
+    keys : torch.Tensor
+        Keys associated with the original data.
+    phase : torch.Tensor
+        Phase information associated with the original data.
+
+    Returns:
+    --------
+    None
+
+    Outputs:
+    -------
+    Displays a plot of the polarization mismatch values.
+    """
+    x = x.cpu().numpy()
+    reconst = reconst.cpu().numpy()
+    labels = labels.cpu().numpy()
+    keys = keys.cpu().numpy()
+    phase = phase.cpu().numpy()
+
+    chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
+    totalmasses = np.zeros((labels.shape[0], 1))  # Store total masses for each sample
+    massratios = np.zeros((labels.shape[0], 1))  # Store mass ratios for each sample
+    mismatch_hplus = np.zeros((x.shape[0], 1))
+    mismatch_hcross = np.zeros((x.shape[0], 1))
+
+    for i in range(x.shape[0]):
+        if reshape2orig:
+            # Reshape to original data shape
+            orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
+            reconst = reconst.reshape([2,PRESET_ARRAY_SIZE])
+        else:
+            # Use the original shape of the data
+            logging.debug(x.shape, reconst.shape)
+            orig_data = x[i].reshape([2,x.shape[2]])
+            recon_data = reconst[i].reshape([2,reconst.shape[2]])
+
+        orig_amp, orig_freq = orig_data[0], orig_data[1]
+        recon_amp, recon_freq = recon_data[0], recon_data[1]
+        
+        # Obtain the keys for normalization
+        key = keys[i].reshape([2,2])
+        amp_mean, amp_std = key[0][0], key[0][1]
+        freq_mean, freq_std = key[1][0], key[1][1]
+
+        # De-normalize the original data!
+        orig_amp = (orig_amp * amp_std) + amp_mean
+        orig_freq = (orig_freq * freq_std) + freq_mean
+        # De-normalize the reconstructed data!
+        recon_amp = (recon_amp * amp_std) + amp_mean
+        recon_freq = (recon_freq * freq_std) + freq_mean
+        
+        # Combine original Amp/Freq to hplus/hcross
+        hp_orig = orig_amp * np.cos(phase[i])  # this is original phase
+        hc_orig = orig_amp * np.sin(phase[i])
+
+        # Calculate hplus/hcross for reconstructed data
+        hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq)
+
+        # Calculate mismatch for hplus and hcross
+        mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon)
+        mismatch_hcross[i] = calc_polarization_mismatch(hc_orig, hc_recon)
+        logging.debug(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
+
+        # Calculate chirp mass
+        m1, m2 = labels[i][0], labels[i][1]
+        chirp_mass = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+        logging.debug(f"Chirp mass for sample {i}: {chirp_mass}")
+        chirpmasses[i] = chirp_mass
+        totalmasses[i] = m1 + m2
+        massratios[i] = m1 / m2
+
+    for massarr, xname in zip([chirpmasses, totalmasses, massratios],
+                               ['Chirp Mass', 'Total Mass', 'Mass Ratio']):
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        ax.plot(massarr, mismatch_hplus, '.', label='$h_{+}$',
+                markeredgewidth=0.75, alpha=0.75)
+        ax.plot(massarr, mismatch_hcross, '.', label='$h_{\\times}$',
+                markeredgewidth=0.75, alpha=0.75)
+        ax.set_xlabel(xname, fontsize=12)
+        ax.set_ylabel('Mismatch', fontsize=12)
+        ax.set_yscale('log')  # Set y-axis to logarithmic scale
+        # show minor ticks on x-axis
+        # ax.xaxis.set_minor_locator(plt.AutoLocator())
+        ax.xaxis.set_major_locator(plt.MaxNLocator(10))
+        plt.legend()
+        # plt.tight_layout()
+        # putils.beautifyPlot([ax])
+        savename = 'mismatch-hphc-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
+        logging.info(f"Mismatch plot saved to {savedir+savename}.png")
+        plt.close()
 
 
 if __name__ == "__main__":
@@ -672,13 +905,16 @@ if __name__ == "__main__":
                             level=log_level, datefmt='%y-%m-%d %H:%M:%S',
                             force=True)
     
-    device = (
-        "cuda"
-        if torch.cuda.is_available()
-        else "mps"
-        if torch.backends.mps.is_available()
-        else "cpu"
-    )
+    # TODO: Sometimes, `cuda` is not available, and `torch.cuda.is_available()` just goes dead,
+    # with no error message. This last happended on 2025-07-22, right during and after a maintanence!
+    # device = (
+    #     "cuda"
+    #     if torch.cuda.is_available()
+    #     else "mps"
+    #     if torch.backends.mps.is_available()
+    #     else "cpu"
+    # )
+    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
     args.device = device
     logging.info(f"using {device} device !")
 

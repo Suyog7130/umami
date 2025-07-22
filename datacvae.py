@@ -92,7 +92,8 @@ OUTPUT_SHAPE = INPUT_SHAPE
 
 def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
              m2delta=None, criterion=True, plot=False, splitTT=True,
-             splitq=False, ntraining=0.7, nvald=0.1, ntest=0.2, qlim=10):
+             splitq=False, ntraining=0.7, nvald=0.1, ntest=0.2, qlim=10,
+             transparent=True):
     """
     Generate mass range for different specified criterion.
     Default is the one used is:
@@ -188,7 +189,13 @@ def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
         ax.set_ylabel('$m_2$ ($M_{\\odot}$)')
         putils.beautifyPlot([ax], grid=True, tickNum=8)
         plt.tight_layout()
-        plt.savefig(fname+f'-{str(len(masses))}-qlim{qlim}'+'.png', dpi=300)
+        fname = fname+f'-{str(len(masses))}-qlim{qlim}'
+        if transparent:
+            fname += '-transparent'
+            plt.savefig(fname+'.png', dpi=300, transparent=True)
+        else:
+            plt.savefig(fname+'.png', dpi=300)
+        logging.info(f"Mass plot saved to {fname+'.png'}")
         plt.show()
     if splitTT:
         return ttsplits
@@ -527,7 +534,8 @@ def get_fd_strain(m1, m2, approximant='IMRPhenomD', plot=False):
     return (strains, np.array([m1,m2]), np.array([spkeys, sckeys]))
 
 
-def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None):
+def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
+                    otherparams=False):
     """
     It is taken care of that the `hp` and `hc` are of the same length
     and the `amp` and `phase` and `freq` are of the same length.
@@ -536,20 +544,25 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None):
     These are the full waveforms, i.e. the ringdown part is not cut-off.
     The amplitudes are not rescaled to 10^20.
     """
+    # Initialize random distributions.
+    angles = np_gen.uniform(0., 2*np.pi, 3)
+
     extra = {}
     waveform_kwargs = {'approximant': approximant,
                         'mass1': m1,
                         'mass2': m2,
                         'f_lower': f_lower,
                         'delta_t': DELTA_T,
-                        # 'coa_phase': angles[0],
-                        # 'inclination': angles[1],
                         # 'right_ascension': angles[2],
                         # 'declination': angles[3],
                         # 'pol_angle': angles[4],
                         }
     if eccentricity is not None:
         waveform_kwargs['eccentricity'] = eccentricity
+    if otherparams:
+        waveform_kwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
+        # TODO: check if the inclination has to be in this range ??
+        waveform_kwargs['inclination'] = np_gen.uniform(0., np.pi)
     logging.info(waveform_kwargs)
     hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
 
@@ -624,6 +637,15 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None):
     # hc = hc * 10**20
     # amp = amp * 10**20
 
+    # append the extra info to the end of the data
+    extra['truncated'] = extra.get('truncated', False)
+    extra['padded'] = extra.get('padded', False)
+    extra['truncated_len'] = extra.get('truncated_len', None)
+    extra['padded_at'] = extra.get('padded_at', None)
+    extra['eccentricity'] = waveform_kwargs.get('eccentricity', None)
+    extra['coa_phase'] = waveform_kwargs.get('coa_phase', None)
+    extra['inclination'] = waveform_kwargs.get('inclination', None)
+
     return [hp, hc, amp, phase, freq, extra]
 
 
@@ -658,12 +680,13 @@ def write_hdf_grp(hf, data, grpname):
                 hf[grpname].create_dataset(name, data=d)
             else:
                 raise ValueError(f"Data for {name} is not a numpy array.")
-            
     else:
         raise ValueError("Data must be a numpy array or a list of arrays or \
                           a dictionary of arrays.")
+    
 
-def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4'):
+def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
+                      otherparams=False):
     fname = fname + '.hdf'
     logging.info(f'Writing data to HDF5 file {fname}')
     if os.path.exists(fname):
@@ -682,7 +705,8 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4'):
                 ecc = np.random.choice(np.random.uniform(0.01, 0.25, 200), size=1)[0]
             else:
                 ecc = None
-            data = get_vals_for_hdf(m1, m2, approximant, eccentricity=ecc)
+            data = get_vals_for_hdf(m1, m2, approximant, eccentricity=ecc,
+                                    otherparams=otherparams)
             # plt.plot(range(len(data[0])), data[0], label=f'{m1} & {m2}')
             # plt.legend()
             # plt.show()
@@ -698,20 +722,26 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4'):
             hfgrp.attrs['f_lower'] = f_lower
             if approximant == 'EccentricTD':
                 hfgrp.attrs['eccentricity'] = ecc
+
+            if otherparams:
+                hfgrp.attrs['coa_phase'] = data[-1]['coa_phase']
+                hfgrp.attrs['inclination'] = data[-1]['inclination']
+
             # extra info like truncated or padded
+            # save these for all samples, with `False` vals when no padding.
             logging.info(f'extra: {data[-1]}')
-            if 'truncated' in data[-1]:
-                hfgrp.attrs['truncated'] = data[-1]['truncated']
+            hfgrp.attrs['truncated'] = data[-1]['truncated']
+            hfgrp.attrs['padded'] = data[-1]['padded']
+            # This is the length of the original waveform
+            # before padding.
+            # This is useful to know how much padding was done.
+            # If the waveform was truncated, this will not be present.
+            # If the waveform was padded, this will be present.
+            if data[-1]['truncated_len'] is not None:
                 hfgrp.attrs['truncated_len'] = data[-1]['truncated_len']
-            # TODO: Should be saving this for all the waveforms, as Boolean!
-            if 'padded' in data[-1]:
-                hfgrp.attrs['padded'] = data[-1]['padded']
-                # This is the length of the original waveform
-                # before padding.
-                # This is useful to know how much padding was done.
-                # If the waveform was truncated, this will not be present.
-                # If the waveform was padded, this will be present.
+            if data[-1]['padded_at'] is not None:
                 hfgrp.attrs['padded_at'] = data[-1]['padded_at']
+
             write_hdf_grp(hf, data, grpname)
         logging.info(f"Data written to {fname} successfully.")
         hf.close()
@@ -955,6 +985,7 @@ class CustomDataset(Dataset):
                 return (np.vstack((amp, freq)).astype(np.float32), 
                         np.array([m1,m2]).astype(np.float32), 
                         np.array([amp_keys, freq_keys]).astype(np.float32), 
+                        np.array(np.array(data['phase']).astype(np.float32)),
                         dict(data.attrs))
             return (np.vstack((amp, freq)).astype(np.float32), 
                     np.array([m1,m2]).astype(np.float32), 
@@ -966,22 +997,26 @@ class CustomDataset(Dataset):
         Because `KeyError` arose when 'padded' is not found in the `data.attr`
         for some samples. The feature_batch and tag_batch should have the same
         length, so we can use the defaul collate function for both.
+        TODO: Make this robust to handle different number of returned values!
         """
         tag1_batch = []
         tag2_batch = []
         tag3_batch = []
+        tag4_batch = []
         feat_dict_batch = {}
         logging.debug(f'Batch size: {len(batch)}')
-        for tag1, tag2, tag3, feat_dict in batch:
+        for tag1, tag2, tag3, tag4, feat_dict in batch:
             logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}')
             # convert to tensors and move to the training device
             tag1 = torch.tensor(tag1, device=self.train_device, dtype=torch.float32)
             tag2 = torch.tensor(tag2, device=self.train_device, dtype=torch.float32)
             tag3 = torch.tensor(tag3, device=self.train_device, dtype=torch.float32)
+            tag4 = torch.tensor(tag4, device=self.train_device, dtype=torch.float32)
             # Append to the batch lists
             tag1_batch.append(tag1)
             tag2_batch.append(tag2)
             tag3_batch.append(tag3)
+            tag4_batch.append(tag4)
             # Append the feature dict to the batch dict
             for key, value in feat_dict.items():
                 if key not in feat_dict_batch:
@@ -991,8 +1026,9 @@ class CustomDataset(Dataset):
         tag1_batch = torch.stack(tag1_batch).to(device=self.train_device, dtype=torch.float32)
         tag2_batch = torch.stack(tag2_batch).to(device=self.train_device, dtype=torch.float32)
         tag3_batch = torch.stack(tag3_batch).to(device=self.train_device, dtype=torch.float32)
+        tag4_batch = torch.stack(tag4_batch).to(device=self.train_device, dtype=torch.float32)
         # Ensure all tensors are of the same shape
-        return (tag1_batch, tag2_batch, tag3_batch, feat_dict_batch)
+        return (tag1_batch, tag2_batch, tag3_batch, tag4_batch, feat_dict_batch)
 
     def __getitem__(self, idx):
         # logging.debug(idx)
@@ -1095,10 +1131,10 @@ def example2 (appoximant='SEONRv4', nsamples=10, qlim=5, m1end=75):
     plt.show()
     plt.close()
 
-def example3 (approximant='SEONRv4', ecc=True):
+def example3 (approximant='SEONRv4', ecc=True, transparent=True):
     fig, axes = plt.subplots(1, 2, figsize=(5, 2))
     # masses = get_mass(qlim=5, m1end=m1end)[0]
-    masses = np.array([[15, 50],[5, 30],[5,10]])
+    masses = np.array([[15, 50],[5, 30]])  # [5,10]])
     for i in range(len(masses)):
         m1 = masses[i,0]
         m2 = masses[i,1]
@@ -1132,13 +1168,17 @@ def example3 (approximant='SEONRv4', ecc=True):
     fname = f'freqamp-plot-{approximant}'
     # fname += '-jsps'
     # plt.savefig(fname+'.png', dpi=300, bbox_inches='tight')
-    plt.savefig(fname+'.png', dpi=300, bbox_inches='tight')
+    if transparent:
+        fname += '-transparent'
+        plt.savefig(fname+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    else:
+        plt.savefig(fname+'.png', dpi=300, bbox_inches='tight')
     plt.show()
     plt.close()
 
-def example4(approximant='SEOBNRv4', ecc=True):
+def example4(approximant='SEOBNRv4', ecc=True, transparent=True):
     fig, ax = plt.subplots(1, 1, figsize=(5, 2))
-    masses = np.array([[15, 50],[5, 30], [5,10]])
+    masses = np.array([[15, 50],[5, 30]]) # [5,10]])
     for i in range(len(masses)):
         m1 = masses[i, 0]
         m2 = masses[i, 1]
@@ -1160,7 +1200,11 @@ def example4(approximant='SEOBNRv4', ecc=True):
     plt.tight_layout()
     fname = f'strain-plot-{approximant}'
     # fname += '-jsps'
-    plt.savefig(fname + '.png', dpi=300, bbox_inches='tight')
+    if transparent:
+        fname += '-transparent'
+        plt.savefig(fname + '.png', dpi=300, bbox_inches='tight', transparent=True)
+    else:
+        plt.savefig(fname + '.png', dpi=300, bbox_inches='tight')
     plt.show()
     plt.close()
 
@@ -1598,6 +1642,8 @@ if __name__=="__main__":
 
     parser.add_argument('--nsamples', type=int, default=1,
                         help='Number of samples to generate for the specified operation.')
+    parser.add_argument('--qlim', type=int, default=5,
+                        help='Maximum mass ratio limit for generating waveforms.')
 
     parser.add_argument('--plotmass', action='store_true', default=False,
                         help='Plot mass distribution')
@@ -1609,6 +1655,9 @@ if __name__=="__main__":
                         help='Generate example frequency-domain strain data to check code.')
     parser.add_argument('--approximant', nargs='+', default=['IMRPhenomD'],
                         help='Approximant(s) to use. Can be a single value or a list.')
+    parser.add_argument('--otherparams', action='store_true', default=False,
+                        help='Use other parameters for the waveform generation.')
+    
     parser.add_argument('--example', action='store_true', default=False,
                         help='Reproduce PyCBC documentation example.')
     parser.add_argument('--example2', action='store_true', default=False,
@@ -1674,7 +1723,7 @@ if __name__=="__main__":
         logging.debug(len(ds))
     
     if args.plotmass:
-        get_mass(plot=args.plot, qlim=5)
+        get_mass(plot=args.plot, qlim=10)
 
     if args.getstrain:
         # masses = get_mass(qlim=5)[0]
@@ -1707,9 +1756,17 @@ if __name__=="__main__":
                  qlim=5, m1end=75)
         
     if args.example3:
-        example3(approximant=args.approximant)
+        approximant = args.approximant
+        if type(approximant) is str:
+            approximant = [approximant]
+        for apx in approximant:
+            example3(approximant=apx)
     if args.example4:
-        example4(approximant=args.approximant)
+        approximant = args.approximant
+        if type(approximant) is str:
+            approximant = [approximant]
+        for apx in approximant:
+            example4(approximant=apx)
     if args.example4b:
         example4b()
     if args.example5:
@@ -1742,14 +1799,18 @@ if __name__=="__main__":
     if args.savedata:
         if type(args.approximant) is list:
             args.approximant = args.approximant[0]
-        fname = args.approximant + args.fname
+        fname = '../data/' + args.approximant
+        if args.otherparams:
+            fname += '-coa&incli'
+        fname += args.fname
         ttsplits = get_mass(splitTT=True, plot=False)
-        # write_data_to_hdf(fname+'-train', masses=ttsplits[0],
-        #                   approximant=args.approximant)
-        # write_data_to_hdf(fname+'-valid', masses=ttsplits[1],
-        #                   approximant=args.approximant)
+        write_data_to_hdf(fname+'-train', masses=ttsplits[0],
+                          approximant=args.approximant, otherparams=args.otherparams)
+        write_data_to_hdf(fname+'-valid', masses=ttsplits[1],
+                          approximant=args.approximant, otherparams=args.otherparams)
         write_data_to_hdf(fname+'-test', masses=ttsplits[2],
-                          approximant=args.approximant)
+                          approximant=args.approximant,
+                          otherparams=args.otherparams)
 
     if args.checkhdf:
         fname = args.approximant+'-train'
