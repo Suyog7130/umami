@@ -92,7 +92,8 @@ OUTPUT_SHAPE = INPUT_SHAPE
 
 def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
              m2delta=None, criterion=True, plot=False, splitTT=True,
-             splitq=False, ntraining=0.7, nvald=0.1, ntest=0.2, qlim=10):
+             splitq=False, ntraining=0.7, nvald=0.1, ntest=0.2, qlim=10,
+             transparent=True):
     """
     Generate mass range for different specified criterion.
     Default is the one used is:
@@ -188,7 +189,13 @@ def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
         ax.set_ylabel('$m_2$ ($M_{\\odot}$)')
         putils.beautifyPlot([ax], grid=True, tickNum=8)
         plt.tight_layout()
-        plt.savefig(fname+f'-{str(len(masses))}-qlim{qlim}'+'.png', dpi=300)
+        fname = fname+f'-{str(len(masses))}-qlim{qlim}'
+        if transparent:
+            fname += '-transparent'
+            plt.savefig(fname+'.png', dpi=300, transparent=True)
+        else:
+            plt.savefig(fname+'.png', dpi=300)
+        logging.info(f"Mass plot saved to {fname+'.png'}")
         plt.show()
     if splitTT:
         return ttsplits
@@ -1626,6 +1633,8 @@ if __name__=="__main__":
 
     parser.add_argument('--nsamples', type=int, default=1,
                         help='Number of samples to generate for the specified operation.')
+    parser.add_argument('--qlim', type=int, default=5,
+                        help='Maximum mass ratio limit for generating waveforms.')
 
     parser.add_argument('--plotmass', action='store_true', default=False,
                         help='Plot mass distribution')
@@ -1705,7 +1714,7 @@ if __name__=="__main__":
         logging.debug(len(ds))
     
     if args.plotmass:
-        get_mass(plot=args.plot, qlim=5)
+        get_mass(plot=args.plot, qlim=10)
 
     if args.getstrain:
         # masses = get_mass(qlim=5)[0]
