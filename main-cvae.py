@@ -282,7 +282,7 @@ class Test:
         self.noshow = args.noshow
         self.nosave = args.nosave
 
-        today = datetime.today().strftime('%Y-%m-%d')
+        today = datetime.today().strftime('%Y%m%d')
         if not os.path.isdir(f'../results/{today}/'):
             os.makedirs(f'../results/{today}/')
         self.savedir = f'../results/{today}/'
@@ -348,8 +348,9 @@ class Test:
             #                       savename=None if self.nosave else self.savedir+'/reconst')
             plot_overplot(x, reconst, labels, keys, 
                           savename=None if self.nosave else self.savedir+'overplot')
-            plot_mismatch(x, reconst, labels, keys)
-            plot_polarization_mismatch(x, reconst, labels, keys, phase)
+            plot_mismatch(x, reconst, labels, keys, savedir=self.savedir)
+            plot_polarization_mismatch(x, reconst, labels, keys, phase, savedir=self.savedir)
+            print(f"Test completed for epoch {_+1}.")
 
 
 def removezeros(x, reconst, phase, attr):
@@ -529,7 +530,7 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
     if savename:
         savename += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(savename+'.png', dpi=300)
-        print(f"Overplot saved to {savename}")
+        logging.info(f"Overplot saved to {savename}")
     plt.show()
 
 
@@ -565,8 +566,7 @@ def calculate_mismatch(target, reconstructed):
     mismatch = 1 - match
     return mismatch
 
-def plot_mismatch(x, reconst, labels, keys,
-                  savedir='../results/', reshape2orig=False):
+def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../results/'):
     """
     Plot the mismatch between the original and reconstructed data.
 
@@ -661,7 +661,7 @@ def plot_mismatch(x, reconst, labels, keys,
         # putils.beautifyPlot([ax])
         savename = 'mismatch-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
-        logging.info(f"Mismatch plot saved to {savedir+savename}.png")
+        logging.debug(f"Mismatch plot saved to {savedir+savename}.png")
         plt.close()
 
 
@@ -745,8 +745,8 @@ def polarizations_from_ampfreq(amp, freq, orig_phase=None):
     hcross = amp * np.sin(phase)
     return hplus, hcross
 
-def plot_polarization_mismatch(x, reconst, labels, keys, phase,
-                                savedir='../results/', reshape2orig=False):
+def plot_polarization_mismatch(x, reconst, labels, keys, phase, reshape2orig=False,
+                               savedir='../results/'):
     """
     Plot the mismatch between the original and reconstructed hplus/hcross waveforms.
 
@@ -819,7 +819,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phase,
         # Calculate mismatch for hplus and hcross
         mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon)
         mismatch_hcross[i] = calc_polarization_mismatch(hc_orig, hc_recon)
-        logging.info(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
+        logging.debug(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
 
         # Calculate chirp mass
         m1, m2 = labels[i][0], labels[i][1]
