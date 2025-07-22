@@ -978,7 +978,8 @@ class CustomDataset(Dataset):
                 return (np.vstack((amp, freq)).astype(np.float32), 
                         np.array([m1,m2]).astype(np.float32), 
                         np.array([amp_keys, freq_keys]).astype(np.float32), 
-                        dict(data.attrs), np.array(data['phase']))
+                        np.array(np.array(data['phase']).astype(np.float32)),
+                        dict(data.attrs))
             return (np.vstack((amp, freq)).astype(np.float32), 
                     np.array([m1,m2]).astype(np.float32), 
                     np.array([amp_keys, freq_keys]).astype(np.float32))
@@ -989,22 +990,26 @@ class CustomDataset(Dataset):
         Because `KeyError` arose when 'padded' is not found in the `data.attr`
         for some samples. The feature_batch and tag_batch should have the same
         length, so we can use the defaul collate function for both.
+        TODO: Make this robust to handle different number of returned values!
         """
         tag1_batch = []
         tag2_batch = []
         tag3_batch = []
+        tag4_batch = []
         feat_dict_batch = {}
         logging.debug(f'Batch size: {len(batch)}')
-        for tag1, tag2, tag3, feat_dict in batch:
+        for tag1, tag2, tag3, tag4, feat_dict in batch:
             logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}')
             # convert to tensors and move to the training device
             tag1 = torch.tensor(tag1, device=self.train_device, dtype=torch.float32)
             tag2 = torch.tensor(tag2, device=self.train_device, dtype=torch.float32)
             tag3 = torch.tensor(tag3, device=self.train_device, dtype=torch.float32)
+            tag4 = torch.tensor(tag4, device=self.train_device, dtype=torch.float32)
             # Append to the batch lists
             tag1_batch.append(tag1)
             tag2_batch.append(tag2)
             tag3_batch.append(tag3)
+            tag4_batch.append(tag4)
             # Append the feature dict to the batch dict
             for key, value in feat_dict.items():
                 if key not in feat_dict_batch:
@@ -1014,8 +1019,9 @@ class CustomDataset(Dataset):
         tag1_batch = torch.stack(tag1_batch).to(device=self.train_device, dtype=torch.float32)
         tag2_batch = torch.stack(tag2_batch).to(device=self.train_device, dtype=torch.float32)
         tag3_batch = torch.stack(tag3_batch).to(device=self.train_device, dtype=torch.float32)
+        tag4_batch = torch.stack(tag4_batch).to(device=self.train_device, dtype=torch.float32)
         # Ensure all tensors are of the same shape
-        return (tag1_batch, tag2_batch, tag3_batch, feat_dict_batch)
+        return (tag1_batch, tag2_batch, tag3_batch, tag4_batch, feat_dict_batch)
 
     def __getitem__(self, idx):
         # logging.debug(idx)
