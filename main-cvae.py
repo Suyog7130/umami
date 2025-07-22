@@ -353,7 +353,9 @@ class Test:
             #                       savename=None if self.nosave else self.savedir+'/reconst')
             plot_overplot(x, reconst, labels, keys, 
                           savename=None if self.nosave else self.savedir+'overplot')
-            # TODO: 
+            # TODO: How do we know that the massratio arrays etc. correspond to correct values
+            #       in the mismatch arrays ?? Well, since the `x` and `reconst` are the same for
+            #       all the samples in the batch, we can just use the first sample's values, right?
             mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
                 = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
             mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios \
@@ -369,24 +371,45 @@ class Test:
                 'mismatch_hplus': mismatch_hplus.flatten(),
                 'mismatch_hcross': mismatch_hcross.flatten(),
             })], ignore_index=True)
-
         logging.info("All test batches completed.")
+
         # Plot the mismatch results for the entire test set using the dataframe
-        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
-        axes = axes.flatten()
-        for i, (massarr, xname) in enumerate(zip(
+        for (massarr, xname) in zip(
             [dfmm['chirp_mass'], dfmm['total_mass'], dfmm['mass_ratio']],
-            ['Chirp Mass', 'Total Mass', 'Mass Ratio'])):
-            axes[i].scatter(massarr, dfmm['mismatch_amp'], label='Amplitude Mismatch',
-                            marker='o', s=10, alpha=0.5)
-            axes[i].scatter(massarr, dfmm['mismatch_freq'], label='Frequency Mismatch',
-                            marker='x', s=10, alpha=0.5)
-            axes[i].set_xlabel(xname, fontsize=12)
-            axes[i].set_ylabel('Mismatch', fontsize=12)
-            axes[i].set_yscale('log')  # Set y-axis to logarithmic scale
-            axes[i].set_title(f'Mismatch vs {xname}', fontsize=12)
-        axes[2].scatter(dfmm['chirp_mass'], dfmm['mismatch_hplus'], label='HPlus Mismatch',
-                        marker='o', s=10, alpha=0.5)
+            ['Chirp Mass', 'Total Mass', 'Mass Ratio']):
+            logging.info(f"Plotting mismatch vs {xname} for the entire test set.")
+            
+            # Plot Amp/Freq mismatch vs massarrays
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.scatter(massarr, dfmm['mismatch_amp'], label='Amplitude Mismatch',
+                       marker='o', s=10, alpha=0.5)
+            ax.scatter(massarr, dfmm['mismatch_freq'], label='Frequency Mismatch',
+                       marker='x', s=10, alpha=0.5)
+            ax.set_xlabel(xname, fontsize=12)
+            ax.set_ylabel('Mismatch', fontsize=12)
+            ax.set_yscale('log')  # Set y-axis to logarithmic scale
+            ax.set_title(f'Mismatch vs {xname}', fontsize=12)
+            savename = 'mmplot-alltest-ampfreq-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+            plt.savefig(self.savedir+savename+'.png', dpi=300, bbox_inches='tight', transparent=True)
+            logging.debug(f"Mismatch plot saved to {self.savedir+savename}.png")
+            plt.close()
+
+            # Plot hplus/hcross mismatch vs massarrays
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.scatter(massarr, dfmm['mismatch_hplus'], label='HPlus Mismatch',
+                       marker='o', s=10, alpha=0.5)
+            ax.scatter(massarr, dfmm['mismatch_hcross'], label='HCross Mismatch',
+                       marker='x', s=10, alpha=0.5)
+            ax.set_xlabel(xname, fontsize=12)
+            ax.set_ylabel('Mismatch', fontsize=12)
+            ax.set_yscale('log')  # Set y-axis to logarithmic scale
+            ax.set_title(f'Mismatch vs {xname}', fontsize=12)
+            ax.legend()
+            savename = 'mmplot-alltest-hphc-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+            plt.savefig(self.savedir+savename+'.png', dpi=300, bbox_inches='tight', transparent=True)
+            logging.info(f"Mismatch plot saved to {self.savedir+savename}.png")
+            plt.close()
+        print("All mismatch plots generated for the test set.")
 
 
 def removezeros(x, reconst, phase, attr):
