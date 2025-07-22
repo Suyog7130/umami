@@ -318,6 +318,11 @@ class Test:
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
+        # Initialize dataframe to store mismatch results of whole test set!
+        dfmm = pd.DataFrame(columns=['chirp_mass', 'total_mass', 'mass_ratio',
+                                     'mismatch_amp', 'mismatch_freq', 
+                                     'mismatch_hplus', 'mismatch_hcross',])
+
         for _ in range(self.epochs):
             # `next(iter(self.test_loader))` gives us a batch of data!
             # Thus, `shape(x)` is (batch_size, 2, PRESET_ARRAY_SIZE) etc.
@@ -348,9 +353,40 @@ class Test:
             #                       savename=None if self.nosave else self.savedir+'/reconst')
             plot_overplot(x, reconst, labels, keys, 
                           savename=None if self.nosave else self.savedir+'overplot')
-            # plot_mismatch(x, reconst, labels, keys, savedir=self.savedir)
-            # plot_polarization_mismatch(x, reconst, labels, keys, phase, savedir=self.savedir)
-            print(f"Test completed for batch {_+1}.")
+            # TODO: 
+            mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
+                = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
+            mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios \
+                = plot_polarization_mismatch(x, reconst, labels, keys, phase, savedir=self.savedir, nobatchwiseplot=True)
+            logging.info(f"Test completed for batch {_+1}.")
+            # Save the mismatch results to the dataframe
+            dfmm = pd.concat([dfmm, pd.DataFrame({
+                'chirp_mass': chirpmasses.flatten(),
+                'total_mass': totalmasses.flatten(),
+                'mass_ratio': massratios.flatten(),
+                'mismatch_amp': mismatch_amp.flatten(),
+                'mismatch_freq': mismatch_freq.flatten(),
+                'mismatch_hplus': mismatch_hplus.flatten(),
+                'mismatch_hcross': mismatch_hcross.flatten(),
+            })], ignore_index=True)
+
+        logging.info("All test batches completed.")
+        # Plot the mismatch results for the entire test set using the dataframe
+        fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+        axes = axes.flatten()
+        for i, (massarr, xname) in enumerate(zip(
+            [dfmm['chirp_mass'], dfmm['total_mass'], dfmm['mass_ratio']],
+            ['Chirp Mass', 'Total Mass', 'Mass Ratio'])):
+            axes[i].scatter(massarr, dfmm['mismatch_amp'], label='Amplitude Mismatch',
+                            marker='o', s=10, alpha=0.5)
+            axes[i].scatter(massarr, dfmm['mismatch_freq'], label='Frequency Mismatch',
+                            marker='x', s=10, alpha=0.5)
+            axes[i].set_xlabel(xname, fontsize=12)
+            axes[i].set_ylabel('Mismatch', fontsize=12)
+            axes[i].set_yscale('log')  # Set y-axis to logarithmic scale
+            axes[i].set_title(f'Mismatch vs {xname}', fontsize=12)
+        axes[2].scatter(dfmm['chirp_mass'], dfmm['mismatch_hplus'], label='HPlus Mismatch',
+                        marker='o', s=10, alpha=0.5)
 
 
 def removezeros(x, reconst, phase, attr):
@@ -574,7 +610,8 @@ def calculate_mismatch(target, reconstructed):
     mismatch = 1 - match
     return mismatch
 
-def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../results/'):
+def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../results/',
+                  nobatchwiseplot=False):
     """
     Plot the mismatch between the original and reconstructed data.
 
@@ -651,26 +688,28 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
         totalmasses[i] = m1 + m2
         massratios[i] = m1 / m2
 
-    for massarr, xname in zip([chirpmasses, totalmasses, massratios],
-                               ['Chirp Mass', 'Total Mass', 'Mass Ratio']):
-        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-        ax.plot(massarr, mismatch_amp, '.', label=f'Amplitude',
-                markeredgewidth=0.75, alpha=0.75)
-        ax.plot(massarr, mismatch_freq, '.', label=f'Frequency',
-                markeredgewidth=0.75, alpha=0.75)
-        ax.set_xlabel(xname, fontsize=12)
-        ax.set_ylabel('Mismatch', fontsize=12)
-        ax.set_yscale('log')  # Set y-axis to logarithmic scale
-        # show minor ticks on x-axis
-        # ax.xaxis.set_minor_locator(plt.AutoLocator())
-        ax.xaxis.set_major_locator(plt.MaxNLocator(10))
-        plt.legend()
-        # plt.tight_layout()
-        # putils.beautifyPlot([ax])
-        savename = 'mismatch-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
-        plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
-        logging.debug(f"Mismatch plot saved to {savedir+savename}.png")
-        plt.close()
+    if not nobatchwiseplot:
+        for massarr, xname in zip([chirpmasses, totalmasses, massratios],
+                                ['Chirp Mass', 'Total Mass', 'Mass Ratio']):
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.plot(massarr, mismatch_amp, '.', label=f'Amplitude',
+                    markeredgewidth=0.75, alpha=0.75)
+            ax.plot(massarr, mismatch_freq, '.', label=f'Frequency',
+                    markeredgewidth=0.75, alpha=0.75)
+            ax.set_xlabel(xname, fontsize=12)
+            ax.set_ylabel('Mismatch', fontsize=12)
+            ax.set_yscale('log')  # Set y-axis to logarithmic scale
+            # show minor ticks on x-axis
+            # ax.xaxis.set_minor_locator(plt.AutoLocator())
+            ax.xaxis.set_major_locator(plt.MaxNLocator(10))
+            plt.legend()
+            # plt.tight_layout()
+            # putils.beautifyPlot([ax])
+            savename = 'mismatch-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+            plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
+            logging.debug(f"Mismatch plot saved to {savedir+savename}.png")
+            plt.close()
+    return mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios
 
 
 def calc_polarization_mismatch(hp_orig, hp_recon):
@@ -754,7 +793,7 @@ def polarizations_from_ampfreq(amp, freq, orig_phase=None):
     return hplus, hcross
 
 def plot_polarization_mismatch(x, reconst, labels, keys, phase, reshape2orig=False,
-                               savedir='../results/'):
+                               savedir='../results/', nobatchwiseplot=False):
     """
     Plot the mismatch between the original and reconstructed hplus/hcross waveforms.
 
@@ -837,26 +876,28 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phase, reshape2orig=Fal
         totalmasses[i] = m1 + m2
         massratios[i] = m1 / m2
 
-    for massarr, xname in zip([chirpmasses, totalmasses, massratios],
-                               ['Chirp Mass', 'Total Mass', 'Mass Ratio']):
-        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-        ax.plot(massarr, mismatch_hplus, '.', label='$h_{+}$',
-                markeredgewidth=0.75, alpha=0.75)
-        ax.plot(massarr, mismatch_hcross, '.', label='$h_{\\times}$',
-                markeredgewidth=0.75, alpha=0.75)
-        ax.set_xlabel(xname, fontsize=12)
-        ax.set_ylabel('Mismatch', fontsize=12)
-        ax.set_yscale('log')  # Set y-axis to logarithmic scale
-        # show minor ticks on x-axis
-        # ax.xaxis.set_minor_locator(plt.AutoLocator())
-        ax.xaxis.set_major_locator(plt.MaxNLocator(10))
-        plt.legend()
-        # plt.tight_layout()
-        # putils.beautifyPlot([ax])
-        savename = 'mismatch-hphc-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
-        plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
-        logging.info(f"Mismatch plot saved to {savedir+savename}.png")
-        plt.close()
+    if not nobatchwiseplot:
+        for massarr, xname in zip([chirpmasses, totalmasses, massratios],
+                                ['Chirp Mass', 'Total Mass', 'Mass Ratio']):
+            fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+            ax.plot(massarr, mismatch_hplus, '.', label='$h_{+}$',
+                    markeredgewidth=0.75, alpha=0.75)
+            ax.plot(massarr, mismatch_hcross, '.', label='$h_{\\times}$',
+                    markeredgewidth=0.75, alpha=0.75)
+            ax.set_xlabel(xname, fontsize=12)
+            ax.set_ylabel('Mismatch', fontsize=12)
+            ax.set_yscale('log')  # Set y-axis to logarithmic scale
+            # show minor ticks on x-axis
+            # ax.xaxis.set_minor_locator(plt.AutoLocator())
+            ax.xaxis.set_major_locator(plt.MaxNLocator(10))
+            plt.legend()
+            # plt.tight_layout()
+            # putils.beautifyPlot([ax])
+            savename = 'mismatch-hphc-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+            plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
+            logging.info(f"Mismatch plot saved to {savedir+savename}.png")
+            plt.close()
+    return mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios
 
 
 if __name__ == "__main__":
