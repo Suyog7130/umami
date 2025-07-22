@@ -281,7 +281,11 @@ class Test:
         self.batch_size = args.batch_size
         self.noshow = args.noshow
         self.nosave = args.nosave
-        self.savedir = '../results/'
+
+        today = datetime.today().strftime('%Y-%m-%d')
+        if not os.path.isdir(f'../results/{today}/'):
+            os.makedirs(f'../results/{today}/')
+        self.savedir = f'../results/{today}/'
         self.test_loader = self.setdataloader()
         logging.info('Test DataLoader set up.')
         self.epochs = 1
