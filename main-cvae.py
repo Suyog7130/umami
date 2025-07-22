@@ -337,7 +337,7 @@ class Test:
                 reconst = model.decode(z1, z1p, labels)
             logging.debug(x.shape, reconst.shape, keys.shape)
             logging.info('Test for current epoch completed. Removing zero padding if any.')
-            x, reconst = removezeros(x, reconst, attr)
+            x, reconst, phase = removezeros(x, reconst, phase, attr)
             logging.info(f'Removed zero padding from input and reconstructed data.')
             logging.info(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}')
             # plot_reconstruct_data(reconst, labels, keys,
@@ -348,7 +348,7 @@ class Test:
             plot_polarization_mismatch(x, reconst, labels, keys, phase)
 
 
-def removezeros(x, reconst, attr):
+def removezeros(x, reconst, phase, attr):
     """
     Remove zero padding from the input and reconstructed data.
     This is useful for visualizing the actual waveform data without padding.
@@ -382,7 +382,8 @@ def removezeros(x, reconst, attr):
         # padding is always at the end of the data.
         x = x[:, :, :attr['padded_at']]
         reconst = reconst[:, :, :attr['padded_at']]
-    return x, reconst
+        phase = phase[:, :attr['padded_at']]
+    return x, reconst, phase
 
 def plot_reconstruct_data(reconst, labels, keys, savename='../results/reconst'):
     """
@@ -676,19 +677,35 @@ def calc_polarization_mismatch(hp_orig, hp_recon):
     mismatch : float
         The mismatch value, 0 means perfect match, 1 means orthogonal.
     """
+    from pycbc.filter import match as matchfunc
+    from pycbc.psd import aLIGOZeroDetHighPower
+    from pycbc.types import TimeSeries
+
     if isinstance(hp_orig, torch.Tensor):
         hp_orig = hp_orig.detach().cpu().numpy()
     if isinstance(hp_recon, torch.Tensor):
         hp_recon = hp_recon.detach().cpu().numpy()
     
-    from pycbc.filter import match as matchfunc
-    from pycbc.psd import aLIGOZeroDetHighPower
     psd = aLIGOZeroDetHighPower(length=sample_len,
-                                delta_f=1.0/hp_recon.duration,
+                                delta_f=1.0/(len(hp_orig)*DELTA_T),  # NOT sample_len = duration * sample_rate
                                 low_freq_cutoff=f_lower)
-    match = matchfunc(hp_orig, hp_recon, psd=psd, low_frequency_cutoff=f_lower)
+    
+    logging.debug(1.0/(len(hp_orig)*DELTA_T))
+    # Ensure all arrays are float64 for precision match
+    hp_orig = np.asarray(hp_orig, dtype=np.float64)
+    hp_recon = np.asarray(hp_recon, dtype=np.float64)
+    psd = psd.astype(np.float64)
+
+    hp_orig = TimeSeries(hp_orig, delta_t=DELTA_T)
+    hp_recon = TimeSeries(hp_recon, delta_t=DELTA_T)
+    logging.debug(hp_orig.sample_rate, hp_recon.sample_rate)
+    logging.debug(hp_orig.delta_f)
+
+    match, i = matchfunc(hp_orig, hp_recon, psd=psd, low_frequency_cutoff=f_lower)
+    logging.debug(f"Match value: {match}, Index: {i}")
     mismatch = 1 - match
     return mismatch
+
 
 def phase_from_frequency(freq, dt, theta0=0.0):
     """
