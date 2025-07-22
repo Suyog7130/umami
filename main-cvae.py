@@ -323,10 +323,11 @@ class Test:
                                      'mismatch_amp', 'mismatch_freq', 
                                      'mismatch_hplus', 'mismatch_hcross',])
 
-        for _ in range(self.epochs):
+        # for _ in range(self.epochs):
             # `next(iter(self.test_loader))` gives us a batch of data!
             # Thus, `shape(x)` is (batch_size, 2, PRESET_ARRAY_SIZE) etc.
-            x, labels, keys, phase, attr = next(iter(self.test_loader))
+
+        for (x, labels, keys, phase, attr) in tqdm(iter(self.test_loader)):
             logging.debug(attr)
 
             # plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
@@ -349,10 +350,14 @@ class Test:
             x, reconst, phase = removezeros(x, reconst, phase, attr)
             logging.info(f'Removed zero padding from input and reconstructed data.')
             logging.info(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}')
+
             # plot_reconstruct_data(reconst, labels, keys,
             #                       savename=None if self.nosave else self.savedir+'/reconst')
-            plot_overplot(x, reconst, labels, keys, 
-                          savename=None if self.nosave else self.savedir+'overplot')
+
+            # # Only run this when required, else too many overplots are output!
+            # plot_overplot(x, reconst, labels, keys, 
+            #               savename=None if self.nosave else self.savedir+'overplot')
+            
             # TODO: How do we know that the massratio arrays etc. correspond to correct values
             #       in the mismatch arrays ?? Well, since the `x` and `reconst` are the same for
             #       all the samples in the batch, we can just use the first sample's values, right?
@@ -360,7 +365,7 @@ class Test:
                 = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
             mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios \
                 = plot_polarization_mismatch(x, reconst, labels, keys, phase, savedir=self.savedir, nobatchwiseplot=True)
-            logging.info(f"Test completed for batch {_+1}.")
+            logging.info(f"Test completed for current batch.")
             # Save the mismatch results to the dataframe
             dfmm = pd.concat([dfmm, pd.DataFrame({
                 'chirp_mass': chirpmasses.flatten(),
@@ -381,14 +386,15 @@ class Test:
             
             # Plot Amp/Freq mismatch vs massarrays
             fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-            ax.scatter(massarr, dfmm['mismatch_amp'], label='Amplitude Mismatch',
-                       marker='o', s=10, alpha=0.5)
-            ax.scatter(massarr, dfmm['mismatch_freq'], label='Frequency Mismatch',
-                       marker='x', s=10, alpha=0.5)
+            ax.plot(massarr, dfmm['mismatch_amp'], 'o', label='Amplitude',
+                    markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
+            ax.plot(massarr, dfmm['mismatch_freq'], 's', label='Frequency',
+                    markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
             ax.set_xlabel(xname, fontsize=12)
             ax.set_ylabel('Mismatch', fontsize=12)
             ax.set_yscale('log')  # Set y-axis to logarithmic scale
-            ax.set_title(f'Mismatch vs {xname}', fontsize=12)
+            # ax.set_title(f'Mismatch vs {xname}', fontsize=12)
+            ax.legend(loc='best')
             savename = 'mmplot-alltest-ampfreq-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
             plt.savefig(self.savedir+savename+'.png', dpi=300, bbox_inches='tight', transparent=True)
             logging.debug(f"Mismatch plot saved to {self.savedir+savename}.png")
@@ -396,15 +402,15 @@ class Test:
 
             # Plot hplus/hcross mismatch vs massarrays
             fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-            ax.scatter(massarr, dfmm['mismatch_hplus'], label='HPlus Mismatch',
-                       marker='o', s=10, alpha=0.5)
-            ax.scatter(massarr, dfmm['mismatch_hcross'], label='HCross Mismatch',
-                       marker='x', s=10, alpha=0.5)
+            ax.plot(massarr, dfmm['mismatch_hplus'], 'o', label='$h_{+}$',
+                       markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
+            ax.plot(massarr, dfmm['mismatch_hcross'], 's', label='$h_{\\times}$',
+                       markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
             ax.set_xlabel(xname, fontsize=12)
             ax.set_ylabel('Mismatch', fontsize=12)
             ax.set_yscale('log')  # Set y-axis to logarithmic scale
-            ax.set_title(f'Mismatch vs {xname}', fontsize=12)
-            ax.legend()
+            # ax.set_title(f'Mismatch vs {xname}', fontsize=12)
+            ax.legend(loc='best')
             savename = 'mmplot-alltest-hphc-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
             plt.savefig(self.savedir+savename+'.png', dpi=300, bbox_inches='tight', transparent=True)
             logging.info(f"Mismatch plot saved to {self.savedir+savename}.png")
