@@ -317,7 +317,7 @@ class Test:
         for _ in range(self.epochs):
             # `next(iter(self.test_loader))` gives us a batch of data!
             # Thus, `shape(x)` is (batch_size, 2, PRESET_ARRAY_SIZE) etc.
-            x, labels, keys, attr, phase = next(iter(self.test_loader))
+            x, labels, keys, phase, attr = next(iter(self.test_loader))
             logging.debug(attr)
 
             # plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
@@ -789,11 +789,11 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phase,
         recon_freq = (recon_freq * freq_std) + freq_mean
         
         # Combine original Amp/Freq to hplus/hcross
-        hp_orig = orig_amp * np.cos(phase)  # this is original phase
-        hc_orig = orig_amp * np.sin(phase)
+        hp_orig = orig_amp * np.cos(phase[i])  # this is original phase
+        hc_orig = orig_amp * np.sin(phase[i])
 
         # Calculate hplus/hcross for reconstructed data
-        hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq, phase)
+        hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq)
 
         # Calculate mismatch for hplus and hcross
         mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon)
