@@ -488,10 +488,11 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
     
     for j in range(1):
         i = np.random.randint(0, 49, size=1)
+        logging.debug(f"Plotting sample {i} with label {labels[i]}")
         if reshape2orig:
             # Reshape to original data shape
             orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
-            reconst = reconst.reshape([2,PRESET_ARRAY_SIZE])
+            reconst = reconst[i].reshape([2,PRESET_ARRAY_SIZE])
         else:
             # Use the original shape of the data
             logging.debug(x.shape, reconst.shape)
@@ -500,11 +501,16 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
         
         orig_amp, orig_freq = orig_data[0], orig_data[1]
         recon_amp, recon_freq = recon_data[0], recon_data[1]
+
+        logging.debug(type(labels[i]), labels[i].shape)
+        label = labels[i].reshape([2])
+        logging.debug(type(label), label.shape)
         
+        # NOTE: The overplot waveforms are not normalized!
         # Obtain the keys for normalization
-        key = keys[i].reshape([2,2])
-        amp_mean, amp_std = key[0][0], key[0][1]
-        freq_mean, freq_std = key[1][0], key[1][1]
+        # key = keys[i].reshape([2,2])
+        # amp_mean, amp_std = key[0][0], key[0][1]
+        # freq_mean, freq_std = key[1][0], key[1][1]
 
         # # De-normalize the original data!
         # orig_amp = (orig_amp * amp_std) + amp_mean
@@ -515,14 +521,13 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
         
         axes[0].plot(np.arange(len(orig_amp)), orig_amp, '-', label=f"Original")
         axes[0].plot(np.arange(len(recon_amp)), recon_amp, '--', label=f"Reconstructed")
-        
         axes[1].plot(np.arange(len(orig_freq)), orig_freq, '-', label=f"Original")
         axes[1].plot(np.arange(len(recon_freq)), recon_freq, '--', label=f"Reconstructed")
+        axes[1].set_title(f'$m_1$={float(label[0])}, $m_2$={float(label[1])}', fontsize=8)
 
     for i, axlabel in enumerate(['Amplitude', 'Frequency']):
         axes[i].set_xlabel('Sample length', fontsize=12)
         axes[i].set_ylabel(axlabel, fontsize=12)
-    axes[1].set_title(f'$m_1$={float(labels[i][0])}, $m_2$={float(labels[i][1])}', fontsize=8)
     axes[1].legend(fontsize=8, loc='upper left')
     plt.tight_layout()
     # plt.subplots_adjust(wspace=0.2)
