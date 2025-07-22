@@ -1131,10 +1131,10 @@ def example2 (appoximant='SEONRv4', nsamples=10, qlim=5, m1end=75):
     plt.show()
     plt.close()
 
-def example3 (approximant='SEONRv4', ecc=True):
+def example3 (approximant='SEONRv4', ecc=True, transparent=True):
     fig, axes = plt.subplots(1, 2, figsize=(5, 2))
     # masses = get_mass(qlim=5, m1end=m1end)[0]
-    masses = np.array([[15, 50],[5, 30],[5,10]])
+    masses = np.array([[15, 50],[5, 30]])  # [5,10]])
     for i in range(len(masses)):
         m1 = masses[i,0]
         m2 = masses[i,1]
@@ -1168,13 +1168,17 @@ def example3 (approximant='SEONRv4', ecc=True):
     fname = f'freqamp-plot-{approximant}'
     # fname += '-jsps'
     # plt.savefig(fname+'.png', dpi=300, bbox_inches='tight')
-    plt.savefig(fname+'.png', dpi=300, bbox_inches='tight')
+    if transparent:
+        fname += '-transparent'
+        plt.savefig(fname+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    else:
+        plt.savefig(fname+'.png', dpi=300, bbox_inches='tight')
     plt.show()
     plt.close()
 
-def example4(approximant='SEOBNRv4', ecc=True):
+def example4(approximant='SEOBNRv4', ecc=True, transparent=True):
     fig, ax = plt.subplots(1, 1, figsize=(5, 2))
-    masses = np.array([[15, 50],[5, 30], [5,10]])
+    masses = np.array([[15, 50],[5, 30]]) # [5,10]])
     for i in range(len(masses)):
         m1 = masses[i, 0]
         m2 = masses[i, 1]
@@ -1196,7 +1200,11 @@ def example4(approximant='SEOBNRv4', ecc=True):
     plt.tight_layout()
     fname = f'strain-plot-{approximant}'
     # fname += '-jsps'
-    plt.savefig(fname + '.png', dpi=300, bbox_inches='tight')
+    if transparent:
+        fname += '-transparent'
+        plt.savefig(fname + '.png', dpi=300, bbox_inches='tight', transparent=True)
+    else:
+        plt.savefig(fname + '.png', dpi=300, bbox_inches='tight')
     plt.show()
     plt.close()
 
@@ -1747,9 +1755,17 @@ if __name__=="__main__":
                  qlim=5, m1end=75)
         
     if args.example3:
-        example3(approximant=args.approximant)
+        approximant = args.approximant
+        if type(approximant) is str:
+            approximant = [approximant]
+        for apx in approximant:
+            example3(approximant=apx)
     if args.example4:
-        example4(approximant=args.approximant)
+        approximant = args.approximant
+        if type(approximant) is str:
+            approximant = [approximant]
+        for apx in approximant:
+            example4(approximant=apx)
     if args.example4b:
         example4b()
     if args.example5:
