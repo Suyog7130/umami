@@ -606,7 +606,6 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         hc = hc[diff:]
-
     # Have correct input lengths
     if len(amp) > PRESET_ARRAY_SIZE:
         diff = len(amp) - PRESET_ARRAY_SIZE
@@ -645,9 +644,90 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     extra['eccentricity'] = waveform_kwargs.get('eccentricity', None)
     extra['coa_phase'] = waveform_kwargs.get('coa_phase', None)
     extra['inclination'] = waveform_kwargs.get('inclination', None)
-
     return [hp, hc, amp, phase, freq, extra]
 
+
+def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
+            otherparams=False, dataset='raw'):
+    """
+    Generate the time-domain waveform for the given masses and
+    approximant. The waveform is generated with variable length (duration)
+    and this is directly converted to Amp/Freq and saved.
+    There are 3 different datasets that can be generated:
+    - `raw`: The raw time-domain waveform is generated, converted to Amp/Freq
+            and then saved, without appending zeros in hp/hc. The equal duration
+            waveforms of 1 second lenght for this dataset are the ones generated
+            in `get_vals_for_hdf`.
+    - `f_low`: The raw time-domain waveform is generated, and is made to be of
+            the desired duration of 1 second, by changing the lower freq cutoff.
+            Then it is converted to Amp/Freq and saved.
+    - `f_sample`: The raw time-domain waveform is generated, and is made to be
+            of the desired duration of 1 second, by changing the sample rate.
+            Then it is converted to Amp/Freq and saved.
+    """
+    # Initialize random distributions.
+    angles = np_gen.uniform(0., 2*np.pi, 3)
+
+    extra = {}
+    waveform_kwargs = {'approximant': approximant,
+                        'mass1': m1,
+                        'mass2': m2,
+                        'f_lower': f_lower,
+                        'delta_t': DELTA_T,
+                        # 'right_ascension': angles[2],
+                        # 'declination': angles[3],
+                        # 'pol_angle': angles[4],
+                        }
+    if eccentricity is not None:
+        waveform_kwargs['eccentricity'] = eccentricity
+    if otherparams:
+        waveform_kwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
+        # TODO: check if the inclination has to be in this range ??
+        waveform_kwargs['inclination'] = np_gen.uniform(0., np.pi)
+    logging.info(waveform_kwargs)
+    hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
+
+    plt.plot(hp.sample_times, hp, label='hp')
+    plt.plot(hc.sample_times, hc, label='hc')
+    plt.show()
+
+    hp = hp.trim_zeros()
+    hc = hc.trim_zeros()
+
+    if dataset=='f_low':
+
+    if dataset=='f_sample':
+        from pycbc.filters.resample import resample_to_delta_t
+        # Resample the waveform to the desired sample rate
+        logging.debug('Resampling the waveform to the desired sample rate')
+        sample_rate = len(hp) / 1.0
+        logging.info(f'Sample rate: {sample_rate}')
+        delta_t = 1 / sample_rate
+        hp = resample_to_delta_t(hp, delta_t)
+        hc = resample_to_delta_t(hc, delta_t)
+
+
+    # Calculate the amplitude and phase from the polarizations.
+    logging.debug('Converting `hp` & `hc` to Freq Amp!')
+    amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
+    phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
+    freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
+
+    hp = np.array(hp, dtype=np.float32)
+    hc = np.array(hc, dtype=np.float32)
+    amp = np.array(amp.data, dtype=np.float32)
+    phase = np.array(phase.data, dtype=np.float32)
+    freq = np.array(freq.data, dtype=np.float32)
+
+    # append the extra info to the end of the data
+    extra['truncated'] = extra.get('truncated', False)
+    extra['padded'] = extra.get('padded', False)
+    extra['truncated_len'] = extra.get('truncated_len', None)
+    extra['padded_at'] = extra.get('padded_at', None)
+    extra['eccentricity'] = waveform_kwargs.get('eccentricity', None)
+    extra['coa_phase'] = waveform_kwargs.get('coa_phase', None)
+    extra['inclination'] = waveform_kwargs.get('inclination', None)
+    return [hp, hc, amp, phase, freq, extra]
 
 
 def write_hdf_grp(hf, data, grpname):
@@ -768,6 +848,7 @@ def check_hdf(fname):
                 plt.legend()
                 plt.show()
     return hf
+
 
 
 class CustomDataset(Dataset):

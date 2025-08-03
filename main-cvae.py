@@ -165,14 +165,14 @@ def train(args):
     # `num_classes` is the size of the labels.
     model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=2, key_shape=(2,2)).to(args.device)
     # Add a learning rate scheduler
+    # Scheduler will adjust learning rate after every epoch
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
     logging.info('Model Initialized')
-    # Scheduler will adjust learning rate after every epoch
 
     logging.info(f'Starting Training with: {args}')
     train_rloss, valid_rloss = [], []  # running loss every batch
-    train_loss, valid_loss = [], []
+    train_loss, valid_loss = [], [] 
     netreconloss, netklloss = [], []
     for epoch in tqdm(range(args.epochs), desc='Epoch'):
         model.train(True)
