@@ -695,6 +695,7 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     hc = hc.trim_zeros()
 
     if dataset=='f_low':
+        pass
 
     if dataset=='f_sample':
         from pycbc.filters.resample import resample_to_delta_t
@@ -705,7 +706,6 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         delta_t = 1 / sample_rate
         hp = resample_to_delta_t(hp, delta_t)
         hc = resample_to_delta_t(hc, delta_t)
-
 
     # Calculate the amplitude and phase from the polarizations.
     logging.debug('Converting `hp` & `hc` to Freq Amp!')
