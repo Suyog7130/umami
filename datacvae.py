@@ -654,7 +654,8 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
 
 
 def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
-            otherparams=False, dataset='raw'):
+            otherparams=False, dataset='raw', cutoffprop=None,
+            calc_duration_mean=False):
     """
     Generate the time-domain waveform for the given masses and
     approximant. The waveform is generated with variable length (duration)
@@ -700,10 +701,35 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     hp = hp.trim_zeros()
     hc = hc.trim_zeros()
 
-    if dataset=='f_cutoff':
-        pass
+    if dataset=='f_cutoff' and hp.duration < DURATION:
+        logging.info(f'f_low={f_lower}, duration={hp.duration}')
+
+        # calculate new f_lower
+        mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+        new_fcutoff = ( DURATION / (cutoffprop * mchirp ** (-5/3)) )**(-3/8)
+        extra['f_lower'] = new_fcutoff
+        logging.info(f'New f_lower={new_fcutoff}')
+        # adjust the new f_lower to allow for some error
+        new_fcutoff -= 0.2*new_fcutoff
+
+        # generate a second waveform
+        waveform_kwargs['f_lower'] = new_fcutoff
+        hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
+        hp = hp.trim_zeros()
+        hc = hc.trim_zeros()
+        extra['delta_t'] = hp.delta_t
+        logging.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
+
+        # plt.plot(hp.sample_times, hp, label='hp')
+        # plt.plot(hc.sample_times, hc, label='hc')
+        # plt.show()
+        logging.info(f'sample_len={len(hp)}')
+        if calc_duration_mean:
+            return hp.duration
 
     if dataset=='f_sample':
+        # DEPRECATED!
+
         # # Resample the waveform to the desired sample rate
         # logging.debug('Resampling the waveform to the desired sample rate')
         # sample_rate = len(hp) / 1.0
@@ -730,6 +756,21 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         hp = pycbc.filter.resample.resample_to_delta_t(hp, new_delta_t)
         hc = pycbc.filter.resample.resample_to_delta_t(hc, new_delta_t)
         logging.info(f'Sample rate: {hp.sample_rate}, duration: {hp.duration}')
+
+    # Have correct input lengths!
+    # It should be ensured that the merger is always within the data.
+    if len(hp) > PRESET_ARRAY_SIZE:
+        extra['truncated'] = True
+        extra['truncated_len'] = diff = len(hp) - PRESET_ARRAY_SIZE
+        logging.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
+                            \n So truncating array from the left!')
+        hp = hp[diff:]
+    if len(hc) > PRESET_ARRAY_SIZE:
+        extra['truncated'] = True
+        extra['truncated_len'] = diff = len(hc) - PRESET_ARRAY_SIZE
+        logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
+                            \n So truncating array from the left!')
+        hc = hc[diff:]
 
     # Calculate the amplitude and phase from the polarizations.
     logging.debug('Converting `hp` & `hc` to Freq Amp!')
@@ -814,9 +855,10 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                 data = get_vals_for_hdf(m1, m2, approximant, eccentricity=ecc,
                                         otherparams=otherparams)
             else:
+                cutoffconst = calc_cutoffconst()
                 data = get_vals(m1, m2, approximant=approximant,
                                 eccentricity=ecc, otherparams=otherparams,
-                                dataset=dataset)
+                                dataset=dataset, cutoffconst=cutoffconst)
             # plt.plot(range(len(data[0])), data[0], label=f'{m1} & {m2}')
             # plt.legend()
             # plt.show()
@@ -828,8 +870,8 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
             hfgrp.attrs['mass2'] = m2
             hfgrp.attrs['approximant'] = approximant
             hfgrp.attrs['sample_rate'] = SAMPLE_RATE
-            hfgrp.attrs['delta_t'] = DELTA_T
-            hfgrp.attrs['f_lower'] = f_lower
+            hfgrp.attrs['delta_t'] = data[-1].get('delta_t', DELTA_T)
+            hfgrp.attrs['f_lower'] = data[-1].get('f_lower', f_lower)
             if approximant == 'EccentricTD':
                 hfgrp.attrs['eccentricity'] = ecc
 
@@ -1747,17 +1789,47 @@ def example5b(approximants=['SEOBNRv4', 'EccentricTD']):
     plt.close()
 
 
-def check_datasets(nsamples=1):
+def calc_cutoffconst(approximant='SEOBNRv4'):
+    """
+    Calculates the proportionality constant relating the duration
+    of the signal to the lower frequency cutoff.
+
+    ```math
+        T \propto f_{low}^{-8/3} M_{chirp}^{-5/3}
+        T = k * f_{low}^{-8/3} M_{chirp}^{-5/3}
+    ```
+
+    We keep `f_low` fixed at 40 Hz, generate samples for different
+    mass values and then find the proportionality constant based on the
+    formula described above.
+    """
+    m1 = m2 = np.arange(5, 75, 500)
+    mchirp = (m1 * m2) ** (3/5) / (m1 + m2) ** (1/5)
+    consts = np.zeros(len(mchirp))
+    for i in range(len(mchirp)):
+        hp, hc = get_td_waveform(approximant=approximant, mass1=m1[i], mass2=m2[i],
+                                  delta_t=DELTA_T, f_lower=f_lower)
+        consts[i] = hp.duration / (40 ** (-8/3) * mchirp[i] ** (-5/3))
+    const = np.mean(consts)
+    logging.info(f"Proportionality constant (k) for {approximant}: {const}")
+    return const
+
+
+def check_datasets(nsamples=10,):
     """
     Checks the datasets obtained via changing f_cutoff and f_sample.
     """
     logging.info("Checking datasets with different f_cutoff and f_sample values.")
     masses = get_mass(splitTT=False)
-    for i in range(nsamples):
+    cutoffconst = calc_cutoffconst()
+    durations = np.zeros(nsamples)
+    for i in tqdm(range(nsamples)):
         m1 = np.random.choice(masses[:,0])
         m2 = np.random.choice(masses[:,1])
         logging.info(f"Masses: {m1}, {m2}")
-        vals = get_vals(m1, m2, dataset='f_sample')
+        durations[i] = get_vals(m1, m2, dataset='f_cutoff', cutoffprop=cutoffconst, 
+                                calc_duration_mean=True)
+        print(f"Mean duration: {np.mean(durations)}")
 
 
 
@@ -1930,12 +2002,14 @@ if __name__=="__main__":
             fname += '-coa&incli'
         fname += args.fname
         ttsplits = get_mass(splitTT=True, plot=False)
-        # `dataset` can be `None`, `raw`, `f_low`, `f_sample`!
-        write_data_to_hdf(fname+'-train', masses=ttsplits[0], dataset='raw',
+
+        dataset = 'f_cutoff'
+        # `dataset` can be `None`, `raw`, `f_cutoff`, `f_sample`!
+        write_data_to_hdf(fname+'-train', masses=ttsplits[0], dataset=dataset,
                           approximant=args.approximant, otherparams=args.otherparams)
-        write_data_to_hdf(fname+'-valid', masses=ttsplits[1], dataset='raw',
+        write_data_to_hdf(fname+'-valid', masses=ttsplits[1], dataset=dataset,
                           approximant=args.approximant, otherparams=args.otherparams)
-        write_data_to_hdf(fname+'-test', masses=ttsplits[2], dataset='raw',
+        write_data_to_hdf(fname+'-test', masses=ttsplits[2], dataset=dataset,
                           approximant=args.approximant,
                           otherparams=args.otherparams)
 
