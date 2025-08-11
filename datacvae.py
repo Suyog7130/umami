@@ -658,7 +658,7 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
             and then saved, without appending zeros in hp/hc. The equal duration
             waveforms of 1 second lenght for this dataset are the ones generated
             in `get_vals_for_hdf`.
-    - `f_low`: The raw time-domain waveform is generated, and is made to be of
+    - `f_cutoff`: The raw time-domain waveform is generated, and is made to be of
             the desired duration of 1 second, by changing the lower freq cutoff.
             Then it is converted to Amp/Freq and saved.
     - `f_sample`: The raw time-domain waveform is generated, and is made to be
@@ -694,7 +694,7 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     hp = hp.trim_zeros()
     hc = hc.trim_zeros()
 
-    if dataset=='f_low':
+    if dataset=='f_cutoff':
         pass
 
     if dataset=='f_sample':
@@ -766,13 +766,14 @@ def write_hdf_grp(hf, data, grpname):
     
 
 def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
-                      otherparams=False):
-    fname = fname + '.hdf'
+                      otherparams=False, dataset=None):
     logging.info(f'Writing data to HDF5 file {fname}')
-    if os.path.exists(fname):
-        logging.info(f'File {fname} already exists. Using an incremented name.')
+    if os.path.exists(fname+'.hdf'):
+        logging.info(f'File {fname+'.hdf'} already exists. Using an incremented name.')
         fname = fname.split('.hdf')[0] + '-1.hdf'
-    with h5py.File(fname, 'w') as hf:
+    if dataset is not None:
+        fname += f'-{dataset}'
+    with h5py.File(fname+'.hdf', 'w') as hf:
         # Create a group for each mass
         for i, mass in tqdm(enumerate(masses),
                             total=len(masses),
@@ -785,8 +786,13 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                 ecc = np.random.choice(np.random.uniform(0.01, 0.25, 200), size=1)[0]
             else:
                 ecc = None
-            data = get_vals_for_hdf(m1, m2, approximant, eccentricity=ecc,
-                                    otherparams=otherparams)
+            if dataset is None:
+                data = get_vals_for_hdf(m1, m2, approximant, eccentricity=ecc,
+                                        otherparams=otherparams)
+            else:
+                data = get_vals(m1, m2, approximant=approximant,
+                                eccentricity=ecc, otherparams=otherparams,
+                                dataset=dataset)
             # plt.plot(range(len(data[0])), data[0], label=f'{m1} & {m2}')
             # plt.legend()
             # plt.show()
@@ -823,7 +829,7 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                 hfgrp.attrs['padded_at'] = data[-1]['padded_at']
 
             write_hdf_grp(hf, data, grpname)
-        logging.info(f"Data written to {fname} successfully.")
+        logging.info(f"Data written to {fname+'.hdf'} successfully.")
         hf.close()
 
 def check_hdf(fname):
@@ -1885,11 +1891,12 @@ if __name__=="__main__":
             fname += '-coa&incli'
         fname += args.fname
         ttsplits = get_mass(splitTT=True, plot=False)
-        write_data_to_hdf(fname+'-train', masses=ttsplits[0],
+        # `dataset` can be `None`, `raw`, `f_low`, `f_sample`!
+        write_data_to_hdf(fname+'-train', masses=ttsplits[0], dataset='raw',
                           approximant=args.approximant, otherparams=args.otherparams)
-        write_data_to_hdf(fname+'-valid', masses=ttsplits[1],
+        write_data_to_hdf(fname+'-valid', masses=ttsplits[1], dataset='raw',
                           approximant=args.approximant, otherparams=args.otherparams)
-        write_data_to_hdf(fname+'-test', masses=ttsplits[2],
+        write_data_to_hdf(fname+'-test', masses=ttsplits[2], dataset='raw',
                           approximant=args.approximant,
                           otherparams=args.otherparams)
 
