@@ -44,6 +44,7 @@ import pycbc.psd
 from pycbc.waveform import get_td_waveform
 import pycbc.waveform, pycbc.noise, pycbc.psd, pycbc.distributions, \
     pycbc.detector
+import pycbc.filter
 
 from sklearn import metrics
 
@@ -62,7 +63,7 @@ APPROXIMANTS = ['IMRPhenomD', 'SEOBNRv4', 'NRSur7dq4', 'EccentricTD']
 SAMPLE_RATE = 8192.0  # n_samples = duration(s) / sample_rate
 DURATION = 1.00
 sample_len = int(DURATION * SAMPLE_RATE)
-DELTA_T = DURATION / SAMPLE_RATE
+DELTA_T = DURATION / SAMPLE_RATE   # delta_t is just 1/sample_rate!
 delta_f = 1.0 / DURATION  # delta_f = 1.0 / duration(s)
 f_lower = 40.0
 f_len = sample_len // 2 + 1  # upper frequency
@@ -703,7 +704,6 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         pass
 
     if dataset=='f_sample':
-        # from pycbc.filters.resample import resample_to_delta_t
         # # Resample the waveform to the desired sample rate
         # logging.debug('Resampling the waveform to the desired sample rate')
         # sample_rate = len(hp) / 1.0
@@ -713,15 +713,23 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         # hc = resample_to_delta_t(hc, delta_t)
         sample_len = len(hp)
         logging.info(f'Sample length: {sample_len}, duration: {hp.duration}')
-        new_sample_rate = sample_len / DURATION
-        new_delta_t = 1 / new_sample_rate
+        logging.info(f'Sample rate: {hp.sample_rate}, delta_t: {hp.delta_t}')
+        new_sample_rate = 0.25 * hp.sample_rate
+        new_delta_t = 1 / (hp.duration * SAMPLE_RATE)
         waveform_kwargs['delta_t'] = new_delta_t
+        logging.info(f'New sample rate: {new_sample_rate}, new delta_t: {new_delta_t}')
         hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
         logging.info(f'Sample rate: {hp.sample_rate}, duration: {hp.duration}')
 
+        hp = hp.trim_zeros()
+        hc = hc.trim_zeros()
         plt.plot(hp.sample_times, hp, label='hp')
         plt.plot(hc.sample_times, hc, label='hc')
         plt.show()
+
+        hp = pycbc.filter.resample.resample_to_delta_t(hp, new_delta_t)
+        hc = pycbc.filter.resample.resample_to_delta_t(hc, new_delta_t)
+        logging.info(f'Sample rate: {hp.sample_rate}, duration: {hp.duration}')
 
     # Calculate the amplitude and phase from the polarizations.
     logging.debug('Converting `hp` & `hc` to Freq Amp!')
