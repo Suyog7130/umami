@@ -654,7 +654,7 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
 
 
 def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
-            otherparams=False, dataset='raw', cutoffprop=None,
+            otherparams=False, dataset='raw', cutoffconst=None,
             calc_duration_mean=False):
     """
     Generate the time-domain waveform for the given masses and
@@ -706,7 +706,7 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
 
         # calculate new f_lower
         mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
-        new_fcutoff = ( DURATION / (cutoffprop * mchirp ** (-5/3)) )**(-3/8)
+        new_fcutoff = ( DURATION / (cutoffconst * mchirp ** (-5/3)) )**(-3/8)
         extra['f_lower'] = new_fcutoff
         logging.info(f'New f_lower={new_fcutoff}')
         # adjust the new f_lower to allow for some error
@@ -2014,7 +2014,10 @@ if __name__=="__main__":
                           otherparams=args.otherparams)
 
     if args.checkhdf:
-        fname = args.approximant+'-train'
+        if type(args.approximant) is list:
+            args.approximant = args.approximant[0]
+        dataset = '-f_cutoff'
+        fname = '../data/' + args.approximant + '-train' + dataset
         check_hdf(fname+'.hdf')
 
     if args.checkdatasets:
