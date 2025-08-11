@@ -159,47 +159,52 @@ def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
                     masses.append([m1,m2])
 
     masses = np.random.permutation(np.array(masses))
-    ntraining = int(ntraining*len(masses))
-    nvald = int(nvald*len(masses))
-    ntest = int(ntest*len(masses))
-    logging.debug(f'Training: {ntraining}, Validation: {nvald}, Testing: {ntest}')
+    logging.debug(f'type(masses)={type(masses)}')
+    if not splitTT:
+        logging.debug(f'type(masses)={type(masses)}')
+        return masses
+
     if splitTT:
+        ntraining = int(ntraining*len(masses))
+        nvald = int(nvald*len(masses))
+        ntest = int(ntest*len(masses))
+        logging.debug(f'Training: {ntraining}, Validation: {nvald}, Testing: {ntest}')
+
         ttsplits = np.split(masses, [ntraining,ntraining+nvald,ntraining+nvald+ntest])
         logging.debug(ttsplits[0].shape)
         logging.debug(ttsplits[1].shape)
         logging.debug(ttsplits[2].shape)
+        logging.debug(f'type(ttsplits)={type(ttsplits)}')
 
-
-    if plot:
-        fig, ax = plt.subplots(1, 1, figsize=(5,5))
-        if splitTT:
-            ax.plot(ttsplits[0][:,0], ttsplits[0][:,1], '.', 
-                    color='darkgray', label='Training')
-            ax.plot(ttsplits[1][:,0], ttsplits[1][:,1], '.', 
-                    color='blue', label='Validation', alpha=0.5)
-            ax.plot(ttsplits[2][:,0], ttsplits[2][:,1], '.', 
-                    color='red', label='Testing', alpha=0.5,)
-            ax.legend()
-        else:
-            ax.plot(masses[:,0], masses[:,1], '.')
-        #if not criterion=='gh18':
-        #    ax.set_xlim([m1start-m1delta, m1end+m1delta])
-        #    ax.set_ylim([m2start-m2delta, m2end+m2delta])
-        ax.set_xlabel('$m_1$ ($M_{\\odot}$)')
-        ax.set_ylabel('$m_2$ ($M_{\\odot}$)')
-        putils.beautifyPlot([ax], grid=True, tickNum=8)
-        plt.tight_layout()
-        fname = fname+f'-{str(len(masses))}-qlim{qlim}'
-        if transparent:
-            fname += '-transparent'
-            plt.savefig(fname+'.png', dpi=300, transparent=True)
-        else:
-            plt.savefig(fname+'.png', dpi=300)
-        logging.info(f"Mass plot saved to {fname+'.png'}")
-        plt.show()
-    if splitTT:
+        if plot:
+            fig, ax = plt.subplots(1, 1, figsize=(5,5))
+            if splitTT:
+                ax.plot(ttsplits[0][:,0], ttsplits[0][:,1], '.', 
+                        color='darkgray', label='Training')
+                ax.plot(ttsplits[1][:,0], ttsplits[1][:,1], '.', 
+                        color='blue', label='Validation', alpha=0.5)
+                ax.plot(ttsplits[2][:,0], ttsplits[2][:,1], '.', 
+                        color='red', label='Testing', alpha=0.5,)
+                ax.legend()
+            else:
+                ax.plot(masses[:,0], masses[:,1], '.')
+            #if not criterion=='gh18':
+            #    ax.set_xlim([m1start-m1delta, m1end+m1delta])
+            #    ax.set_ylim([m2start-m2delta, m2end+m2delta])
+            ax.set_xlabel('$m_1$ ($M_{\\odot}$)')
+            ax.set_ylabel('$m_2$ ($M_{\\odot}$)')
+            putils.beautifyPlot([ax], grid=True, tickNum=8)
+            plt.tight_layout()
+            fname = fname+f'-{str(len(masses))}-qlim{qlim}'
+            if transparent:
+                fname += '-transparent'
+                plt.savefig(fname+'.png', dpi=300, transparent=True)
+            else:
+                plt.savefig(fname+'.png', dpi=300)
+            logging.info(f"Mass plot saved to {fname+'.png'}")
+            plt.show()
+        logging.debug(f'type(ttsplits)={type(ttsplits)}')
         return ttsplits
-    return masses
 
 
 def get_strain (m1, m2, approximant='IMRPhenomD', convert=False,
@@ -687,9 +692,9 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     logging.info(waveform_kwargs)
     hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
 
-    plt.plot(hp.sample_times, hp, label='hp')
-    plt.plot(hc.sample_times, hc, label='hc')
-    plt.show()
+    # plt.plot(hp.sample_times, hp, label='hp')
+    # plt.plot(hc.sample_times, hc, label='hc')
+    # plt.show()
 
     hp = hp.trim_zeros()
     hc = hc.trim_zeros()
@@ -698,14 +703,25 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         pass
 
     if dataset=='f_sample':
-        from pycbc.filters.resample import resample_to_delta_t
-        # Resample the waveform to the desired sample rate
-        logging.debug('Resampling the waveform to the desired sample rate')
-        sample_rate = len(hp) / 1.0
-        logging.info(f'Sample rate: {sample_rate}')
-        delta_t = 1 / sample_rate
-        hp = resample_to_delta_t(hp, delta_t)
-        hc = resample_to_delta_t(hc, delta_t)
+        # from pycbc.filters.resample import resample_to_delta_t
+        # # Resample the waveform to the desired sample rate
+        # logging.debug('Resampling the waveform to the desired sample rate')
+        # sample_rate = len(hp) / 1.0
+        # logging.info(f'Sample rate: {sample_rate}')
+        # delta_t = 1 / sample_rate
+        # hp = resample_to_delta_t(hp, delta_t)
+        # hc = resample_to_delta_t(hc, delta_t)
+        sample_len = len(hp)
+        logging.info(f'Sample length: {sample_len}, duration: {hp.duration}')
+        new_sample_rate = sample_len / DURATION
+        new_delta_t = 1 / new_sample_rate
+        waveform_kwargs['delta_t'] = new_delta_t
+        hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
+        logging.info(f'Sample rate: {hp.sample_rate}, duration: {hp.duration}')
+
+        plt.plot(hp.sample_times, hp, label='hp')
+        plt.plot(hc.sample_times, hc, label='hc')
+        plt.show()
 
     # Calculate the amplitude and phase from the polarizations.
     logging.debug('Converting `hp` & `hc` to Freq Amp!')
@@ -769,7 +785,7 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                       otherparams=False, dataset=None):
     logging.info(f'Writing data to HDF5 file {fname}')
     if os.path.exists(fname+'.hdf'):
-        logging.info(f'File {fname+'.hdf'} already exists. Using an incremented name.')
+        logging.info(f'File {fname}.hdf already exists. Using an incremented name.')
         fname = fname.split('.hdf')[0] + '-1.hdf'
     if dataset is not None:
         fname += f'-{dataset}'
@@ -1722,7 +1738,20 @@ def example5b(approximants=['SEOBNRv4', 'EccentricTD']):
     plt.show()
     plt.close()
 
-    
+
+def check_datasets(nsamples=1):
+    """
+    Checks the datasets obtained via changing f_cutoff and f_sample.
+    """
+    logging.info("Checking datasets with different f_cutoff and f_sample values.")
+    masses = get_mass(splitTT=False)
+    for i in range(nsamples):
+        m1 = np.random.choice(masses[:,0])
+        m2 = np.random.choice(masses[:,1])
+        logging.info(f"Masses: {m1}, {m2}")
+        vals = get_vals(m1, m2, dataset='f_sample')
+
+
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Generate Data for training a CVAE for GW data')
@@ -1765,6 +1794,8 @@ if __name__=="__main__":
                         help='Plot the duration of the waveform as a function of the sample rate.')
     parser.add_argument('--flower_duration_3d_plot', '-flower3d', action='store_true', default=False,
                         help='3D plot of duration as a function of m1, m2, and f_lower.')
+    parser.add_argument('--checkdatasets', action='store_true', default=False,
+                        help='Check the datasets obtained via changing f_cutoff and f_sample.')
 
     parser.add_argument('--plot', action='store_true', default=False,
                         help='Output and save a Plot!')
@@ -1903,3 +1934,6 @@ if __name__=="__main__":
     if args.checkhdf:
         fname = args.approximant+'-train'
         check_hdf(fname+'.hdf')
+
+    if args.checkdatasets:
+        check_datasets()
