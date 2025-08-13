@@ -1118,6 +1118,12 @@ class CustomDataset(Dataset):
             logging.debug(data.keys())
             m1, m2 = data.attrs['mass1'], data.attrs['mass2']
             amp, freq = np.array(data['amp']), np.array(data['freq'])
+            
+            # freq array will be one less in length than amp
+            logging.debug(f'len(amp)={len(amp)}, len(freq)={len(freq)}')
+            if len(freq) < len(amp):
+                amp = amp[1:]
+            assert len(amp) == len(freq), "Amplitude and Frequency arrays must be of the same length."
 
             # Rescale the amp by 10^20
             logging.debug(f'Original Amp: {amp}')

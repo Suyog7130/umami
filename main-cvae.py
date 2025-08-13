@@ -146,10 +146,15 @@ def train(args):
     # validation_set = CustomDataset(validation_inputs, validation_outputs,
     #                                          train_device=device)
     logging.info(f"Initialing Data with arguments:\n{args.__dict__}")
+    trainhdf = args.datadir + args.approximant + '-train'
+    validhdf = args.datadir + args.approximant + '-valid'
+    if args.fcutoff:
+        trainhdf += '-f_cutoff'
+        validhdf += '-f_cutoff'
     train_set = CustomDataset(forwhat='train', approximant=args.approximant,
-                            convert=args.convert, hdf_fname=args.datadir+args.approximant+'-train',)
+                            convert=args.convert, hdf_fname=trainhdf,)
     valid_set = CustomDataset(forwhat='valid', approximant=args.approximant,
-                            convert=args.convert, hdf_fname=args.datadir+args.approximant+'-valid',)
+                            convert=args.convert, hdf_fname=validhdf,)
     logging.info(f"Train set size: {len(train_set)}")
     logging.info(f"Validation set size: {len(valid_set)}")
 
@@ -163,6 +168,8 @@ def train(args):
 
     # Initialize Model
     # `num_classes` is the size of the labels.
+    if args.fcutoff:
+        PRESET_ARRAY_SIZE = 8190
     model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=2, key_shape=(2,2)).to(args.device)
     # Add a learning rate scheduler
     # Scheduler will adjust learning rate after every epoch
@@ -179,7 +186,8 @@ def train(args):
         # avg_loss = train_one_epoch(training_loader, epoch)
 
         # Train model for one Epoch
-        for x, labels, keys in tqdm(training_loader, desc='train-batch'):
+        for x, labels, keys in tqdm(training_loader, total=len(training_loader),
+                                    desc='batch'):
             """
             `x` is [freq, amp], `labels` is [m1,m2] and
             `keys` is [[amp-mean,amp-var],[freq-mean,freq-var]]
@@ -290,13 +298,16 @@ class Test:
         logging.info('Test DataLoader set up.')
         self.epochs = 1
         self.model_path = args.model
+        self.testhdf = self.datadir+self.approximant+'-test'
+        if args.fcutoff:
+            self.testhdf += '-f_cutoff'
 
     def setdataloader(self):
         """
         Set up the DataLoader for the test dataset.
         """
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
-                                convert=self.convert, hdf_fname=self.datadir+self.approximant+'-test',
+                                convert=self.convert, hdf_fname=self.testhdf,
                                 returnattr=True, train_device=args.device, )
         logging.info(f'Reading test data from {self.datadir+self.approximant+"-test.hdf"}')
         test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=True,
@@ -932,8 +943,8 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phase, reshape2orig=Fal
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Non-Eccentric GW Generator')
 
-    parser.add_argument('--nsamples', action='store', default=1000, type=int,
-                            help='default=%(default)s')
+    # parser.add_argument('--nsamples', action='store', default=1000, type=int,
+    #                         help='default=%(default)s')
     parser.add_argument('--approximant', action='store', default='IMRPhenomD', )
     parser.add_argument('--batch-size', action='store', default=50, type=int,
                             help='default=%(default)s')
@@ -954,6 +965,9 @@ if __name__ == "__main__":
     
     parser.add_argument('--datadir', action='store', default='../data/',
                             help='directory where data is stored (default=%(default)s)')
+    parser.add_argument('--fcutoff', action='store_true', default=False,
+                            help='use the data which has equal duration samples with \
+                                variable frequency cutoff (default=%(default)s)')
 
     parser.add_argument('--test', action='store_true', default=False,
                             help='whether to test?')
