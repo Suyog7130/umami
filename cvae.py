@@ -425,7 +425,7 @@ class CVAE(nn.Module):
         #x = torch.cat([x.view(x.size(0), -1), labels], dim=1)
         h = self.x_encoder(x, labels)
         z2_mean, z2_log_var = h.chunk(2, dim=1)
-        logging.debug(z2_log_var.shape)
+        # logging.debug(z2_log_var.shape)
         return z2_mean, z2_log_var
     
     def encode_key(self, keys, labels):
@@ -435,7 +435,7 @@ class CVAE(nn.Module):
         # directly concatenate the input and labels at the input pass.
         h = self.key_encoder(x)
         z2p_mean, z2p_log_var = h.chunk(2, dim=1)
-        logging.debug(z2p_mean, z2p_log_var)
+        # logging.debug(z2p_mean, z2p_log_var)
         return z2p_mean, z2p_log_var
     
     def encode_label_for_x(self, labels):
@@ -449,7 +449,7 @@ class CVAE(nn.Module):
         # Outputs `z1prime` from Fig 11 of the paper.
         h = self.label_cond_for_key(labels)
         z1p_mean, z1p_log_var = h.chunk(2, dim=1)
-        logging.debug(z1p_mean, z1p_log_var)
+        # logging.debug(z1p_mean, z1p_log_var)
         return z1p_mean, z1p_log_var
 
     def decode(self, z2, z2p, labels):
