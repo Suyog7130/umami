@@ -172,9 +172,9 @@ def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
         logging.debug(f'Training: {ntraining}, Validation: {nvald}, Testing: {ntest}')
 
         ttsplits = np.split(masses, [ntraining,ntraining+nvald,ntraining+nvald+ntest])
-        logging.debug(ttsplits[0].shape)
-        logging.debug(ttsplits[1].shape)
-        logging.debug(ttsplits[2].shape)
+        logging.debug(f"Training set shape: {ttsplits[0].shape}")
+        logging.debug(f"Validation set shape: {ttsplits[1].shape}")
+        logging.debug(f"Testing set shape: {ttsplits[2].shape}")
         logging.debug(f'type(ttsplits)={type(ttsplits)}')
 
         if plot:
@@ -272,7 +272,7 @@ def get_strain (m1, m2, approximant='IMRPhenomD', convert=False,
 
     logging.debug(f"Type of hp: {type(hp)}, Type of hc: {type(hc)}")
     logging.debug(f"Length of hp: {len(hp)}, Length of hc: {len(hc)}")
-    logging.debug(dir(hp))
+    # logging.debug(dir(hp))
     logging.debug(f'duration={hp.duration}')
     logging.debug(f'sample-rate={hp.sample_rate}')
 
@@ -618,7 +618,7 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         amp = amp[diff:]
-    logging.debug(amp.shape)
+    logging.debug(f'amp.shape: {amp.shape}')
     if len(phase) > PRESET_ARRAY_SIZE:
         diff = len(phase) - PRESET_ARRAY_SIZE
         logging.debug(f'len(phase) > {PRESET_ARRAY_SIZE} by {diff} ele \
@@ -691,7 +691,7 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         waveform_kwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
         # TODO: check if the inclination has to be in this range ??
         waveform_kwargs['inclination'] = np_gen.uniform(0., np.pi)
-    logging.info(waveform_kwargs)
+    logging.info(f"waveform_kwargs: {waveform_kwargs}")
     hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
 
     # plt.plot(hp.sample_times, hp, label='hp')
@@ -1084,8 +1084,7 @@ class CustomDataset(Dataset):
                                     convert=self.convert, nokeys=self.nokeys, plot=self.plot)
         # strains, labels, keys = get_fd_strain(m1, m2, plot=True)
         logging.debug(f"Strains shape: {strains.shape}")
-        logging.debug(type(strains), type(strains[0]), type(strains[0][0]))
-        logging.debug(torch.from_numpy(strains))
+        logging.debug(f"Type of strains: {type(strains)}, Type of strains[0]: {type(strains[0])}, Type of strains[0][0]: {type(strains[0][0])}")
         # use `torch.float32` dtype b'cuz mps only supports that!
         sample = torch.from_numpy(strains).to(device=self.train_device, dtype=torch.float32)
         label = torch.from_numpy(labels).to(device=self.train_device, dtype=torch.float32)
@@ -1115,15 +1114,22 @@ class CustomDataset(Dataset):
         logging.debug(f'Reading strain data from HDF5 file {self.hdf_fname}.hdf for sample {idx}')
         with h5py.File(self.hdf_fname+'.hdf', 'r') as hf:
             data = hf[f'sample{idx}']
-            logging.debug(data.keys())
+            logging.debug(f'keys: {data.keys()}')
             m1, m2 = data.attrs['mass1'], data.attrs['mass2']
             amp, freq = np.array(data['amp']), np.array(data['freq'])
-            
+            phase = np.array(data['phase'])
+            logging.debug(f'Phase shape: {phase.shape}')
+
             # freq array will be one less in length than amp
             logging.debug(f'len(amp)={len(amp)}, len(freq)={len(freq)}')
             if len(freq) < len(amp):
                 amp = amp[1:]
             assert len(amp) == len(freq), "Amplitude and Frequency arrays must be of the same length."
+
+            # check length for the phase
+            if len(phase) > len(freq):
+                phase = phase[1:]
+            assert len(phase) == len(freq) == len(amp)
 
             # Rescale the amp by 10^20
             logging.debug(f'Original Amp: {amp}')
@@ -1144,7 +1150,7 @@ class CustomDataset(Dataset):
                 return (np.vstack((amp, freq)).astype(np.float32), 
                         np.array([m1,m2]).astype(np.float32), 
                         np.array([amp_keys, freq_keys]).astype(np.float32), 
-                        np.array(np.array(data['phase']).astype(np.float32)),
+                        np.array(phase).astype(np.float32),
                         dict(data.attrs))
             return (np.vstack((amp, freq)).astype(np.float32), 
                     np.array([m1,m2]).astype(np.float32), 
@@ -1165,7 +1171,7 @@ class CustomDataset(Dataset):
         feat_dict_batch = {}
         logging.debug(f'Batch size: {len(batch)}')
         for tag1, tag2, tag3, tag4, feat_dict in batch:
-            logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}')
+            logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}, tag4: {tag4.shape}')
             # convert to tensors and move to the training device
             tag1 = torch.tensor(tag1, device=self.train_device, dtype=torch.float32)
             tag2 = torch.tensor(tag2, device=self.train_device, dtype=torch.float32)
@@ -1221,7 +1227,7 @@ def example_input_plot():
 
     fig, ax1 = plt.subplots(1,1,figsize=(2,2))
     impulse = inputs[len(inputs)//2][6:]
-    logging.debug(impulse)
+    # logging.debug(impulse)
     ax1.plot(np.arange(len(impulse)),impulse,)
     #plotAnal.beautifyPlot([ax1],xTicks=False,yTicks=False)
     ax1.set_axis_off()
@@ -1921,10 +1927,10 @@ if __name__=="__main__":
         ds =  CustomDataset(forwhat='valid', plot=args.plot, 
                             approximant=args.approximant, convert=args.convert)
         for i, x in enumerate(ds):
-            logging.debug(x)
+            logging.debug(f'x: {x}')
             if i==args.nsamples:
                 break
-        logging.debug(len(ds))
+        logging.debug(f"Length of dataset: {len(ds)}")
     
     if args.plotmass:
         get_mass(plot=args.plot, qlim=10)

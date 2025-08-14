@@ -124,15 +124,17 @@ def plot(arr1, arr2, savename='results/', labels=['', ''], noshow=False):
 
 
 def train(args):
-    savename = timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    # make save directory
+    today = datetime.today().strftime('%Y%m%d')
+    if not os.path.isdir(f'../results/{today}/'):
+        os.makedirs(f'../results/{today}/')
+    savedir = f'../results/{today}/'
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
     # epoch = 0
-
     # best_vloss = 1_000_000.
-
     # model.n_resblocks = args.n_resblocks
-
     # tmasses, vmasses = np.arange(5, 75, 1), np.linspace(5.5, 74.5, 1)
-
     # training_inputs, training_outputs = get_data(
     #      n_samples=args.nsamples, masses=tmasses,
     #      approximant=args.approximant, paramsonly=True)
@@ -140,11 +142,11 @@ def train(args):
     # validation_inputs, validation_outputs = get_data(
     #      n_samples=int(0.2 * args.nsamples), masses=vmasses,
     #      approximant=args.approximant, paramsonly=True)
-
     # training_set = CustomDataset(training_inputs, training_outputs,
     #                                        train_device=device)
     # validation_set = CustomDataset(validation_inputs, validation_outputs,
     #                                          train_device=device)
+
     logging.info(f"Initialing Data with arguments:\n{args.__dict__}")
     trainhdf = args.datadir + args.approximant + '-train'
     validhdf = args.datadir + args.approximant + '-valid'
@@ -217,26 +219,25 @@ def train(args):
         logging.debug(f"x shape: {x.shape}, labels shape: {labels.shape}, keys shape: {keys.shape}")
     
     savename = timestamp + '-' + str(args.epochs)
-    if not os.path.isdir('trained-models/'):
-        os.makedirs('trained-models/')
-    model_path = (f'trained-models/model-{savename}')
+    if not os.path.isdir('../trained-models/'):
+        os.makedirs('../trained-models/')
+    model_path = f'../trained-models/model-{savename}'
     if not args.nosave:
-        if not os.path.isdir('results/'):
-            os.makedirs('results/')
+        if not os.path.isdir(savedir):
+            os.makedirs(savedir)
         torch.save(model.state_dict(), model_path)
         # Save losses to files
         # When using pandas, all arrays should have same length
         dfepoch = pd.DataFrame({
             'train_loss': train_loss,
             'valid_loss': valid_loss,})
-        dfepoch.to_csv(f'results/epoch-loss-{timestamp}.csv', index=False)
-        np.savetxt(f'results/train-rloss-{timestamp}.txt', train_rloss)
-        np.savetxt(f'results/valid-rloss-{timestamp}.txt', valid_rloss)
+        dfepoch.to_csv(savedir + f'epoch-loss-{timestamp}.csv', index=False)
+        np.savetxt(savedir + f'train-rloss-{timestamp}.txt', train_rloss)
+        np.savetxt(savedir + f'valid-rloss-{timestamp}.txt', valid_rloss)
         dfnet = pd.DataFrame({
             'netreconloss': netreconloss,
             'netklloss': netklloss})
-        dfnet.to_csv(f'results/net-loss-{timestamp}.csv', index=False)
-
+        dfnet.to_csv(savedir + f'net-loss-{timestamp}.csv', index=False)
 
     fig, axes = plt.subplots(2, 1, figsize=(5, 10))
     axes[0].plot(np.arange(args.epochs), train_loss, label='training loss')
@@ -254,11 +255,8 @@ def train(args):
     axes[1].legend()
     # putils.beautifyPlot(axes)
     plt.tight_layout()
-    savepath = 'results/'
-    if not os.path.isdir(savepath):
-        savepath = '.'
     if not args.nosave:
-        plt.savefig(savepath+'/epoch-loss-'+timestamp+'.png', dpi=300)
+        plt.savefig(savedir + f'epoch-loss-{timestamp}.png', dpi=300)
 
     # if device != 'cpu':
     #      vlabels = vlabels.to('cpu')
@@ -280,13 +278,18 @@ def train(args):
 class Test:
 
     def __init__(self, args):
+        super().__init__()
         # for arg in args.__dict__:
         #     setattr(self, arg, args.__dict__[arg])
         self.approximant = args.approximant
         self.convert = args.convert
         self.datadir = args.datadir
-
+        self.testhdf = self.datadir+self.approximant+'-test'
+        if args.fcutoff:
+            self.testhdf += '-f_cutoff'
         self.batch_size = args.batch_size
+        self.test_loader = self.setdataloader()
+
         self.noshow = args.noshow
         self.nosave = args.nosave
 
@@ -294,13 +297,10 @@ class Test:
         if not os.path.isdir(f'../results/{today}/'):
             os.makedirs(f'../results/{today}/')
         self.savedir = f'../results/{today}/'
-        self.test_loader = self.setdataloader()
-        logging.info('Test DataLoader set up.')
+
         self.epochs = 1
-        self.model_path = args.model
-        self.testhdf = self.datadir+self.approximant+'-test'
-        if args.fcutoff:
-            self.testhdf += '-f_cutoff'
+        self.model_path = '../trained-models/' + args.model
+        logging.info('Test DataLoader set up.')
 
     def setdataloader(self):
         """
@@ -309,7 +309,7 @@ class Test:
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
                                 convert=self.convert, hdf_fname=self.testhdf,
                                 returnattr=True, train_device=args.device, )
-        logging.info(f'Reading test data from {self.datadir+self.approximant+"-test.hdf"}')
+        logging.info(f'Reading test data from {self.testhdf}')
         test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=True,
                                  collate_fn=test_set.collate_fn)
         logging.info(f'Test set size: {len(test_set)}')
@@ -322,7 +322,8 @@ class Test:
         """
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=2, 
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
+        model = CVAE(input_shape=(2, preset_array_size), num_classes=2, 
                     key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
         model.to(device)
@@ -338,8 +339,9 @@ class Test:
             # `next(iter(self.test_loader))` gives us a batch of data!
             # Thus, `shape(x)` is (batch_size, 2, PRESET_ARRAY_SIZE) etc.
 
-        for (x, labels, keys, phase, attr) in tqdm(iter(self.test_loader)):
-            logging.debug(attr)
+        # Iterate over all the batches
+        for (x, labels, keys, phases, attr) in tqdm(iter(self.test_loader)):
+            # logging.debug(f"Attributes: {attr}")  # Ensure 'attr' is defined or replace with the correct variable
 
             # plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
             # if not self.noshow:
@@ -356,11 +358,10 @@ class Test:
                 z1 = model.reparameterize(z1_mean, z1_log_var)
                 z1p = model.reparameterize(z1p_mean, z1p_log_var)
                 reconst = model.decode(z1, z1p, labels)
-            logging.debug(x.shape, reconst.shape, keys.shape)
-            logging.info('Test for current epoch completed. Removing zero padding if any.')
-            x, reconst, phase = removezeros(x, reconst, phase, attr)
-            logging.info(f'Removed zero padding from input and reconstructed data.')
-            logging.info(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}')
+            logging.debug(f"x shape: {x.shape}, reconst shape: {reconst.shape}, keys shape: {keys.shape}")
+            logging.info('Test for current batch completed. Removing zero padding if any.')
+            x, reconst, phases = removezeros(x, reconst, phases, attr)
+            logging.debug(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}, phases: {phases.shape}')
 
             # plot_reconstruct_data(reconst, labels, keys,
             #                       savename=None if self.nosave else self.savedir+'/reconst')
@@ -372,11 +373,15 @@ class Test:
             # TODO: How do we know that the massratio arrays etc. correspond to correct values
             #       in the mismatch arrays ?? Well, since the `x` and `reconst` are the same for
             #       all the samples in the batch, we can just use the first sample's values, right?
+            logging.info("Calculating Amp/Freq mismatch for current batch.")
             mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
                 = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
+            logging.info("Amplitude and Frequency mismatch calculated for current batch.")
+            logging.info("Calculating hplus/hcross mismatch for current batch.")
             mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios \
-                = plot_polarization_mismatch(x, reconst, labels, keys, phase, savedir=self.savedir, nobatchwiseplot=True)
-            logging.info(f"Test completed for current batch.")
+                = plot_polarization_mismatch(x, reconst, labels, keys, phases, savedir=self.savedir, nobatchwiseplot=True)
+            logging.info("hplus/hcross mismatch calculated for current batch.")
+            logging.info(f"Tests completed for current batch.")
             # Save the mismatch results to the dataframe
             dfmm = pd.concat([dfmm, pd.DataFrame({
                 'chirp_mass': chirpmasses.flatten(),
@@ -387,6 +392,7 @@ class Test:
                 'mismatch_hplus': mismatch_hplus.flatten(),
                 'mismatch_hcross': mismatch_hcross.flatten(),
             })], ignore_index=True)
+            logging.info(f"Batch mismatch results appended to dataframe. Current size: {dfmm.shape}")
         logging.info("All test batches completed.")
 
         # Plot the mismatch results for the entire test set using the dataframe
@@ -464,6 +470,9 @@ def removezeros(x, reconst, phase, attr):
         x = x[:, :, :attr['padded_at']]
         reconst = reconst[:, :, :attr['padded_at']]
         phase = phase[:, :attr['padded_at']]
+        logging.info(f'Removed zero padding from input and reconstructed data.')
+    else:
+        logging.info("No padding detected in the data.")
     return x, reconst, phase
 
 def plot_reconstruct_data(reconst, labels, keys, savename='../results/reconst'):
@@ -571,16 +580,16 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
             reconst = reconst[i].reshape([2,PRESET_ARRAY_SIZE])
         else:
             # Use the original shape of the data
-            logging.debug(x.shape, reconst.shape)
+            logging.debug(f"x shape: {x.shape}, reconst shape: {reconst.shape}")
             orig_data = x[i].reshape([2,x.shape[2]])
             recon_data = reconst[i].reshape([2,reconst.shape[2]])
         
         orig_amp, orig_freq = orig_data[0], orig_data[1]
         recon_amp, recon_freq = recon_data[0], recon_data[1]
 
-        logging.debug(type(labels[i]), labels[i].shape)
+        logging.debug(f"Type of labels[{i}]: {type(labels[i])}, Shape: {labels[i].shape}")
         label = labels[i].reshape([2])
-        logging.debug(type(label), label.shape)
+        logging.debug(f"Type of reshaped label: {type(label)}, Shape: {label.shape}")
         
         # NOTE: The overplot waveforms are not normalized!
         # Obtain the keys for normalization
@@ -696,7 +705,7 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
             reconst = reconst.reshape([2,PRESET_ARRAY_SIZE])
         else:
             # Use the original shape of the data
-            logging.debug(x.shape, reconst.shape)
+            logging.debug(f"x shape: {x.shape}, reconst shape: {reconst.shape}")
             orig_data = x[i].reshape([2,x.shape[2]])
             recon_data = reconst[i].reshape([2,reconst.shape[2]])
         
@@ -781,7 +790,7 @@ def calc_polarization_mismatch(hp_orig, hp_recon):
                                 delta_f=1.0/(len(hp_orig)*DELTA_T),  # NOT sample_len = duration * sample_rate
                                 low_freq_cutoff=f_lower)
     
-    logging.debug(1.0/(len(hp_orig)*DELTA_T))
+    logging.debug(f"PSD delta_f: {1.0/(len(hp_orig)*DELTA_T)}")
     # Ensure all arrays are float64 for precision match
     hp_orig = np.asarray(hp_orig, dtype=np.float64)
     hp_recon = np.asarray(hp_recon, dtype=np.float64)
@@ -789,8 +798,10 @@ def calc_polarization_mismatch(hp_orig, hp_recon):
 
     hp_orig = TimeSeries(hp_orig, delta_t=DELTA_T)
     hp_recon = TimeSeries(hp_recon, delta_t=DELTA_T)
-    logging.debug(hp_orig.sample_rate, hp_recon.sample_rate)
-    logging.debug(hp_orig.delta_f)
+    logging.debug(f"hp_orig sample rate: {hp_orig.sample_rate}, hp_recon sample rate: {hp_recon.sample_rate}")
+    logging.debug(f"hp_orig delta_f: {hp_orig.delta_f}")
+    logging.debug(f'len(hp_orig)={len(hp_orig)}, len(hp_recon)={len(hp_recon)}, \
+                  len(psd)={len(psd)}')
 
     match, i = matchfunc(hp_orig, hp_recon, psd=psd, low_frequency_cutoff=f_lower)
     logging.debug(f"Match value: {match}, Index: {i}")
@@ -832,7 +843,7 @@ def polarizations_from_ampfreq(amp, freq, orig_phase=None):
     hcross = amp * np.sin(phase)
     return hplus, hcross
 
-def plot_polarization_mismatch(x, reconst, labels, keys, phase, reshape2orig=False,
+def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=False,
                                savedir='../results/', nobatchwiseplot=False):
     """
     Plot the mismatch between the original and reconstructed hplus/hcross waveforms.
@@ -862,7 +873,8 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phase, reshape2orig=Fal
     reconst = reconst.cpu().numpy()
     labels = labels.cpu().numpy()
     keys = keys.cpu().numpy()
-    phase = phase.cpu().numpy()
+    phases = phases.cpu().numpy()
+    logging.debug(f"x shape: {x.shape}, reconst shape: {reconst.shape}, phases shape: {phases.shape}")
 
     chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
     totalmasses = np.zeros((labels.shape[0], 1))  # Store total masses for each sample
@@ -870,16 +882,21 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phase, reshape2orig=Fal
     mismatch_hplus = np.zeros((x.shape[0], 1))
     mismatch_hcross = np.zeros((x.shape[0], 1))
 
+    # iterate over all the samples in one batch
     for i in range(x.shape[0]):
+        logging.debug(f"Processing sample {i}")
         if reshape2orig:
             # Reshape to original data shape
             orig_data = x[i].reshape([2,PRESET_ARRAY_SIZE])
             reconst = reconst.reshape([2,PRESET_ARRAY_SIZE])
+            phase = phase[i].reshape([1,PRESET_ARRAY_SIZE])
         else:
             # Use the original shape of the data
-            logging.debug(x.shape, reconst.shape)
             orig_data = x[i].reshape([2,x.shape[2]])
             recon_data = reconst[i].reshape([2,reconst.shape[2]])
+            logging.debug(f"orig_data shape: {orig_data.shape}, recon_data shape: {recon_data.shape}")
+            phase = phases[i].reshape([phases.shape[1]])          
+            logging.debug(f'phase shape: {phase.shape}')
 
         orig_amp, orig_freq = orig_data[0], orig_data[1]
         recon_amp, recon_freq = recon_data[0], recon_data[1]
@@ -892,13 +909,25 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phase, reshape2orig=Fal
         # De-normalize the original data!
         orig_amp = (orig_amp * amp_std) + amp_mean
         orig_freq = (orig_freq * freq_std) + freq_mean
+        logging.debug(f"original amp shape: {orig_amp.shape}, freq shape: {orig_freq.shape}")
         # De-normalize the reconstructed data!
         recon_amp = (recon_amp * amp_std) + amp_mean
         recon_freq = (recon_freq * freq_std) + freq_mean
-        
+        logging.debug(f"reconstructed amp shape: {recon_amp.shape}, freq shape: {recon_freq.shape}")
+
+        # # check length of phase array
+        # # NOTE: This happens because of the f-cutoff datacase!
+        # if len(phase) != orig_amp.shape[0]:
+        #     logging.warning(f"Phase shape {phase.shape} does not match input shape {orig_amp.shape}. Adjusting phase.")
+        #     # Adjust phase to match orig_amp length
+        #     if len(phase) > orig_amp.shape[0]:
+        #         phase = phase[1:]
+        #     assert len(phase) == orig_amp.shape[0]
+
         # Combine original Amp/Freq to hplus/hcross
-        hp_orig = orig_amp * np.cos(phase[i])  # this is original phase
-        hc_orig = orig_amp * np.sin(phase[i])
+        hp_orig = orig_amp * np.cos(phase)  # this is original phase
+        hc_orig = orig_amp * np.sin(phase)
+        logging.debug(f"Original hplus shape: {hp_orig.shape}, hcross shape: {hc_orig.shape}")
 
         # Calculate hplus/hcross for reconstructed data
         hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq)
