@@ -1040,7 +1040,10 @@ if __name__ == "__main__":
     logging.info(f"using {device} device !")
 
     if args.test:
-        Test(args).test()
+        try:
+            Test(args).test()
+        except RuntimeError as e:
+            logging.error(f"Error occurred during testing (perhaps try `--fcutoff`): {e}")
     else:
         # Always reads data from HDF file now!!
         train(args)
