@@ -340,6 +340,7 @@ class Test:
             # Thus, `shape(x)` is (batch_size, 2, PRESET_ARRAY_SIZE) etc.
 
         # Iterate over all the batches
+        num_saved_overplots = 0
         for (x, labels, keys, phases, attr) in tqdm(iter(self.test_loader)):
             # logging.debug(f"Attributes: {attr}")  # Ensure 'attr' is defined or replace with the correct variable
 
@@ -363,13 +364,14 @@ class Test:
             x, reconst, phases = removezeros(x, reconst, phases, attr)
             logging.debug(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}, phases: {phases.shape}')
 
-            # plot_reconstruct_data(reconst, labels, keys,
-            #                       savename=None if self.nosave else self.savedir+'/reconst')
+            # Save 5-10 example reconstructed and overplot figures
+            if num_saved_overplots < 10:
+                # plot_reconstruct_data(reconst, labels, keys,
+                #                       savename=None if self.nosave else self.savedir+'/reconst')
+                plot_overplot(x, reconst, labels, keys,
+                              savename=None if self.nosave else self.savedir+'overplot')
+                num_saved_overplots += 1
 
-            # # Only run this when required, else too many overplots are output!
-            # plot_overplot(x, reconst, labels, keys, 
-            #               savename=None if self.nosave else self.savedir+'overplot')
-            
             # TODO: How do we know that the massratio arrays etc. correspond to correct values
             #       in the mismatch arrays ?? Well, since the `x` and `reconst` are the same for
             #       all the samples in the batch, we can just use the first sample's values, right?
@@ -534,7 +536,8 @@ def plot_reconstruct_data(reconst, labels, keys, savename='../results/reconst'):
         savename += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(savename+'.png', dpi=300)
         print(f"Reconstruction plot saved to {savename}")
-    plt.show()
+    # plt.show()
+    plt.close()
 
 
 def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
@@ -624,7 +627,59 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
         else:
             plt.savefig(savename+'.png', dpi=300, bbox_inches='tight')
         logging.info(f"Overplot saved to {savename}")
-    plt.show()
+    # plt.show()
+    plt.close()
+
+
+def plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label,
+                       savename='../results/overplot-hphc-', transparent=True):
+    """
+    Plot the overlaid waveforms for the reconstructed polarization waveforms.
+
+    Parameters:
+    -----------
+    hp_orig : np.ndarray
+        The original h_plus waveform.
+    hc_orig : np.ndarray
+        The original h_cross waveform.
+    hp_recon : np.ndarray
+        The reconstructed h_plus waveform.
+    hc_recon : np.ndarray
+        The reconstructed h_cross waveform.
+
+    Returns:
+    --------
+    None
+
+    Outputs:
+    -------
+    Displays a plot of the overlaid waveforms.
+    """
+    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+
+    axes[0].plot(np.arange(len(hp_orig)), hp_orig, label='Original', color='blue')
+    axes[0].plot(np.arange(len(hp_recon)), hp_recon, label='Reconstructed', linestyle='--', color='orange')
+
+    axes[1].plot(np.arange(len(hc_orig)), hc_orig, label='Original', color='blue')
+    axes[1].plot(np.arange(len(hc_recon)), hc_recon, label='Reconstructed', linestyle='--', color='orange')
+    axes[1].set_title(f'$m_1$={float(label[0])}, $m_2$={float(label[1])}', fontsize=8)
+
+    for i, axlabel in enumerate(['$h_{+}$', '$h_{\\times}$']):
+        axes[i].set_xlabel('Sample length', fontsize=12)
+        axes[i].set_ylabel(axlabel, fontsize=12)
+        axes[i].legend(fontsize=8, loc='upper left')
+    plt.tight_layout()
+    # plt.subplots_adjust(wspace=0.2)
+    # putils.beautifyPlot(axes)
+    if savename:
+        savename += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        if transparent:
+            plt.savefig(savename+'.png', dpi=300, bbox_inches='tight', transparent=True)
+        else:
+            plt.savefig(savename+'.png', dpi=300, bbox_inches='tight')
+        logging.info(f"Overplot saved to {savename}")
+    # plt.show()
+    plt.close()
 
 
 def calculate_mismatch(target, reconstructed):
@@ -931,6 +986,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
 
         # Calculate hplus/hcross for reconstructed data
         hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq)
+        plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i])
 
         # Calculate mismatch for hplus and hcross
         mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon)
