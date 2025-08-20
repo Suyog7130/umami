@@ -991,7 +991,8 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
         hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq)
         if num_saved_overplots <= 10:
             plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i],
-                               savename=savedir+'overplot-hphc-')
+                               savename=savedir+'overplot-hphc')
+            num_saved_overplots = 11
 
         # Calculate mismatch for hplus and hcross
         mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon)
