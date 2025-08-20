@@ -381,7 +381,9 @@ class Test:
             logging.info("Amplitude and Frequency mismatch calculated for current batch.")
             logging.info("Calculating hplus/hcross mismatch for current batch.")
             mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios \
-                = plot_polarization_mismatch(x, reconst, labels, keys, phases, savedir=self.savedir, nobatchwiseplot=True)
+                = plot_polarization_mismatch(x, reconst, labels, keys, phases, 
+                                             savedir=self.savedir, nobatchwiseplot=True,
+                                             num_saved_overplots=num_saved_overplots)
             logging.info("hplus/hcross mismatch calculated for current batch.")
             logging.info(f"Tests completed for current batch.")
             # Save the mismatch results to the dataframe
@@ -632,7 +634,7 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
 
 
 def plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label,
-                       savename='../results/overplot-hphc-', transparent=True):
+                       savename='../results/overplot-hphc', transparent=True):
     """
     Plot the overlaid waveforms for the reconstructed polarization waveforms.
 
@@ -899,7 +901,8 @@ def polarizations_from_ampfreq(amp, freq, orig_phase=None):
     return hplus, hcross
 
 def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=False,
-                               savedir='../results/', nobatchwiseplot=False):
+                               savedir='../results/', nobatchwiseplot=False,
+                               num_saved_overplots=0):
     """
     Plot the mismatch between the original and reconstructed hplus/hcross waveforms.
 
@@ -986,7 +989,9 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
 
         # Calculate hplus/hcross for reconstructed data
         hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq)
-        plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i])
+        if num_saved_overplots <= 10:
+            plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i],
+                               savename=savedir+'overplot-hphc-')
 
         # Calculate mismatch for hplus and hcross
         mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon)
