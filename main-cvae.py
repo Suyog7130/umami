@@ -439,6 +439,65 @@ class Test:
         print("All mismatch plots generated for the test set.")
 
 
+    def test_uq(self):
+        """
+        Test the uncertainty quantification (UQ) of the model for 1000 random
+        sample generation corresponding the same input parameters. The output
+        or the error can be visualized as mismatch values for each of these
+        generated compared to the actual waveform. Ideally, if our model training
+        is perfect, all the mismatches should be the same!
+        """
+        Nruns = 100
+        logging.info(f"Testing with model: {self.model_path}")
+        # Load the trained model
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
+        model = CVAE(input_shape=(2, preset_array_size), num_classes=2, 
+                    key_shape=(2,2)).to(args.device)
+        model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(device)
+        model.eval()
+        logging.info("Model loaded and set to evaluation mode.")
+
+        fig, ax = plt.subplots(1, 1, figsize=(5,5))
+
+        x, labels, keys, phases, attr = next(iter(self.test_loader))
+        logging.info('Data loaded from test_loader.')
+        # Move labels to the appropriate device
+        labels = labels.to(device)
+        x, label, key, phase = x[0], labels[0], keys[0], phases[0]
+        logging.info(f'Choosing to test sample {label}')
+        for i in range(Nruns):
+            with torch.no_grad():
+                logging.debug(f'Testing run: {i}')
+                print(label, type(label), label.shape)
+                print(attr)
+                # Use the label-conditioned encoders and decoder to generate data
+                z1_mean, z1_log_var = model.encode_label_for_x(label)
+                z1p_mean, z1p_log_var = model.encode_label_for_key(label)
+                z1 = model.reparameterize(z1_mean, z1_log_var)
+                z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                reconst = model.decode(z1, z1p, label)
+                x, reconst, phase = removezeros(x, reconst, phase, attr)
+                mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
+                    = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
+                logging.info("Amplitude and Frequency mismatch calculated for current batch.")
+                logging.info("Calculating hplus/hcross mismatch for current batch.")
+                mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios \
+                    = plot_polarization_mismatch(x, reconst, label, keys, phase, 
+                                                savedir=self.savedir, nobatchwiseplot=True,
+                                                num_saved_overplots=None)
+
+                ax.plot(i, mismatch_amp, '.', )
+                ax.plot(i, mismatch_freq, 'x', )
+                ax.plot(i, mismatch_hplus, 'o', )
+                ax.plot(i, mismatch_hcross, 's', )
+        figname = f'{self.savedir}/uq-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        plt.savefig(figname+'.png', dpi=300, bbox_inches='tight', transparent=True)
+        plt.quit()
+        logging.info("All UQ tests completed.")
+
+
+
 def removezeros(x, reconst, phase, attr):
     """
     Remove zero padding from the input and reconstructed data.
@@ -989,7 +1048,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
 
         # Calculate hplus/hcross for reconstructed data
         hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq)
-        if num_saved_overplots <= 10:
+        if num_saved_overplots <= 10 and num_saved_overplots is not None:
             plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i],
                                savename=savedir+'overplot-hphc')
             num_saved_overplots = 11
@@ -1062,6 +1121,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--test', action='store_true', default=False,
                             help='whether to test?')
+    parser.add_argument('--test-uq', action='store_true', default=False,
+                        help='whether to test uncertainty quantification?')
     parser.add_argument('--model', action='store', default='../trained-models/model-20250526_070915-1',
                         help='path to already trained model.')
 
@@ -1103,7 +1164,10 @@ if __name__ == "__main__":
 
     if args.test:
         try:
-            Test(args).test()
+            if args.test_uq:
+                Test(args).test_uq()
+            else:
+                Test(args).test()
         except RuntimeError as e:
             logging.error(f"Error occurred during testing (perhaps try `--fcutoff`): {e}")
     else:
