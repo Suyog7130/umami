@@ -302,15 +302,16 @@ class Test:
         self.model_path = '../trained-models/' + args.model
         logging.info('Test DataLoader set up.')
 
-    def setdataloader(self):
+    def setdataloader(self, batch_size=None):
         """
         Set up the DataLoader for the test dataset.
         """
+        batch_size = batch_size if batch_size is not None else self.batch_size
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
                                 convert=self.convert, hdf_fname=self.testhdf,
                                 returnattr=True, train_device=args.device, )
         logging.info(f'Reading test data from {self.testhdf}')
-        test_loader = DataLoader(test_set, batch_size=self.batch_size, shuffle=True,
+        test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True,
                                  collate_fn=test_set.collate_fn)
         logging.info(f'Test set size: {len(test_set)}')
         return test_loader
@@ -447,7 +448,7 @@ class Test:
         generated compared to the actual waveform. Ideally, if our model training
         is perfect, all the mismatches should be the same!
         """
-        Nruns = 100
+        Nruns = 1000
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
         preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
@@ -460,40 +461,40 @@ class Test:
 
         fig, ax = plt.subplots(1, 1, figsize=(5,5))
 
-        x, labels, keys, phases, attr = next(iter(self.test_loader))
+        # so that we can directly send the full batch for test!
+        test_loader = self.setdataloader(batch_size=1)
+        x, labels, keys, phases, attr = next(iter(test_loader))
         logging.info('Data loaded from test_loader.')
         # Move labels to the appropriate device
         labels = labels.to(device)
-        x, label, key, phase = x[0], labels[0], keys[0], phases[0]
-        logging.info(f'Choosing to test sample {label}')
+        logging.info(f'Choosing to test sample {labels.shape}')
         for i in range(Nruns):
             with torch.no_grad():
-                logging.debug(f'Testing run: {i}')
-                print(label, type(label), label.shape)
-                print(attr)
+                logging.info(f'Testing run: {i}')
                 # Use the label-conditioned encoders and decoder to generate data
-                z1_mean, z1_log_var = model.encode_label_for_x(label)
-                z1p_mean, z1p_log_var = model.encode_label_for_key(label)
+                z1_mean, z1_log_var = model.encode_label_for_x(labels)
+                z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
                 z1 = model.reparameterize(z1_mean, z1_log_var)
                 z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                reconst = model.decode(z1, z1p, label)
-                x, reconst, phase = removezeros(x, reconst, phase, attr)
+                reconst = model.decode(z1, z1p, labels)
+                x, reconst, phase = removezeros(x, reconst, phases, attr)
                 mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
                     = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
                 logging.info("Amplitude and Frequency mismatch calculated for current batch.")
                 logging.info("Calculating hplus/hcross mismatch for current batch.")
                 mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios \
-                    = plot_polarization_mismatch(x, reconst, label, keys, phase, 
+                    = plot_polarization_mismatch(x, reconst, labels, keys, phases, 
                                                 savedir=self.savedir, nobatchwiseplot=True,
                                                 num_saved_overplots=None)
-
-                ax.plot(i, mismatch_amp, '.', )
-                ax.plot(i, mismatch_freq, 'x', )
-                ax.plot(i, mismatch_hplus, 'o', )
-                ax.plot(i, mismatch_hcross, 's', )
+                # ax.plot(i, mismatch_amp.flatten(), '.', )
+                # ax.plot(i, mismatch_freq.flatten(), 'x', )
+                ax.plot(i, mismatch_hplus.flatten(), 'o', )
+                ax.plot(i, mismatch_hcross.flatten(), 's', )
+        ax.set_xlabel('Sample', fontsize=12)
+        ax.set_ylabel('Mismatch', fontsize=12)
         figname = f'{self.savedir}/uq-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(figname+'.png', dpi=300, bbox_inches='tight', transparent=True)
-        plt.quit()
+        plt.close()
         logging.info("All UQ tests completed.")
 
 
@@ -1048,10 +1049,11 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
 
         # Calculate hplus/hcross for reconstructed data
         hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq)
-        if num_saved_overplots <= 10 and num_saved_overplots is not None:
-            plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i],
-                               savename=savedir+'overplot-hphc')
-            num_saved_overplots = 11
+        if num_saved_overplots is not None:
+            if num_saved_overplots <= 10:
+                plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i],
+                                savename=savedir+'overplot-hphc')
+                num_saved_overplots = 11
 
         # Calculate mismatch for hplus and hcross
         mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon)
