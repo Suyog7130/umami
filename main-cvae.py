@@ -425,9 +425,9 @@ class Test:
             # Plot hplus/hcross mismatch vs massarrays
             fig, ax = plt.subplots(1, 1, figsize=(5, 5))
             ax.plot(massarr, dfmm['mismatch_hplus'], 'o', label='$h_{+}$',
-                       markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
+                    markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
             ax.plot(massarr, dfmm['mismatch_hcross'], 's', label='$h_{\\times}$',
-                       markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
+                    markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
             ax.set_xlabel(xname, fontsize=12)
             ax.set_ylabel('Mismatch', fontsize=12)
             ax.set_yscale('log')  # Set y-axis to logarithmic scale
@@ -488,14 +488,18 @@ class Test:
                                                 num_saved_overplots=None)
                 # ax.plot(i, mismatch_amp.flatten(), '.', )
                 # ax.plot(i, mismatch_freq.flatten(), 'x', )
-                ax.plot(i, mismatch_hplus.flatten(), 'o', )
-                ax.plot(i, mismatch_hcross.flatten(), 's', )
+                ax.plot(i, mismatch_hplus.flatten(), '.', color='black',
+                        markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
+                ax.plot(i, mismatch_hcross.flatten(), 'x', color='blue',
+                        markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
+        ax.set_yscale('log')
         ax.set_xlabel('Sample', fontsize=12)
         ax.set_ylabel('Mismatch', fontsize=12)
         figname = f'{self.savedir}/uq-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(figname+'.png', dpi=300, bbox_inches='tight', transparent=True)
+        plt.savefig(figname+'-white.png', dpi=300, bbox_inches='tight')
         plt.close()
-        logging.info("All UQ tests completed.")
+        print("All UQ tests completed.")
 
 
 
