@@ -303,14 +303,15 @@ class Test:
         self.model_path = '../trained-models/' + args.model
         logging.info('Test DataLoader set up.')
 
-    def setdataloader(self, batch_size=None):
+    def setdataloader(self, batch_size=None, custom_batch=None):
         """
         Set up the DataLoader for the test dataset.
         """
         batch_size = batch_size if batch_size is not None else self.batch_size
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
                                 convert=self.convert, hdf_fname=self.testhdf,
-                                returnattr=True, train_device=args.device, )
+                                returnattr=True, train_device=args.device, 
+                                custom_batch=custom_batch)
         logging.info(f'Reading test data from {self.testhdf}')
         test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True,
                                  collate_fn=test_set.collate_fn)
@@ -463,7 +464,7 @@ class Test:
         fig, axes = plt.subplots(1, 2, figsize=(10,5))
 
         # so that we can directly send the full batch for test!
-        test_loader = self.setdataloader(batch_size=1)
+        test_loader = self.setdataloader(batch_size=1, custom_batch=[[10,10]])
         x, labels, keys, phases, attr = next(iter(test_loader))
         logging.info('Data loaded from test_loader.')
         # Move labels to the appropriate device
@@ -473,7 +474,7 @@ class Test:
         mmtot_hplus, mmtot_hcross = [], []
         for i in range(Nruns):
             with torch.no_grad():
-                logging.info(f'Testing run: {i}')
+                logging.debug(f'Testing run: {i}')
                 # Use the label-conditioned encoders and decoder to generate data
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
@@ -483,8 +484,8 @@ class Test:
                 x, reconst, phase = removezeros(x, reconst, phases, attr)
                 mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
                     = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
-                logging.info("Amplitude and Frequency mismatch calculated for current batch.")
-                logging.info("Calculating hplus/hcross mismatch for current batch.")
+                logging.debug("Amplitude and Frequency mismatch calculated for current batch.")
+                logging.debug("Calculating hplus/hcross mismatch for current batch.")
                 mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios \
                     = plot_polarization_mismatch(x, reconst, labels, keys, phases, 
                                                 savedir=self.savedir, nobatchwiseplot=True,
