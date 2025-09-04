@@ -30,6 +30,7 @@ import pandas as pd
 # import matplotlib
 # matplotlib.use('Agg')   # non GUI backend
 import matplotlib.pyplot as plt
+import matplotlib.ticker as tck
 
 # from sklearn import metrics
 from tqdm import tqdm
@@ -459,7 +460,7 @@ class Test:
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
-        fig, ax = plt.subplots(1, 1, figsize=(5,5))
+        fig, axes = plt.subplots(1, 2, figsize=(10,5))
 
         # so that we can directly send the full batch for test!
         test_loader = self.setdataloader(batch_size=1)
@@ -468,6 +469,8 @@ class Test:
         # Move labels to the appropriate device
         labels = labels.to(device)
         logging.info(f'Choosing to test sample {labels.shape}')
+        mmtot_amp, mmtot_freq = [], []
+        mmtot_hplus, mmtot_hcross = [], []
         for i in range(Nruns):
             with torch.no_grad():
                 logging.info(f'Testing run: {i}')
@@ -486,18 +489,45 @@ class Test:
                     = plot_polarization_mismatch(x, reconst, labels, keys, phases, 
                                                 savedir=self.savedir, nobatchwiseplot=True,
                                                 num_saved_overplots=None)
-                # ax.plot(i, mismatch_amp.flatten(), '.', )
-                # ax.plot(i, mismatch_freq.flatten(), 'x', )
-                ax.plot(i, mismatch_hplus.flatten(), '.', color='black',
-                        markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
-                ax.plot(i, mismatch_hcross.flatten(), 'x', color='blue',
-                        markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
-        ax.set_yscale('log')
-        ax.set_xlabel('Sample', fontsize=12)
-        ax.set_ylabel('Mismatch', fontsize=12)
+                axes[0].plot(i, mismatch_amp.flatten(), '.', color='grey',
+                        markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                axes[0].plot(i, mismatch_freq.flatten(), 'x', color='grey',
+                        markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                axes[1].plot(i, mismatch_hplus.flatten(), '.', color='grey',
+                        markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                axes[1].plot(i, mismatch_hcross.flatten(), 'x', color='grey',
+                        markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                mmtot_amp.append(mismatch_amp.flatten()[0])
+                mmtot_freq.append(mismatch_freq.flatten()[0])
+                mmtot_hplus.append(mismatch_hplus.flatten()[0])
+                mmtot_hcross.append(mismatch_hcross.flatten()[0])
+        axes[0].legend(['Amplitude', 'Frequency'], loc='upper right')
+        axes[1].legend(['$h_{+}$', '$h_{\\times}$'], loc='upper right')
+        label = f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}' + ' $M_{\\odot}$'
+        for ax in [axes[0], axes[1]]:
+            ax.set_yscale('log')
+            ax.set_xlabel('Sample', fontsize=12)
+            ax.set_ylabel('Mismatch', fontsize=12)
+            ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
+            ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        axes[0].text(0.05, 0.025, label, transform=axes[0].transAxes, ha='left', fontsize=12)
+        axes[1].text(0.05, 0.95, label, transform=axes[1].transAxes, ha='left', fontsize=12)
+        mu_amp, std_amp = np.mean(mmtot_amp), np.std(mmtot_amp)
+        mu_freq, std_freq = np.mean(mmtot_freq), np.std(mmtot_freq)
+        mu_hplus, std_hplus = np.mean(mmtot_hplus), np.std(mmtot_hplus)
+        mu_hcross, std_hcross = np.mean(mmtot_hcross), np.std(mmtot_hcross)
+        logging.info(f'Mean Frequency Mismatch: {mu_freq:.2e} ± {std_freq:.2e}')
+        logging.info(f'Mean Amplitude Mismatch: {mu_amp:.2e} ± {std_amp:.2e}')
+        logging.info(f'Mean hplus Mismatch: {mu_hplus:.2e} ± {std_hplus:.2e}')
+        logging.info(f'Mean hcross Mismatch: {mu_hcross:.2e} ± {std_hcross:.2e}')
+        axes[0].text(0.05, 0.03,  f'$|\\delta A|$={mu_amp:.2e}' + ', ' +
+                    f'$|\\delta f|$={mu_freq:.2e}\n', transform=axes[0].transAxes, ha='left', fontsize=12)
+        axes[1].text(0.05, 0.90, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}' + ', ' +
+                    '$|\\delta h_{\\times}|$='+f'{mu_hcross:.2e}', transform=axes[1].transAxes, ha='left', fontsize=12)
+        plt.tight_layout()
         figname = f'{self.savedir}/uq-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
-        plt.savefig(figname+'.png', dpi=300, bbox_inches='tight', transparent=True)
-        plt.savefig(figname+'-white.png', dpi=300, bbox_inches='tight')
+        plt.savefig(figname+'.png', dpi=300, transparent=True)
+        plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
         print("All UQ tests completed.")
 
@@ -573,7 +603,7 @@ def plot_reconstruct_data(reconst, labels, keys, savename='../results/reconst'):
     # print(labels.shape)
     keys = keys.cpu().numpy()
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+    fig, axes = plt.subplots(2, 1, figsize=(10, 5))
     for j in range(3):
         i = np.random.randint(0, 49, size=1)
         data = reconst[i].reshape([2,PRESET_ARRAY_SIZE])
@@ -674,9 +704,9 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
         # recon_freq = (recon_freq * freq_std) + freq_mean
         
         axes[0].plot(np.arange(len(orig_amp)), orig_amp, '-', label=f"Original")
-        axes[0].plot(np.arange(len(recon_amp)), recon_amp, '--', label=f"Reconstructed")
+        axes[0].plot(np.arange(len(recon_amp)), recon_amp, '-', label=f"Reconstructed")
         axes[1].plot(np.arange(len(orig_freq)), orig_freq, '-', label=f"Original")
-        axes[1].plot(np.arange(len(recon_freq)), recon_freq, '--', label=f"Reconstructed")
+        axes[1].plot(np.arange(len(recon_freq)), recon_freq, '-', label=f"Reconstructed")
         axes[1].set_title(f'$m_1$={float(label[0])}, $m_2$={float(label[1])}', fontsize=8)
 
     for i, axlabel in enumerate(['Amplitude', 'Frequency']):
