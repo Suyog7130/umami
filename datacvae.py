@@ -999,8 +999,6 @@ class CustomDataset(Dataset):
         # for key, value in kwargs.items():
         #     setattr(self, key, value)
         
-
-
     def __len__(self):
         return len(self.masses)
     
@@ -1094,7 +1092,7 @@ class CustomDataset(Dataset):
         keys = torch.from_numpy(keys).to(device=self.train_device, dtype=torch.float32)
         return (sample, label, keys)
 
-    def read_strain_hdf(self, idx, custom_batch=None):
+    def read_strain_hdf(self, idx):
         """
         Read the strain data from the HDF5 file.
 
@@ -1203,7 +1201,7 @@ class CustomDataset(Dataset):
         if idx>self.nsamples:
             raise IndexError('Index out of range')
         if self.hdf_fname is not None:
-            return self.read_strain_hdf(idx, custom_batch=custom_batch)
+            return self.read_strain_hdf(idx)
         else:
             return self.make_strain(idx, custom_batch=custom_batch)
     

@@ -463,10 +463,11 @@ class Test:
 
         fig, axes = plt.subplots(1, 2, figsize=(10,5))
 
-        # so that we can directly send the full batch for test!
-        test_loader = self.setdataloader(batch_size=1, custom_batch=[[10,10]])
+        # `batch_size`=1, so that we can directly send the full batch for test!
+        test_loader = self.setdataloader(batch_size=1)
+        custom_batch = [[10,10]]
         x, labels, keys, phases, attr = next(iter(test_loader))
-        logging.info('Data loaded from test_loader.')
+        logging.info(f'Data loaded from test_loader for {custom_batch}.')
         # Move labels to the appropriate device
         labels = labels.to(device)
         logging.info(f'Choosing to test sample {labels.shape}')
