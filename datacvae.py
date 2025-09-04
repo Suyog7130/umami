@@ -1078,8 +1078,11 @@ class CustomDataset(Dataset):
         self.n_samples = len(masses)
         self.masses = masses
 
-    def make_strain(self, idx):
-        m1, m2 = self.masses[idx]
+    def make_strain(self, idx, custom_batch=None):
+        if custom_batch is not None:
+            m1, m2 = custom_batch[idx]
+        else:
+            m1, m2 = self.masses[idx]
         strains, labels, keys = get_strain(m1, m2, approximant=self.approximant,
                                     convert=self.convert, nokeys=self.nokeys, plot=self.plot)
         # strains, labels, keys = get_fd_strain(m1, m2, plot=True)
@@ -1090,8 +1093,8 @@ class CustomDataset(Dataset):
         label = torch.from_numpy(labels).to(device=self.train_device, dtype=torch.float32)
         keys = torch.from_numpy(keys).to(device=self.train_device, dtype=torch.float32)
         return (sample, label, keys)
-    
-    def read_strain_hdf(self, idx):
+
+    def read_strain_hdf(self, idx, custom_batch=None):
         """
         Read the strain data from the HDF5 file.
 
@@ -1195,14 +1198,14 @@ class CustomDataset(Dataset):
         # Ensure all tensors are of the same shape
         return (tag1_batch, tag2_batch, tag3_batch, tag4_batch, feat_dict_batch)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx, custom_batch=None):
         # logging.debug(idx)
         if idx>self.nsamples:
             raise IndexError('Index out of range')
         if self.hdf_fname is not None:
-            return self.read_strain_hdf(idx)
+            return self.read_strain_hdf(idx, custom_batch=custom_batch)
         else:
-            return self.make_strain(idx)
+            return self.make_strain(idx, custom_batch=custom_batch)
     
 
 def example_input_plot():
@@ -1807,7 +1810,7 @@ def calc_cutoffconst(approximant='SEOBNRv4'):
     of the signal to the lower frequency cutoff.
 
     ```math
-        T \propto f_{low}^{-8/3} M_{chirp}^{-5/3}
+        T \\propto f_{low}^{-8/3} M_{chirp}^{-5/3}
         T = k * f_{low}^{-8/3} M_{chirp}^{-5/3}
     ```
 
