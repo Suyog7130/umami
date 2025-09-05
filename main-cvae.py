@@ -449,6 +449,9 @@ class Test:
         or the error can be visualized as mismatch values for each of these
         generated compared to the actual waveform. Ideally, if our model training
         is perfect, all the mismatches should be the same!
+
+        TODO: Have a dataloader such that it can load specific values from the
+        test dataset. Perhaps, need to modify the test dataset classes.
         """
         Nruns = 1000
         logging.info(f"Testing with model: {self.model_path}")
@@ -464,13 +467,19 @@ class Test:
         fig, axes = plt.subplots(1, 2, figsize=(10,5))
 
         # `batch_size`=1, so that we can directly send the full batch for test!
+        # Check if the specific value exists in labels
+        specific_value = [10, 10]  # Replace with the desired label value
         test_loader = self.setdataloader(batch_size=1)
-        custom_batch = [[10,10]]
-        x, labels, keys, phases, attr = next(iter(test_loader))
-        logging.info(f'Data loaded from test_loader for {custom_batch}.')
+        for batch in iter(test_loader):
+            x, labels, keys, phases, attr = batch
+            if any((labels == torch.tensor(specific_value)).all(dim=1)):
+                idx = (labels == torch.tensor(specific_value)).all(dim=1).nonzero(as_tuple=True)[0].item()
+                x, labels, keys, phases, attr = x[idx], labels[idx], keys[idx], phases[idx], attr
+                print(f"Found specific value {specific_value} in the test set.")
+                break
         # Move labels to the appropriate device
         labels = labels.to(device)
-        logging.info(f'Choosing to test sample {labels.shape}')
+        logging.info(f'Choosing to test sample {labels}')
         mmtot_amp, mmtot_freq = [], []
         mmtot_hplus, mmtot_hcross = [], []
         for i in range(Nruns):
@@ -571,8 +580,6 @@ def removezeros(x, reconst, phase, attr):
         reconst = reconst[:, :, :attr['padded_at']]
         phase = phase[:, :attr['padded_at']]
         logging.info(f'Removed zero padding from input and reconstructed data.')
-    else:
-        logging.info("No padding detected in the data.")
     return x, reconst, phase
 
 def plot_reconstruct_data(reconst, labels, keys, savename='../results/reconst'):
@@ -753,19 +760,37 @@ def plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label,
     -------
     Displays a plot of the overlaid waveforms.
     """
-    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+    fig, axes = plt.subplots(2, 2, figsize=(14, 6), width_ratios=[3, 1])
+    axes = axes.flatten()    
+    for ax in [axes[0], axes[2]]:
+        ax.sharex(axes[0])
 
     axes[0].plot(np.arange(len(hp_orig)), hp_orig, label='Original', color='blue')
     axes[0].plot(np.arange(len(hp_recon)), hp_recon, label='Reconstructed', linestyle='--', color='orange')
 
-    axes[1].plot(np.arange(len(hc_orig)), hc_orig, label='Original', color='blue')
-    axes[1].plot(np.arange(len(hc_recon)), hc_recon, label='Reconstructed', linestyle='--', color='orange')
-    axes[1].set_title(f'$m_1$={float(label[0])}, $m_2$={float(label[1])}', fontsize=8)
+    axes[2].plot(np.arange(len(hc_orig)), hc_orig, label='Original', color='blue')
+    axes[2].plot(np.arange(len(hc_recon)), hc_recon, label='Reconstructed', linestyle='--', color='orange')
+    axes[2].set_title(f'$m_1$={float(label[0])}, $m_2$={float(label[1])}', fontsize=8)
 
-    for i, axlabel in enumerate(['$h_{+}$', '$h_{\\times}$']):
+    # Zoomed view near the maximum
+    zoom_halfwidth = 75
+    zoom_start = max(0, np.argmax(hp_orig) - zoom_halfwidth)
+    zoom_end = min(len(hp_orig), np.argmax(hp_orig) + zoom_halfwidth)
+    axes[1].plot(np.arange(zoom_start, zoom_end), hp_orig[zoom_start:zoom_end], color='blue')
+    axes[1].plot(np.arange(zoom_start, zoom_end), hp_recon[zoom_start:zoom_end], linestyle='--', color='orange')
+
+    zoom_start = max(0, np.argmax(hc_orig) - zoom_halfwidth)
+    zoom_end = min(len(hc_orig), np.argmax(hc_orig) + zoom_halfwidth)
+    axes[3].plot(np.arange(zoom_start, zoom_end), hc_orig[zoom_start:zoom_end], color='blue')
+    axes[3].plot(np.arange(zoom_start, zoom_end), hc_recon[zoom_start:zoom_end], linestyle='--', color='orange')
+
+    # TODO: Maybe I can have time on the x-axis!
+    for i in range(0,4):
         axes[i].set_xlabel('Sample length', fontsize=12)
-        axes[i].set_ylabel(axlabel, fontsize=12)
-        axes[i].legend(fontsize=8, loc='upper left')
+    axes[0].set_ylabel('$h_{+}$', fontsize=12)
+    axes[2].set_ylabel('$h_{\\times}$', fontsize=12)
+    axes[0].legend(fontsize=8, loc='upper left')
+    axes[2].legend(fontsize=8, loc='upper left')
     plt.tight_layout()
     # plt.subplots_adjust(wspace=0.2)
     # putils.beautifyPlot(axes)
