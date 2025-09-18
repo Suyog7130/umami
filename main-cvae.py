@@ -542,6 +542,59 @@ class Test:
         plt.close()
         print("All UQ tests completed.")
 
+    def test_timecomplexity(self):
+        """
+        Test the time complexity of the model for generating a 1-10e4 ish number of samples.
+        This is useful for understanding the efficiency of the model in real-time
+        applications.
+        """
+        Nruns = [1, 10, 100, 500, 1000, 5000, 10000]
+        logging.info(f"Testing with model: {self.model_path}")
+        # Load the trained model
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
+        model = CVAE(input_shape=(2, preset_array_size), num_classes=2, 
+                    key_shape=(2,2)).to(args.device)
+        model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(device)
+        model.eval()
+        logging.info("Model loaded and set to evaluation mode.")
+
+        times = []
+        for Nr in Nruns:
+            # Generate random labels within the training range
+            m1 = np.random.uniform(5, 75, Nr)
+            m2 = np.random.uniform(5, 75, Nr)
+            labels = torch.tensor(np.vstack((m1, m2)).T, dtype=torch.float32).to(device)
+            logging.info(f'Choosing to test sample size {labels.shape}')
+            import time
+            start_time = time.time()
+            with torch.no_grad():
+                # Use the label-conditioned encoders and decoder to generate data
+                z1_mean, z1_log_var = model.encode_label_for_x(labels)
+                z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
+                z1 = model.reparameterize(z1_mean, z1_log_var)
+                z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                reconst = model.decode(z1, z1p, labels)
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            times.append(elapsed_time)
+            logging.info(f'Time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
+        # Plot the time complexity results
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        ax.plot(Nruns, times, 'o-', color='blue', markersize=6,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.set_xlabel('Number of Samples', fontsize=12)
+        ax.set_ylabel('Time (seconds)', fontsize=12)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        plt.tight_layout()
+        figname = f'{self.savedir}/timecomplexity-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        plt.savefig(figname+'.png', dpi=300, transparent=True)
+        plt.savefig(figname+'.png', dpi=300)
+        plt.close()
+
 
 
 def removezeros(x, reconst, phase, attr):
