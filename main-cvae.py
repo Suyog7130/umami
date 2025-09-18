@@ -783,7 +783,7 @@ def plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label,
 def calculate_mismatch(target, reconstructed):
     """
     Calculate the normalized mismatch between the target and reconstructed waveforms.
-    Mismatch = 1 - ( <a|b> / sqrt(<a|a> + <b|b>) )
+    Mismatch = 1 - ( <a|b> / sqrt(<a|a> * <b|b>) )
     where <a|b> is the inner product (dot product).
 
     Parameters:
