@@ -542,13 +542,15 @@ class Test:
         plt.close()
         print("All UQ tests completed.")
 
-    def test_timecomplexity(self):
+    def test_timecomplexity(self, num=100):
         """
         Test the time complexity of the model for generating a 1-10e4 ish number of samples.
         This is useful for understanding the efficiency of the model in real-time
         applications.
         """
-        Nruns = [1, 10, 100, 500, 1000, 5000, 10000]
+        # Nruns = [1, 10, 50, 100, 500, 1e3, 5e3, 1e4]
+        Nruns = np.logspace(0, 5, num=num, dtype=int)
+        # Nruns = [int(n) for n in [1, 10, 50, 100, 500, 1e3, 5e3, 1e4, 5e4]]
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
         preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
@@ -581,18 +583,19 @@ class Test:
             logging.info(f'Time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
         # Plot the time complexity results
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-        ax.plot(Nruns, times, 'o-', color='blue', markersize=6,
-                markeredgewidth=0.5, markeredgecolor='black')
+        ax.plot(Nruns, times, 'o', color='grey', markersize=6,
+                markeredgewidth=0.25, markeredgecolor='black')
         ax.set_xlabel('Number of Samples', fontsize=12)
         ax.set_ylabel('Time (seconds)', fontsize=12)
         ax.set_xscale('log')
         ax.set_yscale('log')
         ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
         ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.text(0.05, 0.95, f'N={len(Nruns)}', transform=ax.transAxes, fontsize=10, verticalalignment='top')
         plt.tight_layout()
         figname = f'{self.savedir}/timecomplexity-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(figname+'.png', dpi=300, transparent=True)
-        plt.savefig(figname+'.png', dpi=300)
+        plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
 
 
@@ -1239,6 +1242,8 @@ if __name__ == "__main__":
                             help='whether to test?')
     parser.add_argument('--test-uq', action='store_true', default=False,
                         help='whether to test uncertainty quantification?')
+    parser.add_argument('--time-complexity', action='store_true', default=False,
+                        help='whether to test time complexity?')
     parser.add_argument('--model', action='store', default='../trained-models/model-20250526_070915-1',
                         help='path to already trained model.')
 
@@ -1282,6 +1287,9 @@ if __name__ == "__main__":
         try:
             if args.test_uq:
                 Test(args).test_uq()
+            elif args.time_complexity:
+                for n in [100, 500, 1000]:
+                    Test(args).test_timecomplexity(n)
             else:
                 Test(args).test()
         except RuntimeError as e:
