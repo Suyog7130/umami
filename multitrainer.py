@@ -23,7 +23,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Callabl
 import os, json, math, time, csv
 from pathlib import Path
 
-from Multi_cvae import build_model_from_code  # provided in Multi refactor
+from multicvae import build_model_from_code  # provided in Multi refactor
 
 
 # -----------------------------
