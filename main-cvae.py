@@ -1272,14 +1272,15 @@ if __name__ == "__main__":
     
     # TODO: Sometimes, `cuda` is not available, and `torch.cuda.is_available()` just goes dead,
     # with no error message. This last happended on 2025-07-22, right during and after a maintanence!
-    # device = (
-    #     "cuda"
-    #     if torch.cuda.is_available()
-    #     else "mps"
-    #     if torch.backends.mps.is_available()
-    #     else "cpu"
-    # )
-    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    # 250919: Most likely this is solved now!
+    device = (
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
+    # device = 'mps' if torch.backends.mps.is_available() else 'cpu'
     args.device = device
     logging.info(f"using {device} device !")
 
@@ -1295,5 +1296,8 @@ if __name__ == "__main__":
         except RuntimeError as e:
             logging.error(f"Error occurred during testing (perhaps try `--fcutoff`): {e}")
     else:
-        # Always reads data from HDF file now!!
-        train(args)
+        try:
+            # Always reads data from HDF file now!!
+            train(args)
+        except RuntimeError as e:
+            logging.error(f"Error occurred during training (perhaps, ya forgot to put `--fcutoff`): {e}")
