@@ -57,6 +57,21 @@ def tttdatasets(nsamples=1e5):
     return train_masses, val_masses, test_masses
 
 
+def splitspins(nsamples=1e5):
+    s1 = np.random.uniform(-0.999, 0.999, int(nsamples))
+    s2 = np.random.uniform(-0.999, 0.999, int(nsamples))
+    spins = np.vstack((s1, s2)).T
+    np.random.shuffle(spins)
+    print(f"Number of spin samples: {len(spins)}")
+    train_split = int(0.7 * len(spins))
+    val_split = int(0.80 * len(spins))
+    train_spins = spins[:train_split]
+    val_spins = spins[train_split:val_split]
+    test_spins = spins[val_split:]
+    print(f"Train/Val/Test sizes: {len(train_spins), len(val_spins), len(test_spins)}")
+    return train_spins, val_spins, test_spins
+
+
 
 class CheckWaveform:
     def __init__(self, masses, aligned=True, nosave=False):
@@ -176,7 +191,7 @@ class Waveform:
         if self.otherparams:
             self.fname += '-otherparam'
 
-    def get_aligned_vals(self, m1, m2, spin):
+    def get_aligned_vals(self, m1, m2, s1, s2):
         """
         Generate the time-domain waveform for the given masses, aligned spins and
         approximant. The waveform is generated with variable length (duration)
@@ -197,8 +212,8 @@ class Waveform:
             'mass2': m2,
             'f_lower': self.f_lower,
             'delta_t': self.delta_t,
-            'spin1z': spin,
-            'spin2z': spin,
+            'spin1z': s1,
+            'spin2z': s2,
         }
         if self.otherparams:
             angles = np_gen.uniform(0., 2*np.pi, 3)
@@ -314,14 +329,15 @@ class Waveform:
                                 desc='samples-written',
                                 ncols=100,):
                 m1, m2 = mass
-                spin = self.spins[i]
+                s1, s2 = self.spins[i]
                 grpname = f'sample{i}'
 
-                data = self.get_aligned_vals(m1, m2, spin)
+                data = self.get_aligned_vals(m1, m2, s1, s2)
                 hfgrp = hf.create_group(grpname)
                 hfgrp.attrs['mass1'] = m1
                 hfgrp.attrs['mass2'] = m2
-                hfgrp.attrs['spin'] = spin
+                hfgrp.attrs['spin1z'] = s1
+                hfgrp.attrs['spin2z'] = s2
                 hfgrp.attrs['approximant'] = self.approximant
                 hfgrp.attrs['sample_rate'] = self.sample_rate
                 hfgrp.attrs['delta_t'] = data[-1].get('delta_t', self.delta_t)
@@ -381,19 +397,18 @@ def check_hdf(fname):
 
 
 def main(args):
-    nsample = 1e5
-    train_masses, val_masses, test_masses = tttdatasets()
+    nsample = args.nsample  # default 1e5
+    print(f"Generating {nsample} samples.")
+    train_masses, val_masses, test_masses = tttdatasets(nsamples=nsample)
     # CheckWaveform(masses=[[50, 30], [15, 5]], 
     #               aligned=args.aligned,
     #               nosave=args.nosave)
-    train_spins = np.random.uniform(-0.999, 0.999, len(train_masses))
-    val_spins = np.random.uniform(-0.999, 0.999, len(val_masses))
-    test_spins = np.random.uniform(-0.999, 0.999, len(test_masses))
-    trainwf = Waveform(masses=train_masses, spins=train_spins, fname='train-')
+    train_spins, val_spins, test_spins = splitspins(nsamples=nsample)
+    trainwf = Waveform(masses=train_masses, spins=train_spins, fname=f'train-{nsample}-')
     trainwf.write_data_to_hdf()
-    valwf = Waveform(masses=val_masses, spins=val_spins, fname='val-')
+    valwf = Waveform(masses=val_masses, spins=val_spins, fname=f'val-{nsample}-')
     valwf.write_data_to_hdf()
-    testwf = Waveform(masses=test_masses, spins=test_spins, fname='test-')
+    testwf = Waveform(masses=test_masses, spins=test_spins, fname=f'test-{nsample}-')
     testwf.write_data_to_hdf()
 
 
@@ -405,6 +420,8 @@ if __name__=="__main__":
     parser.add_argument("--fname", type=str, default="waveforms", help="Filename for saving the plots.")
     parser.add_argument("--nosave", action="store_true", help="Do not save the plots.")
 
+    parser.add_argument('--nsample', type=int, default=1e5,
+                        help='Number of samples to generate.')
     parser.add_argument('--checkhdf', action='store_true', default=False,
                         help='Read the data from HDF5 file.')
     
@@ -423,6 +440,6 @@ if __name__=="__main__":
                             force=True)
         
     if args.checkhdf:
-        fname = 'SEOBNRv4-train-fcutoff-uniform-aligned.hdf'
+        fname = 'SEOBNRv4-train-100-fcutoff-uniform-aligned.hdf'
         check_hdf(fname)
     main(args)
