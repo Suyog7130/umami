@@ -154,10 +154,11 @@ class CheckWaveform:
 
 class Waveform:
     """
-    Main class to load and 
+    Main class to generate, save, and load training / test waveforms.
     """
-    def __init__(self, masses, fcutoff=True):
+    def __init__(self, masses, spins=None, fcutoff=True):
         self.masses = masses
+        self.spins = spins if spins is not None else np.random.uniform(-0.999, 0.999, len(masses[0]))
         if fcutoff:
             self.cutoffconst = calc_cutoffconst()
         else:
@@ -199,8 +200,6 @@ class Waveform:
             'spin1z': spin,
             'spin2z': spin,
         }
-        wfkwargs["spin1z"] = np.random.uniform(-0.999, 0.999, 1)
-        wfkwargs["spin2z"] = np.random.uniform(-0.999, 0.999, 1)
         if self.otherparams:
             angles = np_gen.uniform(0., 2*np.pi, 3)
             wfkwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
@@ -315,12 +314,14 @@ class Waveform:
                                 desc='samples-written',
                                 ncols=100,):
                 m1, m2 = mass
+                spin = self.spins[i]
                 grpname = f'sample{i}'
 
                 data = self.get_vals(m1, m2)
                 hfgrp = hf.create_group(grpname)
                 hfgrp.attrs['mass1'] = m1
                 hfgrp.attrs['mass2'] = m2
+                hfgrp.attrs['spin'] = spin
                 hfgrp.attrs['approximant'] = self.approximant
                 hfgrp.attrs['sample_rate'] = self.sample_rate
                 hfgrp.attrs['delta_t'] = data[-1].get('delta_t', self.delta_t)
@@ -380,14 +381,29 @@ class Waveform:
 
 def main(args):
     train_masses, val_masses, test_masses = tttdatasets()
-    CheckWaveform(masses=[[50, 30], [15, 5]], 
-                  aligned=args.aligned,
-                  nosave=args.nosave)
+    # CheckWaveform(masses=[[50, 30], [15, 5]], 
+    #               aligned=args.aligned,
+    #               nosave=args.nosave)
+
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description="Generate and plot gravitational waveforms.")
+    
     parser.add_argument("--aligned", action="store_true", help="Generate aligned-spin waveforms.")
     parser.add_argument("--fname", type=str, default="waveforms", help="Filename for saving the plots.")
     parser.add_argument("--nosave", action="store_true", help="Do not save the plots.")
+    
+    parser.add_argument('-v', '--verbose', action='store_true', default=False,
+                        help='Increase verbosity of the output.')
+    parser.add_argument('--debug', action='store_true', default=False,
+                        help='Enable debug mode for detailed logging.')
+    
     args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO, format='%(levelname)s ln%(lineno)d @ %(funcName)s : %(message)s', 
+                            force=True)
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG, format='%(levelname)s ln%(lineno)d @ %(funcName)s : %(message)s', 
+                            force=True)
     main(args)
