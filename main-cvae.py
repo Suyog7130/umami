@@ -383,7 +383,7 @@ class Test:
                 = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
             logging.info("Amplitude and Frequency mismatch calculated for current batch.")
             logging.info("Calculating hplus/hcross mismatch for current batch.")
-            mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios \
+            mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, num_saved_overplots \
                 = plot_polarization_mismatch(x, reconst, labels, keys, phases, 
                                              savedir=self.savedir, nobatchwiseplot=True,
                                              num_saved_overplots=num_saved_overplots)
@@ -439,6 +439,23 @@ class Test:
             plt.savefig(self.savedir+savename+'.png', dpi=300, bbox_inches='tight', transparent=True)
             logging.info(f"Mismatch plot saved to {self.savedir+savename}.png")
             plt.close()
+        # Log mean and median mismatch values
+        mean_mismatch_amp = np.mean(dfmm['mismatch_amp'])
+        median_mismatch_amp = np.median(dfmm['mismatch_amp'])
+        mean_mismatch_freq = np.mean(dfmm['mismatch_freq'])
+        median_mismatch_freq = np.median(dfmm['mismatch_freq'])
+        mean_mismatch_hplus = np.mean(dfmm['mismatch_hplus'])
+        median_mismatch_hplus = np.median(dfmm['mismatch_hplus'])
+        mean_mismatch_hcross = np.mean(dfmm['mismatch_hcross'])
+        median_mismatch_hcross = np.median(dfmm['mismatch_hcross'])
+        logging.info(f"Mean Mismatch (Amplitude): {mean_mismatch_amp:.2e}")
+        logging.info(f"Median Mismatch (Amplitude): {median_mismatch_amp:.2e}")
+        logging.info(f"Mean Mismatch (Frequency): {mean_mismatch_freq:.2e}")
+        logging.info(f"Median Mismatch (Frequency): {median_mismatch_freq:.2e}")
+        logging.info(f"Mean Mismatch (hplus): {mean_mismatch_hplus:.2e}")
+        logging.info(f"Median Mismatch (hplus): {median_mismatch_hplus:.2e}")
+        logging.info(f"Mean Mismatch (hcross): {mean_mismatch_hcross:.2e}")
+        logging.info(f"Median Mismatch (hcross): {median_mismatch_hcross:.2e}")
         print("All mismatch plots generated for the test set.")
 
 
@@ -1206,7 +1223,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
             plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
             logging.info(f"Mismatch plot saved to {savedir+savename}.png")
             plt.close()
-    return mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios
+    return (mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, num_saved_overplots)
 
 
 if __name__ == "__main__":
@@ -1265,10 +1282,24 @@ if __name__ == "__main__":
     else:
         log_level = logging.WARN
 
-    # Need to use `force` here to override default `logging` settings
-    logging.basicConfig(format='%(levelname)s | %(asctime)s: %(message)s',
-                            level=log_level, datefmt='%y-%m-%d %H:%M:%S',
-                            force=True)
+    # Create results directory for today if it doesn't exist
+    today = datetime.today().strftime('%Y%m%d')
+    log_dir = f'../results/{today}/'
+    if not os.path.isdir(log_dir):
+        os.makedirs(log_dir)
+
+    # Set up logging to both console and file
+    log_file = os.path.join(log_dir, f'training_{today}.log')
+    logging.basicConfig(
+        format='%(levelname)s | %(asctime)s: %(message)s',
+        level=log_level,
+        datefmt='%y-%m-%d %H:%M:%S',
+        force=True,
+        handlers=[
+            logging.StreamHandler(),  # Log to console
+            logging.FileHandler(log_file)  # Log to file
+        ]
+    )
     
     # TODO: Sometimes, `cuda` is not available, and `torch.cuda.is_available()` just goes dead,
     # with no error message. This last happended on 2025-07-22, right during and after a maintanence!
