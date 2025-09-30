@@ -324,11 +324,8 @@ class Waveform:
             self.fname = self.fname.split('.hdf')[0] + '-1'
         with h5py.File(self.fname+'.hdf', 'w') as hf:
             # Create a group for each mass
-            for i, mass in tqdm(enumerate(self.masses),
-                                total=len(self.masses),
-                                desc='samples-written',
-                                ncols=100,):
-                m1, m2 = mass
+            for i in tqdm(range(len(self.masses)), desc='samples-written', ncols=100):
+                m1, m2 = self.masses[i]
                 s1, s2 = self.spins[i]
                 grpname = f'sample{i}'
 
