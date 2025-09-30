@@ -156,7 +156,7 @@ class Waveform:
     """
     Main class to generate, save, and load training / test waveforms.
     """
-    def __init__(self, masses, spins=None, fcutoff=True):
+    def __init__(self, masses, spins=None, fcutoff=True, fname=''):
         self.masses = masses
         self.spins = spins if spins is not None else np.random.uniform(-0.999, 0.999, len(masses[0]))
         if fcutoff:
@@ -172,7 +172,7 @@ class Waveform:
         self.duration = DURATION
         self.preset_array_size = PRESET_ARRAY_SIZE
 
-        self.fname = str(self.approximant) + '-fcutoff-uniform-aligned'
+        self.fname = str(self.approximant) + '-' + fname + 'fcutoff-uniform-aligned'
         if self.otherparams:
             self.fname += '-otherparam'
 
@@ -287,7 +287,7 @@ class Waveform:
             logging.info(f'Assuming data array is in the form {dsnames}')
             # Do not write the extra info since it was already written!
             for name, tsdata in zip(dsnames, data[:-1]):
-                logging.info(name, tsdata.shape)
+                logging.debug(f"{name}, {tsdata.shape}")
                 ds = hf[grpname].create_dataset(name, data=tsdata)
 
         elif isinstance(data, dict):
@@ -304,10 +304,10 @@ class Waveform:
 
     def write_data_to_hdf(self):
         logging.info(f'Writing data to HDF5 file {self.fname}.hdf')
-        if os.path.exists(fname+'.hdf'):
-            logging.info(f'File {fname}.hdf already exists. Using an incremented name.')
-            fname = fname.split('.hdf')[0] + '-1.hdf'
-        with h5py.File(fname+'.hdf', 'w') as hf:
+        if os.path.exists(self.fname+'.hdf'):
+            logging.info(f'File {self.fname}.hdf already exists. Using an incremented name.')
+            self.fname = self.fname.split('.hdf')[0] + '-1'
+        with h5py.File(self.fname+'.hdf', 'w') as hf:
             # Create a group for each mass
             for i, mass in tqdm(enumerate(self.masses),
                                 total=len(self.masses),
@@ -317,7 +317,7 @@ class Waveform:
                 spin = self.spins[i]
                 grpname = f'sample{i}'
 
-                data = self.get_vals(m1, m2)
+                data = self.get_aligned_vals(m1, m2, spin)
                 hfgrp = hf.create_group(grpname)
                 hfgrp.attrs['mass1'] = m1
                 hfgrp.attrs['mass2'] = m2
@@ -347,31 +347,32 @@ class Waveform:
                     hfgrp.attrs['padded_at'] = data[-1]['padded_at']
 
                 self.write_hdf_grp(hf, data, grpname)
-            logging.info(f"Data written to {fname+'.hdf'} successfully.")
+            logging.info(f"Data written to {self.fname+'.hdf'} successfully.")
             hf.close()
 
-    def check_hdf(self, fname):
-        """
-        Read the data from the HDF5 file.
-        """
-        print(fname)
-        with h5py.File(fname, 'r') as hf:
-            for key in hf.keys():
-                # print(key)
-                grp = hf[key]
-                print(dict(grp.attrs))
-                for name in grp.keys():
-                    print(grp[name])
-                    print(name, grp[name].shape)
-                    print(list(grp[name].attrs.keys()))
-                    # print(grp[name].__dict__)
-                    ts = grp[name]
-                    print(np.array(ts))
-                    print(ts[10:20])
-                    plt.plot(range(len(ts)), np.array(ts), label=name)
-                    plt.legend()
-                    plt.show()
-        return hf
+
+def check_hdf(fname):
+    """
+    Read the data from the HDF5 file.
+    """
+    print(fname)
+    with h5py.File(fname, 'r') as hf:
+        for key in hf.keys():
+            # print(key)
+            grp = hf[key]
+            print(dict(grp.attrs))
+            for name in grp.keys():
+                print(grp[name])
+                print(name, grp[name].shape)
+                print(list(grp[name].attrs.keys()))
+                # print(grp[name].__dict__)
+                ts = grp[name]
+                print(np.array(ts))
+                print(ts[10:20])
+                plt.plot(range(len(ts)), np.array(ts), label=name)
+                plt.legend()
+                plt.show()
+    return hf
 
 
 
@@ -380,10 +381,21 @@ class Waveform:
 
 
 def main(args):
+    nsample = 1e5
     train_masses, val_masses, test_masses = tttdatasets()
     # CheckWaveform(masses=[[50, 30], [15, 5]], 
     #               aligned=args.aligned,
     #               nosave=args.nosave)
+    train_spins = np.random.uniform(-0.999, 0.999, len(train_masses))
+    val_spins = np.random.uniform(-0.999, 0.999, len(val_masses))
+    test_spins = np.random.uniform(-0.999, 0.999, len(test_masses))
+    trainwf = Waveform(masses=train_masses, spins=train_spins, fname='train-')
+    trainwf.write_data_to_hdf()
+    valwf = Waveform(masses=val_masses, spins=val_spins, fname='val-')
+    valwf.write_data_to_hdf()
+    testwf = Waveform(masses=test_masses, spins=test_spins, fname='test-')
+    testwf.write_data_to_hdf()
+
 
 
 if __name__=="__main__":
@@ -392,6 +404,9 @@ if __name__=="__main__":
     parser.add_argument("--aligned", action="store_true", help="Generate aligned-spin waveforms.")
     parser.add_argument("--fname", type=str, default="waveforms", help="Filename for saving the plots.")
     parser.add_argument("--nosave", action="store_true", help="Do not save the plots.")
+
+    parser.add_argument('--checkhdf', action='store_true', default=False,
+                        help='Read the data from HDF5 file.')
     
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
                         help='Increase verbosity of the output.')
@@ -406,4 +421,8 @@ if __name__=="__main__":
     if args.debug:
         logging.basicConfig(level=logging.DEBUG, format='%(levelname)s ln%(lineno)d @ %(funcName)s : %(message)s', 
                             force=True)
+        
+    if args.checkhdf:
+        fname = 'SEOBNRv4-train-fcutoff-uniform-aligned.hdf'
+        check_hdf(fname)
     main(args)
