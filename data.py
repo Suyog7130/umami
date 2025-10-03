@@ -39,7 +39,7 @@ OUTPUT_SHAPE = INPUT_SHAPE
 def tttdatasets(nsamples=1e5):
     """
     Gets the training, validation and test datasets for (m1,m2)
-    \in [5,75] uniformly with qlim=10
+    in [5,75] uniformly with qlim=10
     """
     m1 = np.random.uniform(5, 75, int(nsamples))
     m2 = np.random.uniform(5, 75, int(nsamples))
@@ -401,11 +401,11 @@ def main(args):
     #               aligned=args.aligned,
     #               nosave=args.nosave)
     train_spins, val_spins, test_spins = splitspins(nsamples=nsample)
-    trainwf = Waveform(masses=train_masses, spins=train_spins, fname=f'train-{nsample}-')
+    trainwf = Waveform(masses=train_masses, spins=train_spins, fname=f'train-{int(nsample)}-')
     trainwf.write_data_to_hdf()
-    valwf = Waveform(masses=val_masses, spins=val_spins, fname=f'val-{nsample}-')
+    valwf = Waveform(masses=val_masses, spins=val_spins, fname=f'val-{int(nsample)}-')
     valwf.write_data_to_hdf()
-    testwf = Waveform(masses=test_masses, spins=test_spins, fname=f'test-{nsample}-')
+    testwf = Waveform(masses=test_masses, spins=test_spins, fname=f'test-{int(nsample)}-')
     testwf.write_data_to_hdf()
 
 

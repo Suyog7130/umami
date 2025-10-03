@@ -1117,6 +1117,7 @@ class CustomDataset(Dataset):
             data = hf[f'sample{idx}']
             logging.debug(f'keys: {data.keys()}')
             m1, m2 = data.attrs['mass1'], data.attrs['mass2']
+            
             amp, freq = np.array(data['amp']), np.array(data['freq'])
             phase = np.array(data['phase'])
             logging.debug(f'Phase shape: {phase.shape}')
