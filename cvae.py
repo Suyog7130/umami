@@ -416,7 +416,7 @@ class CVAE(nn.Module):
         Returns:
             Output of the forward method.
         """
-        print('__call__')
+        # print('__call__')
         return self.forward(x, labels, keys)
 
     def encode_x(self, x, labels):
