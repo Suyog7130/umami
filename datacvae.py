@@ -1117,7 +1117,14 @@ class CustomDataset(Dataset):
             data = hf[f'sample{idx}']
             logging.debug(f'keys: {data.keys()}')
             m1, m2 = data.attrs['mass1'], data.attrs['mass2']
-            
+            labels = [m1,m2]
+            spin1z = data.attrs.get('spin1z', None)
+            spin2z = data.attrs.get('spin2z', None)
+            if spin1z is not None and spin2z is not None:
+                labels.append(spin1z)
+                labels.append(spin2z)
+            # logging.debug(f'Labels: {labels}')
+
             amp, freq = np.array(data['amp']), np.array(data['freq'])
             phase = np.array(data['phase'])
             logging.debug(f'Phase shape: {phase.shape}')
@@ -1150,12 +1157,12 @@ class CustomDataset(Dataset):
             if self.returnattr:
                 # also return the loc of padding or truncation
                 return (np.vstack((amp, freq)).astype(np.float32), 
-                        np.array([m1,m2]).astype(np.float32), 
+                        np.array(labels).astype(np.float32), 
                         np.array([amp_keys, freq_keys]).astype(np.float32), 
                         np.array(phase).astype(np.float32),
                         dict(data.attrs))
             return (np.vstack((amp, freq)).astype(np.float32), 
-                    np.array([m1,m2]).astype(np.float32), 
+                    np.array(labels).astype(np.float32), 
                     np.array([amp_keys, freq_keys]).astype(np.float32))
         
     def collate_fn(self, batch):

@@ -154,6 +154,10 @@ def train(args):
     if args.fcutoff:
         trainhdf += '-f_cutoff'
         validhdf += '-f_cutoff'
+    if args.aligned:
+        trainhdf += '-100000-fcutoff-uniform-aligned'
+        validhdf += '-100000-fcutoff-uniform-aligned'
+
     train_set = CustomDataset(forwhat='train', approximant=args.approximant,
                             convert=args.convert, hdf_fname=trainhdf,)
     valid_set = CustomDataset(forwhat='valid', approximant=args.approximant,
@@ -171,7 +175,7 @@ def train(args):
 
     # Initialize Model
     # `num_classes` is the size of the labels.
-    if args.fcutoff:
+    if args.fcutoff or args.aligned:
         PRESET_ARRAY_SIZE = 8190
     model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=2, key_shape=(2,2)).to(args.device)
     # Add a learning rate scheduler
@@ -1254,6 +1258,9 @@ if __name__ == "__main__":
     parser.add_argument('--fcutoff', action='store_true', default=False,
                             help='use the data which has equal duration samples with \
                                 variable frequency cutoff (default=%(default)s)')
+    parser.add_argument('--aligned', action='store_true', default=False,
+                            help='use the aligned-spin data uniformly sampled in (m1,m2,spin1z,spin2z) space.\
+                                (default=%(default)s)')
 
     parser.add_argument('--test', action='store_true', default=False,
                             help='whether to test?')
