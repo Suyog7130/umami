@@ -148,6 +148,7 @@ def train(args):
     # validation_set = CustomDataset(validation_inputs, validation_outputs,
     #                                          train_device=device)
 
+    num_classes = 2  # m1 and m2
     logging.info(f"Initialing Data with arguments:\n{args.__dict__}")
     trainhdf = args.datadir + args.approximant + '-train'
     validhdf = args.datadir + args.approximant + '-valid'
@@ -155,15 +156,18 @@ def train(args):
         trainhdf += '-f_cutoff'
         validhdf += '-f_cutoff'
     if args.aligned:
+        num_classes = 4  # m1, m2, spin1z, spin2z
         trainhdf += '-100000-fcutoff-uniform-aligned'
         validhdf += '-100000-fcutoff-uniform-aligned'
 
+    logging.info(f'Reading training data from {trainhdf}.hdf')
     train_set = CustomDataset(forwhat='train', approximant=args.approximant,
                             convert=args.convert, hdf_fname=trainhdf,)
+    logging.info(f'Reading validation data from {validhdf}.hdf')
     valid_set = CustomDataset(forwhat='valid', approximant=args.approximant,
                             convert=args.convert, hdf_fname=validhdf,)
-    logging.info(f"Train set size: {len(train_set)}")
-    logging.info(f"Validation set size: {len(valid_set)}")
+    # logging.info(f"Train set size: {len(train_set)}")
+    # logging.info(f"Validation set size: {len(valid_set)}")
 
     training_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     validation_loader = DataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
@@ -177,7 +181,7 @@ def train(args):
     # `num_classes` is the size of the labels.
     if args.fcutoff or args.aligned:
         PRESET_ARRAY_SIZE = 8190
-    model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=2, key_shape=(2,2)).to(args.device)
+    model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2)).to(args.device)
     # Add a learning rate scheduler
     # Scheduler will adjust learning rate after every epoch
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
@@ -1334,8 +1338,9 @@ if __name__ == "__main__":
         except RuntimeError as e:
             logging.error(f"Error occurred during testing (perhaps try `--fcutoff`): {e}")
     else:
-        try:
-            # Always reads data from HDF file now!!
-            train(args)
-        except RuntimeError as e:
-            logging.error(f"Error occurred during training (perhaps, ya forgot to put `--fcutoff`): {e}")
+        # try:
+        #     # Always reads data from HDF file now!!
+        #     train(args)
+        # except RuntimeError as e:
+        #     logging.error(f"Error occurred during training (perhaps, ya forgot to put `--fcutoff`): {e}")
+        train(args)
