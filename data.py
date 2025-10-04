@@ -261,6 +261,9 @@ class Waveform:
                                 \n So truncating array from the left!')
             hc = hc[diff:]
 
+        # TODO: Add the `_regenerate_waveform` function here to ensure
+        # that shorter waveforms are regenerated with still lower fcutoff.
+
         # Calculate the amplitude and phase from the polarizations.
         logging.debug('Converting `hp` & `hc` to Freq Amp!')
         amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
