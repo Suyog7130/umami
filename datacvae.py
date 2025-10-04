@@ -1121,6 +1121,12 @@ class CustomDataset(Dataset):
         hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
         hp = hp.trim_zeros()
         hc = hc.trim_zeros()
+        while len(hc) < PRESET_ARRAY_SIZE:
+            f_lower -= 0.2 * f_lower
+            wfkwargs['f_lower'] = f_lower
+            hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
+            hp = hp.trim_zeros()
+            hc = hc.trim_zeros()
         logging.info(f'new sample duration: {hp.duration}')
 
         if len(hc) > PRESET_ARRAY_SIZE:
@@ -1190,8 +1196,7 @@ class CustomDataset(Dataset):
 
             # Regenerate sample if it is shorter duration, but is not padded!
             if len(data['amp']) < PRESET_ARRAY_SIZE and not data.attrs.get('padded', False):
-                logging.warning(f"Sample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. \
-                            Regenerating with lower fcutoff.")
+                logging.info(f"\nSample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. Regenerating!")
                 data = self._regenerate_sample(data)
 
             amp, freq = np.array(data['amp']), np.array(data['freq'])
@@ -1279,7 +1284,7 @@ class CustomDataset(Dataset):
         
 
 class CustomDataLoader(DataLoader):
-    def __init__(self, dataset, batch_size=32, shuffle=True, num_workers=0, pin_memory=True):
+    def __init__(self, dataset, batch_size=32, shuffle=True, num_workers=0, pin_memory=False):
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle,
                          num_workers=num_workers, pin_memory=pin_memory,
                          collate_fn=dataset.collate_fn)

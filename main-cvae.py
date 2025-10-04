@@ -157,15 +157,15 @@ def train(args):
         validhdf += '-f_cutoff'
     if args.aligned:
         num_classes = 4  # m1, m2, spin1z, spin2z
-        trainhdf += '-100-fcutoff-uniform-aligned'
-        validhdf += '-100-fcutoff-uniform-aligned'
+        trainhdf += '-100000-fcutoff-uniform-aligned'
+        validhdf += '-100000-fcutoff-uniform-aligned'
 
     logging.info(f'Reading training data from {trainhdf}.hdf')
     train_set = CustomDataset(forwhat='train', approximant=args.approximant,
-                            convert=args.convert, hdf_fname=trainhdf,)
+                            convert=args.convert, hdf_fname=trainhdf, train_device=args.device)
     logging.info(f'Reading validation data from {validhdf}.hdf')
     valid_set = CustomDataset(forwhat='valid', approximant=args.approximant,
-                            convert=args.convert, hdf_fname=validhdf,)
+                            convert=args.convert, hdf_fname=validhdf, train_device=args.device)
     # logging.info(f"Train set size: {len(train_set)}")
     # logging.info(f"Validation set size: {len(valid_set)}")
 
