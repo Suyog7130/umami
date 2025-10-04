@@ -974,14 +974,17 @@ class CustomDataset(Dataset):
         self.inputsize = inputsize
         self.outputsize = outputsize
         self.plot = plot
-
-        self.forwhat = forwhat
-        self.set_masses(forwhat=self.forwhat)
-        self.nsamples = len(self.masses)
         self.convert = convert
         self.nokeys = nokeys
         self.hdf_fname = hdf_fname
         self.returnattr = kwargs.get('returnattr', False)
+
+        self.forwhat = forwhat
+        if hdf_fname is None:
+            self.set_masses(forwhat=self.forwhat)
+            self.nsamples = len(self.masses)
+        else:
+            self._find_nsamples()
 
         if approximant not in APPROXIMANTS:
             if approximant.split('-')[0][-7:]=='padinfo':
@@ -1000,7 +1003,12 @@ class CustomDataset(Dataset):
         #     setattr(self, key, value)
         
     def __len__(self):
-        return len(self.masses)
+        return self.nsamples
+    
+    def _find_nsamples(self):
+        with h5py.File(self.hdf_fname+'.hdf', 'r') as hf:
+            self.nsamples = len(hf.keys())
+            logging.info(f'Set nsamples to {self.nsamples}')
     
     def _get_data_old(self, n_samples=1000, masses=get_mass(), approximant='IMRPhenomD', paramsonly=False):
         """

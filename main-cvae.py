@@ -151,14 +151,14 @@ def train(args):
     num_classes = 2  # m1 and m2
     logging.info(f"Initialing Data with arguments:\n{args.__dict__}")
     trainhdf = args.datadir + args.approximant + '-train'
-    validhdf = args.datadir + args.approximant + '-valid'
+    validhdf = args.datadir + args.approximant + '-val'
     if args.fcutoff:
         trainhdf += '-f_cutoff'
         validhdf += '-f_cutoff'
     if args.aligned:
         num_classes = 4  # m1, m2, spin1z, spin2z
-        trainhdf += '-100000-fcutoff-uniform-aligned'
-        validhdf += '-100000-fcutoff-uniform-aligned'
+        trainhdf += '-100-fcutoff-uniform-aligned'
+        validhdf += '-100-fcutoff-uniform-aligned'
 
     logging.info(f'Reading training data from {trainhdf}.hdf')
     train_set = CustomDataset(forwhat='train', approximant=args.approximant,
