@@ -898,11 +898,11 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
         logging.info(f"Data written to {fname+'.hdf'} successfully.")
         hf.close()
 
-def check_hdf(fname):
+
+def check_hdf(fname, noshow=False):
     """
     Read the data from the HDF5 file.
     """
-    print(fname)
     with h5py.File(fname, 'r') as hf:
         for key in hf.keys():
             # print(key)
@@ -911,14 +911,15 @@ def check_hdf(fname):
             for name in grp.keys():
                 print(grp[name])
                 print(name, grp[name].shape)
-                print(list(grp[name].attrs.keys()))
+                # print(list(grp[name].attrs.keys()))
                 # print(grp[name].__dict__)
                 ts = grp[name]
-                print(np.array(ts))
-                print(ts[10:20])
-                plt.plot(range(len(ts)), np.array(ts), label=name)
-                plt.legend()
-                plt.show()
+                # print(np.array(ts))
+                # print(ts[10:20])
+                if not noshow:
+                    plt.plot(range(len(ts)), np.array(ts), label=name)
+                    plt.legend()
+                    plt.show()
     return hf
 
 
@@ -1188,7 +1189,8 @@ class CustomDataset(Dataset):
         tag2_batch = []
         tag3_batch = []
         logging.debug(f'Batch size: {len(batch)}')
-        print(batch[0].shape, batch[1].shape, batch[2].shape)
+        print('********\n')
+        print(len(batch[0][0][0]), len(batch[1]))
         for tag1, tag2, tag3 in batch:
             logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}')
             # convert to tensors and move to the training device
@@ -2047,8 +2049,12 @@ if __name__=="__main__":
         if type(args.approximant) is list:
             args.approximant = args.approximant[0]
         dataset = '-f_cutoff'
-        fname = '../data/' + args.approximant + '-train' + dataset
-        check_hdf(fname+'.hdf')
+        if args.fname == '':
+            fname = '../data/' + args.approximant + '-train' + dataset
+        else:
+            fname = '../data/' + args.fname
+        print(fname)
+        check_hdf(fname+'.hdf', noshow=args.noshow)
 
     if args.checkdatasets:
         check_datasets()
