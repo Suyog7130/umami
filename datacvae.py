@@ -1101,27 +1101,31 @@ class CustomDataset(Dataset):
         keys = torch.from_numpy(keys).to(device=self.train_device, dtype=torch.float32)
         return (sample, label, keys)
     
-    def _regenerate_sample(self, data):
+    def _regenerate_sample(self, data, write_access=False):
         """
         Regenerate the sample with a lower fcutoff to ensure
         that the waveform is of the desired length.
         And replace the sample content in the HDF file.
         """
+        extra = {}
+        f_lower = 0.75 * data.attrs['f_lower']
+        logging.info(f'new f_lower: {f_lower}')
         wfkwargs = {'approximant': data.attrs['approximant'],
                     'mass1': data.attrs['mass1'],
                     'mass2': data.attrs['mass2'],
                     'spin1z': data.attrs['spin1z'],
                     'spin2z': data.attrs['spin2z'],
                     'delta_t': data.attrs['delta_t'],
-                    'f_lower': 0.80 * data.attrs['f_lower'],
+                    'f_lower': f_lower,
                     }
         hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
         hp = hp.trim_zeros()
         hc = hc.trim_zeros()
+        logging.info(f'new sample duration: {hp.duration}')
 
         if len(hc) > PRESET_ARRAY_SIZE:
-            data[-1]['truncated'] = True
-            data[-1]['truncated_len'] = diff = len(hc) - PRESET_ARRAY_SIZE
+            extra['truncated'] = True
+            extra['truncated_len'] = diff = len(hc) - PRESET_ARRAY_SIZE
             logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
                                 \n So truncating array from the left!')
             hc = hc[diff:]
@@ -1137,12 +1141,17 @@ class CustomDataset(Dataset):
         phase = np.array(phase.data, dtype=np.float32)
         freq = np.array(freq.data, dtype=np.float32)
 
+        if write_access:
+            data.attrs['f_lower'] = wfkwargs['f_lower']
+            data[-1]['truncated'] = extra['truncated']
+            data[-1]['truncated_len'] = extra['truncated_len']
+        if not write_access:
+            data = {}
         data['hp'] = hp
         data['hc'] = hc
         data['amp'] = amp
         data['phase'] = phase
         data['freq'] = freq
-        data.attrs['f_lower'] = wfkwargs['f_lower']
         return data
 
     def read_strain_hdf(self, idx):
@@ -1181,7 +1190,7 @@ class CustomDataset(Dataset):
 
             # Regenerate sample if it is shorter duration, but is not padded!
             if len(data['amp']) < PRESET_ARRAY_SIZE and not data.attrs.get('padded', False):
-                logging.info(f"Sample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. \
+                logging.warning(f"Sample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. \
                             Regenerating with lower fcutoff.")
                 data = self._regenerate_sample(data)
 
@@ -1213,8 +1222,8 @@ class CustomDataset(Dataset):
             logging.debug(f"Frequency Keys: {freq_keys}")
             amp = (amp - np.mean(amp)) / np.std(amp)
             freq = (freq - np.mean(freq)) / np.std(freq)
-            logging.debug(f'data.attrs: {dict(data.attrs)}')
             if self.returnattr:
+                logging.debug(f'data.attrs: {dict(data.attrs)}')
                 # also return the loc of padding or truncation
                 return (np.vstack((amp, freq)).astype(np.float32), 
                         np.array(labels).astype(np.float32), 
