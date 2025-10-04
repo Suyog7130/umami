@@ -1100,6 +1100,50 @@ class CustomDataset(Dataset):
         label = torch.from_numpy(labels).to(device=self.train_device, dtype=torch.float32)
         keys = torch.from_numpy(keys).to(device=self.train_device, dtype=torch.float32)
         return (sample, label, keys)
+    
+    def _regenerate_sample(self, data):
+        """
+        Regenerate the sample with a lower fcutoff to ensure
+        that the waveform is of the desired length.
+        And replace the sample content in the HDF file.
+        """
+        wfkwargs = {'approximant': data.attrs['approximant'],
+                    'mass1': data.attrs['mass1'],
+                    'mass2': data.attrs['mass2'],
+                    'spin1z': data.attrs['spin1z'],
+                    'spin2z': data.attrs['spin2z'],
+                    'delta_t': data.attrs['delta_t'],
+                    'f_lower': 0.80 * data.attrs['f_lower'],
+                    }
+        hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
+        hp = hp.trim_zeros()
+        hc = hc.trim_zeros()
+
+        if len(hc) > PRESET_ARRAY_SIZE:
+            data[-1]['truncated'] = True
+            data[-1]['truncated_len'] = diff = len(hc) - PRESET_ARRAY_SIZE
+            logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
+                                \n So truncating array from the left!')
+            hc = hc[diff:]
+            hp = hp[diff:]
+
+        amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
+        freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
+        phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
+
+        hp = np.array(hp, dtype=np.float32)
+        hc = np.array(hc, dtype=np.float32)
+        amp = np.array(amp.data, dtype=np.float32)
+        phase = np.array(phase.data, dtype=np.float32)
+        freq = np.array(freq.data, dtype=np.float32)
+
+        data['hp'] = hp
+        data['hc'] = hc
+        data['amp'] = amp
+        data['phase'] = phase
+        data['freq'] = freq
+        data.attrs['f_lower'] = wfkwargs['f_lower']
+        return data
 
     def read_strain_hdf(self, idx):
         """
@@ -1125,6 +1169,7 @@ class CustomDataset(Dataset):
         with h5py.File(self.hdf_fname+'.hdf', 'r') as hf:
             data = hf[f'sample{idx}']
             logging.debug(f'keys: {data.keys()}')
+
             m1, m2 = data.attrs['mass1'], data.attrs['mass2']
             labels = [m1,m2]
             spin1z = data.attrs.get('spin1z', None)
@@ -1133,6 +1178,12 @@ class CustomDataset(Dataset):
                 labels.append(spin1z)
                 labels.append(spin2z)
             # logging.debug(f'Labels: {labels}')
+
+            # Regenerate sample if it is shorter duration, but is not padded!
+            if len(data['amp']) < PRESET_ARRAY_SIZE and not data.attrs.get('padded', False):
+                logging.info(f"Sample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. \
+                            Regenerating with lower fcutoff.")
+                data = self._regenerate_sample(data)
 
             amp, freq = np.array(data['amp']), np.array(data['freq'])
             phase = np.array(data['phase'])
@@ -1189,8 +1240,8 @@ class CustomDataset(Dataset):
         tag2_batch = []
         tag3_batch = []
         logging.debug(f'Batch size: {len(batch)}')
-        print('********\n')
-        print(len(batch[0][0][0]), len(batch[1]))
+        # print('********\n')
+        # print(len(batch[0][0][0]), len(batch[1]))
         for tag1, tag2, tag3 in batch:
             logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}')
             # convert to tensors and move to the training device
