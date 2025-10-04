@@ -916,7 +916,7 @@ def check_hdf(fname, noshow=False):
                 ts = grp[name]
                 # print(np.array(ts))
                 # print(ts[10:20])
-                if not noshow:
+                if not noshow or len(ts) < 8190:
                     plt.plot(range(len(ts)), np.array(ts), label=name)
                     plt.legend()
                     plt.show()
