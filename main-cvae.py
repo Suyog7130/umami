@@ -63,7 +63,7 @@ import sys
 sys.path.append('~Dropbox/plotutils-work/plotutils/')
 from plotutils import putils
 
-from datacvae import CustomDataset
+from datacvae import CustomDataset, CustomDataLoader
 from datacvae import PRESET_ARRAY_SIZE, SAMPLE_RATE, DELTA_T, f_lower, sample_len
 from cvae import CVAE
 
@@ -169,8 +169,14 @@ def train(args):
     # logging.info(f"Train set size: {len(train_set)}")
     # logging.info(f"Validation set size: {len(valid_set)}")
 
-    training_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
-    validation_loader = DataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
+    # try:
+    #     training_loader = CustomDataLoader(train_set, batch_size=args.batch_size, shuffle=True)
+    #     validation_loader = CustomDataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
+    # except ValueError:
+    #     training_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
+    #     validation_loader = DataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
+    training_loader = CustomDataLoader(train_set, batch_size=args.batch_size, shuffle=True)
+    validation_loader = CustomDataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
     logging.info(training_loader.__dict__)
     ntbatches = len(training_loader)
     nvbatches = len(validation_loader)
@@ -200,7 +206,7 @@ def train(args):
         for x, labels, keys in tqdm(training_loader, total=len(training_loader),
                                     desc='batch'):
             """
-            `x` is [freq, amp], `labels` is [m1,m2] and
+            `x` is [freq, amp], `labels` is [m1,m2] etc. and
             `keys` is [[amp-mean,amp-var],[freq-mean,freq-var]]
             """
             x, labels, keys = x.to(args.device), labels.to(args.device), keys.to(args.device)

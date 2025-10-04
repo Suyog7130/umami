@@ -1187,6 +1187,9 @@ class CustomDataset(Dataset):
         tag4_batch = []
         feat_dict_batch = {}
         logging.debug(f'Batch size: {len(batch)}')
+        print(batch)
+        print('*****\n')
+        print(np.array(batch).shape)
         for tag1, tag2, tag3, tag4, feat_dict in batch:
             logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}, tag4: {tag4.shape}')
             # convert to tensors and move to the training device
@@ -1220,6 +1223,13 @@ class CustomDataset(Dataset):
             return self.read_strain_hdf(idx)
         else:
             return self.make_strain(idx, custom_batch=custom_batch)
+        
+
+class CustomDataLoader(DataLoader):
+    def __init__(self, dataset, batch_size=32, shuffle=True, num_workers=0, pin_memory=True):
+        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle,
+                         num_workers=num_workers, pin_memory=pin_memory,
+                         collate_fn=dataset.collate_fn)
     
 
 def example_input_plot():
