@@ -298,6 +298,7 @@ class Test:
         #     setattr(self, arg, args.__dict__[arg])
         self.approximant = args.approximant
         self.convert = args.convert
+        self.aligned = args.aligned
         self.datadir = args.datadir
         self.testhdf = self.datadir+self.approximant+'-test'
         if args.fcutoff:
@@ -322,13 +323,13 @@ class Test:
         Set up the DataLoader for the test dataset.
         """
         batch_size = batch_size if batch_size is not None else self.batch_size
+        testhdf = self.testhdf + '-100000-fcutoff-uniform-aligned' if self.aligned else self.testhdf
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
-                                convert=self.convert, hdf_fname=self.testhdf,
+                                convert=self.convert, hdf_fname=testhdf,
                                 returnattr=True, train_device=args.device, 
                                 custom_batch=custom_batch)
-        logging.info(f'Reading test data from {self.testhdf}')
-        test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=True,
-                                 collate_fn=test_set.collate_fn)
+        logging.info(f'Reading test data from {testhdf}')
+        test_loader = CustomDataLoader(test_set, batch_size=batch_size, shuffle=True)
         logging.info(f'Test set size: {len(test_set)}')
         return test_loader
 
@@ -339,8 +340,9 @@ class Test:
         """
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=2, 
+        preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
+        num_classes = 4 if args.aligned else 2
+        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
                     key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
         model.to(device)
@@ -1333,16 +1335,16 @@ if __name__ == "__main__":
     logging.info(f"using {device} device !")
 
     if args.test:
-        try:
-            if args.test_uq:
-                Test(args).test_uq()
-            elif args.time_complexity:
-                for n in [100, 500, 1000]:
-                    Test(args).test_timecomplexity(n)
-            else:
-                Test(args).test()
-        except RuntimeError as e:
-            logging.error(f"Error occurred during testing (perhaps try `--fcutoff`): {e}")
+        # try:
+        if args.test_uq:
+            Test(args).test_uq()
+        elif args.time_complexity:
+            for n in [100, 500, 1000]:
+                Test(args).test_timecomplexity(n)
+        else:
+            Test(args).test()
+        # except RuntimeError as e:
+        #     logging.error(f"Error occurred during testing (perhaps try `--fcutoff`): {e}")
     else:
         # try:
         #     # Always reads data from HDF file now!!

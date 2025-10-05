@@ -1254,8 +1254,6 @@ class CustomDataset(Dataset):
         tag2_batch = []
         tag3_batch = []
         logging.debug(f'Batch size: {len(batch)}')
-        # print('********\n')
-        # print(len(batch[0][0][0]), len(batch[1]))
         for tag1, tag2, tag3 in batch:
             logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}')
             # convert to tensors and move to the training device
