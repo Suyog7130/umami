@@ -1158,6 +1158,7 @@ class CustomDataset(Dataset):
         data['amp'] = amp
         data['phase'] = phase
         data['freq'] = freq
+        data['attrs'] = wfkwargs
         return data
 
     def read_strain_hdf(self, idx):
@@ -1228,13 +1229,14 @@ class CustomDataset(Dataset):
             amp = (amp - np.mean(amp)) / np.std(amp)
             freq = (freq - np.mean(freq)) / np.std(freq)
             if self.returnattr:
-                logging.debug(f'data.attrs: {dict(data.attrs)}')
+                attr = data.attrs if type(data) is not dict else data.get('attrs', {})
+                logging.debug(f"Attributes: {attr}")
                 # also return the loc of padding or truncation
                 return (np.vstack((amp, freq)).astype(np.float32), 
                         np.array(labels).astype(np.float32), 
                         np.array([amp_keys, freq_keys]).astype(np.float32), 
                         np.array(phase).astype(np.float32),
-                        dict(data.attrs))
+                        dict(attr))
             return (np.vstack((amp, freq)).astype(np.float32), 
                     np.array(labels).astype(np.float32), 
                     np.array([amp_keys, freq_keys]).astype(np.float32))
@@ -1250,26 +1252,14 @@ class CustomDataset(Dataset):
         where `labels` is [m1, m2] or [m1, m2, spin1z, spin2z] depending on
         the type of data used.
         """
-        tag1_batch = []
-        tag2_batch = []
-        tag3_batch = []
-        logging.debug(f'Batch size: {len(batch)}')
-        for tag1, tag2, tag3 in batch:
-            logging.debug(f'tag1: {tag1.shape}, tag2: {tag2.shape}, tag3: {tag3.shape}')
+        logging.debug(f'Batch type: {type(batch)}, Batch size: {len(batch)}')
+        tags = [[] for i in range(len(batch[0]))]
+        for j, tag in enumerate(zip(*batch)):
+            logging.debug(f'tag{j}: {tag.shape}')
             # convert to tensors and move to the training device
-            tag1 = torch.tensor(tag1, device=self.train_device, dtype=torch.float32)
-            tag2 = torch.tensor(tag2, device=self.train_device, dtype=torch.float32)
-            tag3 = torch.tensor(tag3, device=self.train_device, dtype=torch.float32)
-            # Append to the batch lists
-            tag1_batch.append(tag1)
-            tag2_batch.append(tag2)
-            tag3_batch.append(tag3)
-        # Convert lists to tensors
-        tag1_batch = torch.stack(tag1_batch).to(device=self.train_device, dtype=torch.float32)
-        tag2_batch = torch.stack(tag2_batch).to(device=self.train_device, dtype=torch.float32)
-        tag3_batch = torch.stack(tag3_batch).to(device=self.train_device, dtype=torch.float32)
-        # Ensure all tensors are of the same shape
-        return (tag1_batch, tag2_batch, tag3_batch)
+            tags[j] = torch.tensor(tag, device=self.train_device, dtype=torch.float32)
+        tags = [torch.stack(tag).to(device=self.train_device, dtype=torch.float32) for tag in tags]
+        return tuple(tags)
 
     def __getitem__(self, idx, custom_batch=None):
         # logging.debug(idx)
