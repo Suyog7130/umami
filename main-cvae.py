@@ -379,9 +379,10 @@ class Test:
                 z1p = model.reparameterize(z1p_mean, z1p_log_var)
                 reconst = model.decode(z1, z1p, labels)
             logging.debug(f"x shape: {x.shape}, reconst shape: {reconst.shape}, keys shape: {keys.shape}")
-            logging.info('Test for current batch completed. Removing zero padding if any.')
-            x, reconst, phases = removezeros(x, reconst, phases, attr)
-            logging.debug(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}, phases: {phases.shape}')
+            if not self.fcutoff or not self.aligned:
+                logging.info('Test for current batch completed. Removing zero padding if any.')
+                x, reconst, phases = removezeros(x, reconst, phases, attr)
+                logging.debug(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}, phases: {phases.shape}')
 
             # Save 5-10 example reconstructed and overplot figures
             if num_saved_overplots < 10:
