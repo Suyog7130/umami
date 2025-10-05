@@ -1257,34 +1257,41 @@ class CustomDataset(Dataset):
         logging.debug(f'Batch size: {len(batch)}')
 
         # Determine the maximum number of tags in the batch
-        max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the feature dict
+        if self.forwhat=='test':
+            max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the feature dict
+        else:
+            max_tags = max(len(sample) for sample in batch)
 
         # Initialize lists for each tag dynamically
         for _ in range(max_tags):
             tag_batches.append([])
 
         for sample in batch:
-            # Extract tags and feature dictionary
-            *tags, feat_dict = sample
-            logging.debug(f'Number of tags: {len(tags)}')
+
+            # Append the feature dict to the batch dict
+            if self.forwhat=='test':
+                *tags, feat_dict = sample
+                logging.debug(f'Number of tags: {len(tags)}')
+                for key, value in feat_dict.items():
+                    if key not in feat_dict_batch:
+                        feat_dict_batch[key] = []
+                    feat_dict_batch[key].append(value)
+            else:
+                tags = sample
 
             # Append tags to their respective lists
             for i, tag in enumerate(tags):
                 tag = torch.tensor(tag, device=self.train_device, dtype=torch.float32)
                 tag_batches[i].append(tag)
 
-            # Append the feature dict to the batch dict
-            for key, value in feat_dict.items():
-                if key not in feat_dict_batch:
-                    feat_dict_batch[key] = []
-                feat_dict_batch[key].append(value)
-
         # Convert lists of tags to tensors
         for i in range(len(tag_batches)):
             tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=torch.float32)
 
         # Ensure all tensors are of the same shape
-        return (*tag_batches, feat_dict_batch)
+        if self.forwhat=='test':
+            return (*tag_batches, feat_dict_batch)
+        return tag_batches
 
 
     def __getitem__(self, idx, custom_batch=None):
