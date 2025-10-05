@@ -67,7 +67,7 @@ class XEncoder(nn.Module):
         # Second CNN layer
         sequence_length = ((sequence_length - (16 - 1) - 1) // 1 + 1)  # Conv2
         sequence_length = (sequence_length - 4) // 4 + 1  # Pool2
-        logging.info(f'sequence_length={sequence_length}')
+        logging.debug(f'sequence_length={sequence_length}')
         return sequence_length
 
     def forward(self, x, labels):
@@ -404,6 +404,7 @@ class CVAE(nn.Module):
                                latent_dim_key=self.latent_dim_key,
                                num_classes=self.num_classes,
                                input_shape=self.input_shape)
+                               
     def __call__(self, x, labels, keys):
         """
         Overrides the __call__ method to directly call the forward method.
