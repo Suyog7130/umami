@@ -1252,18 +1252,40 @@ class CustomDataset(Dataset):
         where `labels` is [m1, m2] or [m1, m2, spin1z, spin2z] depending on
         the type of data used.
         """
-        logging.debug(f'Batch type: {type(batch)}, Batch size: {len(batch)}')
+        tag_batches = []
+        feat_dict_batch = {}
+        logging.debug(f'Batch size: {len(batch)}')
 
-        # Unpack the batch into separate components
-        batch_components = list(zip(*batch))
-        logging.debug(f'Number of components in batch: {len(batch_components)}')
+        # Determine the maximum number of tags in the batch
+        max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the feature dict
 
-        # Convert each component to a tensor and stack them
-        processed_components = []
-        for i, component in enumerate(batch_components):
-            tensor_component = torch.stack([torch.tensor(item, dtype=torch.float32) for item in component])
-            processed_components.append(tensor_component)
-        return tuple(processed_components)
+        # Initialize lists for each tag dynamically
+        for _ in range(max_tags):
+            tag_batches.append([])
+
+        for sample in batch:
+            # Extract tags and feature dictionary
+            *tags, feat_dict = sample
+            logging.debug(f'Number of tags: {len(tags)}')
+
+            # Append tags to their respective lists
+            for i, tag in enumerate(tags):
+                tag = torch.tensor(tag, device=self.train_device, dtype=torch.float32)
+                tag_batches[i].append(tag)
+
+            # Append the feature dict to the batch dict
+            for key, value in feat_dict.items():
+                if key not in feat_dict_batch:
+                    feat_dict_batch[key] = []
+                feat_dict_batch[key].append(value)
+
+        # Convert lists of tags to tensors
+        for i in range(len(tag_batches)):
+            tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=torch.float32)
+
+        # Ensure all tensors are of the same shape
+        return (*tag_batches, feat_dict_batch)
+
 
     def __getitem__(self, idx, custom_batch=None):
         # logging.debug(idx)
