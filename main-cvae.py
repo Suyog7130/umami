@@ -379,7 +379,7 @@ class Test:
                 z1p = model.reparameterize(z1p_mean, z1p_log_var)
                 reconst = model.decode(z1, z1p, labels)
             logging.debug(f"x shape: {x.shape}, reconst shape: {reconst.shape}, keys shape: {keys.shape}")
-            if not self.fcutoff or not self.aligned:
+            if not self.aligned:
                 logging.info('Test for current batch completed. Removing zero padding if any.')
                 x, reconst, phases = removezeros(x, reconst, phases, attr)
                 logging.debug(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}, phases: {phases.shape}')
@@ -786,7 +786,7 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
         recon_amp, recon_freq = recon_data[0], recon_data[1]
 
         logging.debug(f"Type of labels[{i}]: {type(labels[i])}, Shape: {labels[i].shape}")
-        label = labels[i].reshape([2])
+        label = labels[i].reshape([labels.shape[1]])
         logging.debug(f"Type of reshaped label: {type(label)}, Shape: {label.shape}")
         
         # NOTE: The overplot waveforms are not normalized!
