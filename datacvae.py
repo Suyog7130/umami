@@ -1253,13 +1253,17 @@ class CustomDataset(Dataset):
         the type of data used.
         """
         logging.debug(f'Batch type: {type(batch)}, Batch size: {len(batch)}')
-        tags = [[] for i in range(len(batch[0]))]
-        for j, tag in enumerate(zip(*batch)):
-            logging.debug(f'tag{j}: {tag.shape}')
-            # convert to tensors and move to the training device
-            tags[j] = torch.tensor(tag, device=self.train_device, dtype=torch.float32)
-        tags = [torch.stack(tag).to(device=self.train_device, dtype=torch.float32) for tag in tags]
-        return tuple(tags)
+
+        # Unpack the batch into separate components
+        batch_components = list(zip(*batch))
+        logging.debug(f'Number of components in batch: {len(batch_components)}')
+
+        # Convert each component to a tensor and stack them
+        processed_components = []
+        for i, component in enumerate(batch_components):
+            tensor_component = torch.stack([torch.tensor(item, dtype=torch.float32) for item in component])
+            processed_components.append(tensor_component)
+        return tuple(processed_components)
 
     def __getitem__(self, idx, custom_batch=None):
         # logging.debug(idx)
