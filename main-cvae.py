@@ -31,6 +31,7 @@ import pandas as pd
 # matplotlib.use('Agg')   # non GUI backend
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
+from matplotlib.colors import LogNorm
 
 # from sklearn import metrics
 from tqdm import tqdm
@@ -308,6 +309,7 @@ class Test:
 
         self.noshow = args.noshow
         self.nosave = args.nosave
+        self.maxiters = args.nsamples
 
         today = datetime.today().strftime('%Y%m%d') if args.today is None else args.today
         if not os.path.isdir(f'../results/{today}/'):
@@ -359,13 +361,16 @@ class Test:
             # Thus, `shape(x)` is (batch_size, 2, PRESET_ARRAY_SIZE) etc.
 
         # Iterate over all the batches
-        num_saved_overplots = 0
+        num_saved_overplots, iters = 0, 0
         for (x, labels, keys, phases, attr) in tqdm(iter(self.test_loader)):
             # logging.debug(f"Attributes: {attr}")  # Ensure 'attr' is defined or replace with the correct variable
 
             # plt.plot(range(len(x[0][0])), x[0][0].cpu().numpy(), label='input')
             # if not self.noshow:
             #     plt.show()
+            if self.maxiters is not None and iters >= self.maxiters:
+                break
+            iters += 1
             
             # Move labels to the appropriate device
             labels = labels.to(device)
@@ -411,7 +416,7 @@ class Test:
                 'chirp_mass': chirpmasses.flatten(),
                 'total_mass': totalmasses.flatten(),
                 'mass_ratio': massratios.flatten(),
-                'chi_eff': chieffs.flatten() if self.aligned else np.nan,
+                'chi_eff': chieffs.flatten(), # if not aligned, then vals are zeros.
                 'mismatch_amp': mismatch_amp.flatten(),
                 'mismatch_freq': mismatch_freq.flatten(),
                 'mismatch_hplus': mismatch_hplus.flatten(),
@@ -475,6 +480,7 @@ class Test:
         logging.info(f"Mean Mismatch (hcross): {mean_mismatch_hcross:.2e}")
         logging.info(f"Median Mismatch (hcross): {median_mismatch_hcross:.2e}")
         print("All mismatch plots generated for the test set.")
+        dfmm.to_hdf(self.savedir + 'mismatch-results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.h5', key='dfmm', mode='w')
 
         # Plot mismatchs in the mass ratio and chi_eff plane
         if self.aligned:
@@ -503,22 +509,22 @@ class Test:
         # Plotting
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
         contour_levels = np.logspace(-6, 0, 13)
-        cs1 = axes[0, 0].contourf(xi, yi, zi_amp, levels=contour_levels, norm=plt.LogNorm(), cmap='viridis')
+        cs1 = axes[0, 0].contourf(xi, yi, zi_amp, levels=contour_levels, norm=LogNorm(), cmap='viridis')
         fig.colorbar(cs1, ax=axes[0, 0], label='Mismatch Amplitude')
         axes[0, 0].set_title('Mismatch Amplitude')
         axes[0, 0].set_xlabel('Mass Ratio (q)')
         axes[0, 0].set_ylabel('Chi_eff')
-        cs2 = axes[0, 1].contourf(xi, yi, zi_freq, levels=contour_levels, norm=plt.LogNorm(), cmap='viridis')
+        cs2 = axes[0, 1].contourf(xi, yi, zi_freq, levels=contour_levels, norm=LogNorm(), cmap='viridis')
         fig.colorbar(cs2, ax=axes[0, 1], label='Mismatch Frequency')
         axes[0, 1].set_title('Mismatch Frequency')
         axes[0, 1].set_xlabel('Mass Ratio (q)')
         axes[0, 1].set_ylabel('Chi_eff')
-        cs3 = axes[1, 0].contourf(xi, yi, zi_hplus, levels=contour_levels, norm=plt.LogNorm(), cmap='viridis')
+        cs3 = axes[1, 0].contourf(xi, yi, zi_hplus, levels=contour_levels, norm=LogNorm(), cmap='viridis')
         fig.colorbar(cs3, ax=axes[1, 0], label='Mismatch hplus')
         axes[1, 0].set_title('Mismatch hplus')
         axes[1, 0].set_xlabel('Mass Ratio (q)')
         axes[1, 0].set_ylabel('Chi_eff')
-        cs4 = axes[1, 1].contourf(xi, yi, zi_hcross, levels=contour_levels, norm=plt.LogNorm(), cmap='viridis')
+        cs4 = axes[1, 1].contourf(xi, yi, zi_hcross, levels=contour_levels, norm=LogNorm(), cmap='viridis')
         fig.colorbar(cs4, ax=axes[1, 1], label='Mismatch hcross')
         axes[1, 1].set_title('Mismatch hcross')
         axes[1, 1].set_xlabel('Mass Ratio (q)')
@@ -1309,8 +1315,8 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Non-Eccentric GW Generator')
 
-    # parser.add_argument('--nsamples', action='store', default=1000, type=int,
-    #                         help='default=%(default)s')
+    parser.add_argument('--nsamples', action='store', default=1000, type=int,
+                            help='default=%(default)s')
     parser.add_argument('--approximant', action='store', default='IMRPhenomD', )
     parser.add_argument('--batch-size', action='store', default=50, type=int,
                             help='default=%(default)s')
@@ -1348,7 +1354,8 @@ if __name__ == "__main__":
                         help='path to already trained model.')
 
     parser.add_argument('--today', action='store', default=None,
-                        help='Date of the model we are currently using. Results will be saved to this folder. (default=%(default)')
+                        help='Date of the model we are currently using, in YYYYMMDD. \
+                            Results will be saved to this folder. (default=%(default)')
     parser.add_argument('--noshow', action='store_true', default=False,
                             help='Do not show output Plot !')
     parser.add_argument('--nosave', action='store_true', default=False,
