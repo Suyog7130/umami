@@ -309,7 +309,7 @@ class Test:
         self.noshow = args.noshow
         self.nosave = args.nosave
 
-        today = datetime.today().strftime('%Y%m%d')
+        today = datetime.today().strftime('%Y%m%d') if args.today is None else args.today
         if not os.path.isdir(f'../results/{today}/'):
             os.makedirs(f'../results/{today}/')
         self.savedir = f'../results/{today}/'
@@ -400,7 +400,7 @@ class Test:
                 = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
             logging.info("Amplitude and Frequency mismatch calculated for current batch.")
             logging.info("Calculating hplus/hcross mismatch for current batch.")
-            mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, num_saved_overplots \
+            mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
                 = plot_polarization_mismatch(x, reconst, labels, keys, phases, 
                                              savedir=self.savedir, nobatchwiseplot=True,
                                              num_saved_overplots=num_saved_overplots)
@@ -411,6 +411,7 @@ class Test:
                 'chirp_mass': chirpmasses.flatten(),
                 'total_mass': totalmasses.flatten(),
                 'mass_ratio': massratios.flatten(),
+                'chi_eff': chieffs.flatten() if self.aligned else np.nan,
                 'mismatch_amp': mismatch_amp.flatten(),
                 'mismatch_freq': mismatch_freq.flatten(),
                 'mismatch_hplus': mismatch_hplus.flatten(),
@@ -474,6 +475,59 @@ class Test:
         logging.info(f"Mean Mismatch (hcross): {mean_mismatch_hcross:.2e}")
         logging.info(f"Median Mismatch (hcross): {median_mismatch_hcross:.2e}")
         print("All mismatch plots generated for the test set.")
+
+        # Plot mismatchs in the mass ratio and chi_eff plane
+        if self.aligned:
+            self.plot_mm_in_qchi(dfmm)
+
+    def plot_mm_in_qchi(self, dfmm):
+        """
+        Plot the mismatches in the mass ratio and chi_eff plane as contours.
+        """
+        logging.info("Plotting mismatches in the mass ratio and chi_eff plane.")
+        from scipy.interpolate import griddata
+
+        # Create a grid of points
+        q = dfmm['mass_ratio'].values
+        chi = dfmm['chi_eff'].values
+        xi = np.linspace(min(q), max(q), 100)
+        yi = np.linspace(min(chi), max(chi), 100)
+        xi, yi = np.meshgrid(xi, yi)
+
+        # Interpolate mismatch values onto the grid
+        zi_amp = griddata((q, chi), dfmm['mismatch_amp'].values, (xi, yi), method='linear')
+        zi_freq = griddata((q, chi), dfmm['mismatch_freq'].values, (xi, yi), method='linear')
+        zi_hplus = griddata((q, chi), dfmm['mismatch_hplus'].values, (xi, yi), method='linear')
+        zi_hcross = griddata((q, chi), dfmm['mismatch_hcross'].values, (xi, yi), method='linear')
+
+        # Plotting
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        contour_levels = np.logspace(-6, 0, 13)
+        cs1 = axes[0, 0].contourf(xi, yi, zi_amp, levels=contour_levels, norm=plt.LogNorm(), cmap='viridis')
+        fig.colorbar(cs1, ax=axes[0, 0], label='Mismatch Amplitude')
+        axes[0, 0].set_title('Mismatch Amplitude')
+        axes[0, 0].set_xlabel('Mass Ratio (q)')
+        axes[0, 0].set_ylabel('Chi_eff')
+        cs2 = axes[0, 1].contourf(xi, yi, zi_freq, levels=contour_levels, norm=plt.LogNorm(), cmap='viridis')
+        fig.colorbar(cs2, ax=axes[0, 1], label='Mismatch Frequency')
+        axes[0, 1].set_title('Mismatch Frequency')
+        axes[0, 1].set_xlabel('Mass Ratio (q)')
+        axes[0, 1].set_ylabel('Chi_eff')
+        cs3 = axes[1, 0].contourf(xi, yi, zi_hplus, levels=contour_levels, norm=plt.LogNorm(), cmap='viridis')
+        fig.colorbar(cs3, ax=axes[1, 0], label='Mismatch hplus')
+        axes[1, 0].set_title('Mismatch hplus')
+        axes[1, 0].set_xlabel('Mass Ratio (q)')
+        axes[1, 0].set_ylabel('Chi_eff')
+        cs4 = axes[1, 1].contourf(xi, yi, zi_hcross, levels=contour_levels, norm=plt.LogNorm(), cmap='viridis')
+        fig.colorbar(cs4, ax=axes[1, 1], label='Mismatch hcross')
+        axes[1, 1].set_title('Mismatch hcross')
+        axes[1, 1].set_xlabel('Mass Ratio (q)')
+        axes[1, 1].set_ylabel('Chi_eff')
+        plt.tight_layout()
+        savename = self.savedir + 'mm_in_qchi_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png'
+        plt.savefig(savename, dpi=300, bbox_inches='tight', transparent=True)
+        logging.info(f"Mismatch in q-chi_eff plane plot saved to {savename}")
+        plt.close()
 
 
     def test_uq(self):
@@ -1151,6 +1205,15 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
     mismatch_hplus = np.zeros((x.shape[0], 1))
     mismatch_hcross = np.zeros((x.shape[0], 1))
 
+    chieffs = np.zeros((labels.shape[0], 1))  # Store chi_eff for each sample
+    if labels.shape[1] == 4:
+        # labels are [m1, m2, spin1z, spin2z]
+        for i in range(labels.shape[0]):
+            m1, m2 = labels[i][0], labels[i][1]
+            chi1, chi2 = labels[i][2], labels[i][3]
+            chi_eff = (m1 * chi1 + m2 * chi2) / (m1 + m2)
+            chieffs[i] = chi_eff
+
     # iterate over all the samples in one batch
     for i in range(x.shape[0]):
         logging.debug(f"Processing sample {i}")
@@ -1240,7 +1303,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
             plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
             logging.info(f"Mismatch plot saved to {savedir+savename}.png")
             plt.close()
-    return (mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, num_saved_overplots)
+    return (mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots)
 
 
 if __name__ == "__main__":
@@ -1284,6 +1347,8 @@ if __name__ == "__main__":
     parser.add_argument('--model', action='store', default='../trained-models/model-20250526_070915-1',
                         help='path to already trained model.')
 
+    parser.add_argument('--today', action='store', default=None,
+                        help='Date of the model we are currently using. Results will be saved to this folder. (default=%(default)')
     parser.add_argument('--noshow', action='store_true', default=False,
                             help='Do not show output Plot !')
     parser.add_argument('--nosave', action='store_true', default=False,
