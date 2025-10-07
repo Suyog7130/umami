@@ -342,10 +342,10 @@ class Test:
         """
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
-        num_classes = 4 if args.aligned else 2
+        preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
+        num_classes = 4 if self.aligned else 2
         model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                    key_shape=(2,2)).to(args.device)
+                    key_shape=(2,2)).to(self.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
         model.to(device)
         model.eval()
@@ -700,8 +700,9 @@ class Test:
         # Nruns = [int(n) for n in [1, 10, 50, 100, 500, 1e3, 5e3, 1e4, 5e4]]
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=2, 
+        preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
+        num_classes = 4 if args.aligned else 2
+        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
                     key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
         model.to(device)
@@ -713,7 +714,13 @@ class Test:
             # Generate random labels within the training range
             m1 = np.random.uniform(5, 75, Nr)
             m2 = np.random.uniform(5, 75, Nr)
-            labels = torch.tensor(np.vstack((m1, m2)).T, dtype=torch.float32).to(device)
+            if self.aligned:
+                spin1z = np.random.uniform(-0.9, 0.9, Nr)
+                spin2z = np.random.uniform(-0.9, 0.9, Nr)
+                labels = np.vstack((m1, m2, spin1z, spin2z)).T
+            else:
+                labels = np.vstack((m1, m2)).T
+            labels = torch.tensor(labels, dtype=torch.float32).to(device)
             logging.info(f'Choosing to test sample size {labels.shape}')
             import time
             start_time = time.time()
