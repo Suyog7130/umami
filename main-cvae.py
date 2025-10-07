@@ -413,6 +413,10 @@ class Test:
             logging.info(f"Tests completed for current batch.")
             # Save the mismatch results to the dataframe
             dfmm = pd.concat([dfmm, pd.DataFrame({
+                'mass1': labels[:,0].cpu().numpy(),
+                'mass2': labels[:,1].cpu().numpy(),
+                'spin1z': labels[:,2].cpu().numpy() if self.aligned else np.zeros(len(labels)),
+                'spin2z': labels[:,3].cpu().numpy() if self.aligned else np.zeros(len(labels)),
                 'chirp_mass': chirpmasses.flatten(),
                 'total_mass': totalmasses.flatten(),
                 'mass_ratio': massratios.flatten(),
@@ -484,9 +488,11 @@ class Test:
 
         # Plot mismatchs in the mass ratio and chi_eff plane
         if self.aligned:
-            self.plot_mm_in_qchi(dfmm)
+            self.plot_mmcontour_in_qchi_space(dfmm)
+            self.plot_mm_vs_chieff(dfmm)
+            self.plot_mm_vs_spin(dfmm)
 
-    def plot_mm_in_qchi(self, dfmm):
+    def plot_mmcontour_in_qchi_space(self, dfmm):
         """
         Plot the mismatches in the mass ratio and chi_eff plane as contours.
         """
@@ -530,9 +536,48 @@ class Test:
         axes[1, 1].set_xlabel('Mass Ratio (q)')
         axes[1, 1].set_ylabel('Chi_eff')
         plt.tight_layout()
-        savename = self.savedir + 'mm_in_qchi_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png'
+        savename = self.savedir + 'mmcontour_in_qchi_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png'
         plt.savefig(savename, dpi=300, bbox_inches='tight', transparent=True)
         logging.info(f"Mismatch in q-chi_eff plane plot saved to {savename}")
+        plt.close()
+
+    def plot_mm_vs_chieff(self, dfmm):
+        """
+        Plot the mismatches vs chi_eff.
+        """
+        logging.info("Plotting mismatches vs chi_eff.")
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        for i, (mm_col, ax) in enumerate(zip(['mismatch_amp', 'mismatch_freq'], axes)):
+            ax.plot(dfmm['chi_eff'], dfmm[mm_col], 'o',
+                    markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
+            ax.set_xlabel('Chi_eff', fontsize=12)
+            ax.set_ylabel(f'{mm_col}', fontsize=12)
+            ax.set_yscale('log')
+            ax.set_title(f'{mm_col} vs Chi_eff', fontsize=12)
+        plt.tight_layout()
+        savename = self.savedir + 'mm_vs_chieff_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png'
+        plt.savefig(savename, dpi=300, bbox_inches='tight', transparent=True)
+        logging.info(f"Mismatch vs chi_eff plot saved to {savename}")
+        plt.close()
+
+    def plot_mm_vs_spin(self, dfmm):
+        """
+        Plot the mismatches vs individual spins.
+        """
+        logging.info("Plotting mismatches vs individual spins.")
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        for i, (spin_col, ax_row) in enumerate(zip(['spin1z', 'spin2z'], axes)):
+            for j, (mm_col, ax) in enumerate(zip(['mismatch_amp', 'mismatch_freq'], ax_row)):
+                ax.plot(dfmm[spin_col], dfmm[mm_col], 'o',
+                        markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
+                ax.set_xlabel(f'{spin_col}', fontsize=12)
+                ax.set_ylabel(f'{mm_col}', fontsize=12)
+                ax.set_yscale('log')
+                ax.set_title(f'{mm_col} vs {spin_col}', fontsize=12)
+        plt.tight_layout()
+        savename = self.savedir + 'mm_vs_spin_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png'
+        plt.savefig(savename, dpi=300, bbox_inches='tight', transparent=True)
+        logging.info(f"Mismatch vs spin plot saved to {savename}")
         plt.close()
 
 
