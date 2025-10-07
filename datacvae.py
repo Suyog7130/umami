@@ -1925,8 +1925,11 @@ def calc_cutoffconst(approximant='SEOBNRv4'):
     mchirp = (m1 * m2) ** (3/5) / (m1 + m2) ** (1/5)
     consts = np.zeros(len(mchirp))
     for i in range(len(mchirp)):
-        hp, hc = get_td_waveform(approximant=approximant, mass1=m1[i], mass2=m2[i],
-                                  delta_t=DELTA_T, f_lower=f_lower)
+        hp, hc = get_td_waveform(approximant=approximant, 
+                                 mass1=m1[i], 
+                                 mass2=m2[i],
+                                 delta_t=DELTA_T, 
+                                 f_lower=f_lower)
         consts[i] = hp.duration / (40 ** (-8/3) * mchirp[i] ** (-5/3))
     const = np.mean(consts)
     logging.info(f"Proportionality constant (k) for {approximant}: {const}")

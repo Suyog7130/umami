@@ -74,10 +74,15 @@ def splitspins(nsamples=1e5):
 
 
 class CheckWaveform:
-    def __init__(self, masses, aligned=True, nosave=False):
+    def __init__(self, masses, fcutoff=False, aligned=True, 
+                 nosave=False):
         self.masses = masses
         self.nosave = nosave
         self.fname = 'waveforms'
+        if fcutoff:
+            self.cutoffconst = calc_cutoffconst()
+        else:
+            self.cutoffconst = None
         self.init_plot()
         self.waveform(aligned=aligned)
 
@@ -177,7 +182,7 @@ class Waveform:
         if fcutoff:
             self.cutoffconst = calc_cutoffconst()
         else:
-            self.cutoffconst == None
+            self.cutoffconst = None
         self.otherparams = False
 
         self.approximant = APPROXIMANT
