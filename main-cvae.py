@@ -345,7 +345,7 @@ class Test:
         preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
         num_classes = 4 if self.aligned else 2
         model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                    key_shape=(2,2)).to(self.device)
+                    key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
         model.to(device)
         model.eval()
