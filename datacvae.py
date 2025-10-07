@@ -1907,7 +1907,7 @@ def example5b(approximants=['SEOBNRv4', 'EccentricTD']):
     plt.close()
 
 
-def calc_cutoffconst(approximant='SEOBNRv4'):
+def calc_cutoffconst(approximant='SEOBNRv4', nsamples=500, aligned=False):
     """
     Calculates the proportionality constant relating the duration
     of the signal to the lower frequency cutoff.
@@ -1921,15 +1921,20 @@ def calc_cutoffconst(approximant='SEOBNRv4'):
     mass values and then find the proportionality constant based on the
     formula described above.
     """
-    m1 = m2 = np.arange(5, 75, 500)
+    m1 = m2 = np.arange(5, 75, nsamples)
     mchirp = (m1 * m2) ** (3/5) / (m1 + m2) ** (1/5)
     consts = np.zeros(len(mchirp))
+    wfkwargs = {"approximant": approximant, 
+                "delta_t": DELTA_T, 
+                "f_lower": f_lower}
+    if aligned:
+        spin1z, spin2z = np.random.uniform(-0.99, 0.99, 2)
+        wfkwargs["spin1z"] = spin1z
+        wfkwargs["spin2z"] = spin2z
     for i in range(len(mchirp)):
-        hp, hc = get_td_waveform(approximant=approximant, 
-                                 mass1=m1[i], 
-                                 mass2=m2[i],
-                                 delta_t=DELTA_T, 
-                                 f_lower=f_lower)
+        wfkwargs["mass1"] = m1[i]
+        wfkwargs["mass2"] = m2[i]
+        hp, hc = get_td_waveform(**wfkwargs)
         consts[i] = hp.duration / (40 ** (-8/3) * mchirp[i] ** (-5/3))
     const = np.mean(consts)
     logging.info(f"Proportionality constant (k) for {approximant}: {const}")

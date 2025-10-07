@@ -75,12 +75,16 @@ def splitspins(nsamples=1e5):
 
 class CheckWaveform:
     def __init__(self, masses, fcutoff=False, aligned=True, 
-                 nosave=False):
+                 nosave=False, fname='waveforms'):
         self.masses = masses
         self.nosave = nosave
-        self.fname = 'waveforms'
+        self.approximant = APPROXIMANT
+        self.fname = fname + '-' + self.approximant
+        if aligned:
+            self.fname += '-aligned'
         if fcutoff:
-            self.cutoffconst = calc_cutoffconst()
+            self.fname += '-fcutoff'
+            self.cutoffconst = calc_cutoffconst(aligned=aligned)
         else:
             self.cutoffconst = None
         self.init_plot()
@@ -146,6 +150,22 @@ class CheckWaveform:
         print(wfkwargs)
         hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
         hp, hc = hp.trim_zeros(), hc.trim_zeros()
+
+        if self.cutoffconst is not None:
+            logging.info(f'f_low={f_lower}, duration={hp.duration}')
+            # calculate new f_lower
+            mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+            new_fcutoff = ( DURATION / (self.cutoffconst * mchirp ** (-5/3)) )**(-3/8)
+            logging.info(f'New f_lower={new_fcutoff}')
+            # adjust the new f_lower to allow for some error
+            new_fcutoff -= 0.2*new_fcutoff
+            # generate a second waveform
+            wfkwargs['f_lower'] = new_fcutoff
+            hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
+            hp, hc = hp.trim_zeros(), hc.trim_zeros()
+            logging.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
+            logging.info(f'sample_len={len(hp)}')
+
         amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
         phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
         freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
@@ -405,9 +425,6 @@ def main(args):
     nsample = args.nsample  # default 1e5
     print(f"Generating {nsample} samples.")
     train_masses, val_masses, test_masses = tttdatasets(nsamples=nsample)
-    # CheckWaveform(masses=[[50, 30], [15, 5]], 
-    #               aligned=args.aligned,
-    #               nosave=args.nosave)
     train_spins, val_spins, test_spins = splitspins(nsamples=nsample)
     trainwf = Waveform(masses=train_masses, spins=train_spins, fname=f'train-{int(nsample)}-')
     trainwf.write_data_to_hdf()
@@ -429,6 +446,11 @@ if __name__=="__main__":
                         help='Number of samples to generate.')
     parser.add_argument('--checkhdf', action='store_true', default=False,
                         help='Read the data from HDF5 file.')
+
+    parser.add_argument('--fcutoff', action='store_true', default=False,
+                        help='Use fcutoff to generate waveforms of equal duration.')
+    parser.add_argument('--checkwaveform', action='store_true', default=False,
+                        help='Check waveform generation and plotting.')
     
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
                         help='Increase verbosity of the output.')
@@ -447,4 +469,10 @@ if __name__=="__main__":
     if args.checkhdf:
         fname = 'SEOBNRv4-train-100-fcutoff-uniform-aligned.hdf'
         check_hdf(fname)
-    main(args)
+    elif args.checkwaveform:
+        CheckWaveform(masses=[[50, 30], [15, 5]], 
+                      aligned=args.aligned,
+                      nosave=args.nosave,
+                      fcutoff=args.fcutoff)
+    else:
+        main(args)
