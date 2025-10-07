@@ -595,8 +595,9 @@ class Test:
         Nruns = 1000
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=2, 
+        preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
+        num_classes = 4 if args.aligned else 2
+        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
                     key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
         model.to(device)
@@ -607,15 +608,17 @@ class Test:
 
         # `batch_size`=1, so that we can directly send the full batch for test!
         # Check if the specific value exists in labels
-        specific_value = [10, 10]  # Replace with the desired label value
+        # if the value is not found, then just take the last sample in the batch!
+        specific_value = [10, 10, -0.5, 0.5]  # Replace with the desired label value
         test_loader = self.setdataloader(batch_size=1)
         for batch in iter(test_loader):
             x, labels, keys, phases, attr = batch
-            if any((labels == torch.tensor(specific_value)).all(dim=1)):
-                idx = (labels == torch.tensor(specific_value)).all(dim=1).nonzero(as_tuple=True)[0].item()
+            if any((labels == torch.tensor(specific_value, device=device)).all(dim=1)):
+                idx = (labels == torch.tensor(specific_value, device=device)).all(dim=1).nonzero(as_tuple=True)[0].item()
                 x, labels, keys, phases, attr = x[idx], labels[idx], keys[idx], phases[idx], attr
                 print(f"Found specific value {specific_value} in the test set.")
                 break
+
         # Move labels to the appropriate device
         labels = labels.to(device)
         logging.info(f'Choosing to test sample {labels}')
@@ -630,12 +633,17 @@ class Test:
                 z1 = model.reparameterize(z1_mean, z1_log_var)
                 z1p = model.reparameterize(z1p_mean, z1p_log_var)
                 reconst = model.decode(z1, z1p, labels)
-                x, reconst, phase = removezeros(x, reconst, phases, attr)
+                
+                if not self.aligned:
+                    logging.info('Test for current batch completed. Removing zero padding if any.')
+                    x, reconst, phases = removezeros(x, reconst, phases, attr)
+                    logging.debug(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}, phases: {phases.shape}')
+                
                 mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
                     = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
                 logging.debug("Amplitude and Frequency mismatch calculated for current batch.")
                 logging.debug("Calculating hplus/hcross mismatch for current batch.")
-                mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios \
+                mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
                     = plot_polarization_mismatch(x, reconst, labels, keys, phases, 
                                                 savedir=self.savedir, nobatchwiseplot=True,
                                                 num_saved_overplots=None)
