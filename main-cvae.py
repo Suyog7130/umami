@@ -68,6 +68,8 @@ from datacvae import CustomDataset, CustomDataLoader
 from datacvae import PRESET_ARRAY_SIZE, SAMPLE_RATE, DELTA_T, f_lower, sample_len
 from cvae import CVAE
 
+from data import Waveform
+
 
 
 # def train_one_epoch(training_loader, epoch_index, tb_writer=None):
@@ -319,6 +321,9 @@ class Test:
         self.epochs = 1
         self.model_path = '../trained-models/' + args.model
         logging.info('Test DataLoader set up.')
+
+    def _load_model(self):
+        pass
 
     def setdataloader(self, batch_size=None, custom_batch=None):
         """
@@ -752,6 +757,82 @@ class Test:
         plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
 
+    
+    def generate(self, num_samples=1, labels=None, nomismatch=False):
+        """
+        Generate new waveform samples using the trained CVAE model.
+        If labels are provided, generate samples conditioned on those labels.
+        Otherwise, generate samples by sampling from the latent space.
+
+        Parameters:
+        -----------
+        num_samples : int
+            Number of samples to generate if labels are not provided.
+        labels : torch.Tensor, optional
+            Labels to condition the generation on. Shape should be (num_samples, num_classes).
+        nomm : bool
+            If True, skip mismatch calculation and plotting.
+            
+        Returns:
+        --------
+        generated_samples : torch.Tensor
+            Generated waveform samples. Shape is (num_samples, 2, PRESET_ARRAY_SIZE).
+        """
+        logging.info(f"Generating new samples with model: {self.model_path}")
+        # Load the trained model
+        preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
+        num_classes = 4 if args.aligned else 2
+        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                    key_shape=(2,2)).to(args.device)
+        model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(device)
+        model.eval()
+        logging.info("Model loaded and set to evaluation mode.")
+
+        if labels is not None:
+            labels = labels.to(device)
+            num_samples = labels.shape[0]
+            logging.info(f'Generating {num_samples} samples conditioned on provided labels.')
+            with torch.no_grad():
+                z1_mean, z1_log_var = model.encode_label_for_x(labels)
+                z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
+                z1 = model.reparameterize(z1_mean, z1_log_var)
+                z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                generated_samples = model.decode(z1, z1p, labels)
+        else:
+            logging.info(f'Generating {num_samples} samples by sampling from latent space.')
+            with torch.no_grad():
+                z1 = torch.randn(num_samples, model.latent_dim_x).to(device)
+                z1p = torch.randn(num_samples, model.latent_dim_key).to(device)
+                if self.aligned:
+                    random_labels = torch.tensor(np.random.uniform(
+                        [5, 5, -0.9, -0.9], [75, 75, 0.9, 0.9], size=(num_samples, 4)),
+                        dtype=torch.float32).to(device)
+                else:
+                    random_labels = torch.tensor(np.random.uniform(
+                        [5, 5], [75, 75], size=(num_samples, 2)),
+                        dtype=torch.float32).to(device)
+                generated_samples = model.decode(z1, z1p, random_labels)
+        
+        if nomismatch:
+            return generated_samples
+        
+        # If nomm is False, calculate and plot mismatches
+        logging.info("Calculating mismatches for generated samples.")
+        dummy_keys = torch.tensor(np.tile([[0,1],[0,1]], (num_samples,1,1)), dtype=torch.float32).to(device)
+        dummy_phases = torch.zeros((num_samples, preset_array_size), dtype=torch.float32).to(device)
+        if labels is None:
+            labels = random_labels
+        mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
+            = plot_mismatch(torch.zeros_like(generated_samples), generated_samples, labels, dummy_keys,
+                            savedir=self.savedir, nobatchwiseplot=True)
+        logging.debug("Amplitude and Frequency mismatch calculated for generated samples.")
+        logging.debug("Calculating hplus/hcross mismatch for generated samples.")
+        mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
+            = plot_polarization_mismatch(torch.zeros_like(generated_samples), generated_samples, labels, dummy_keys, dummy_phases,
+                                        savedir=self.savedir, nobatchwiseplot=True,
+                                        num_saved_overplots=None)
+        return generated_samples
 
 
 def removezeros(x, reconst, phase, attr):
