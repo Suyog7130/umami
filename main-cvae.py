@@ -451,6 +451,7 @@ class Test:
             ax.set_yscale('log')  # Set y-axis to logarithmic scale
             # ax.set_title(f'Mismatch vs {xname}', fontsize=12)
             ax.legend(loc='best')
+            ax.tick_params(which='both', direction='in', top=True, right=True)
             savename = 'mmplot-alltest-ampfreq-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
             plt.savefig(self.savedir+savename+'.png', dpi=300, bbox_inches='tight', transparent=True)
             logging.debug(f"Mismatch plot saved to {self.savedir+savename}.png")
@@ -467,6 +468,7 @@ class Test:
             ax.set_yscale('log')  # Set y-axis to logarithmic scale
             # ax.set_title(f'Mismatch vs {xname}', fontsize=12)
             ax.legend(loc='best')
+            ax.tick_params(which='both', direction='in', top=True, right=True)
             savename = 'mmplot-alltest-hphc-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
             plt.savefig(self.savedir+savename+'.png', dpi=300, bbox_inches='tight', transparent=True)
             logging.info(f"Mismatch plot saved to {self.savedir+savename}.png")
@@ -488,6 +490,10 @@ class Test:
         logging.info(f"Median Mismatch (hplus): {median_mismatch_hplus:.2e}")
         logging.info(f"Mean Mismatch (hcross): {mean_mismatch_hcross:.2e}")
         logging.info(f"Median Mismatch (hcross): {median_mismatch_hcross:.2e}")
+        logging.info(f"Best mismatch (hplus): {np.min(dfmm['mismatch_hplus']):.2e}")
+        logging.info(f"Best mismatch (hcross): {np.min(dfmm['mismatch_hcross']):.2e}")
+        logging.info(f"Worst mismatch (hplus): {np.max(dfmm['mismatch_hplus']):.2e}")
+        logging.info(f"Worst mismatch (hcross): {np.max(dfmm['mismatch_hcross']):.2e}")
         print("All mismatch plots generated for the test set.")
         dfmm.to_hdf(self.savedir + 'mismatch-results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.h5', key='dfmm', mode='w')
 
@@ -524,22 +530,24 @@ class Test:
         fig.colorbar(cs1, ax=axes[0, 0], label='Mismatch Amplitude')
         axes[0, 0].set_title('Mismatch Amplitude')
         axes[0, 0].set_xlabel('Mass Ratio (q)')
-        axes[0, 0].set_ylabel('Chi_eff')
+        axes[0, 0].set_ylabel('Effective Spin ($\\chi_{\\rm eff}$)')
         cs2 = axes[0, 1].contourf(xi, yi, zi_freq, levels=contour_levels, norm=LogNorm(), cmap='viridis')
         fig.colorbar(cs2, ax=axes[0, 1], label='Mismatch Frequency')
         axes[0, 1].set_title('Mismatch Frequency')
         axes[0, 1].set_xlabel('Mass Ratio (q)')
-        axes[0, 1].set_ylabel('Chi_eff')
+        axes[0, 1].set_ylabel('Effective Spin ($\\chi_{\\rm eff}$)')
         cs3 = axes[1, 0].contourf(xi, yi, zi_hplus, levels=contour_levels, norm=LogNorm(), cmap='viridis')
-        fig.colorbar(cs3, ax=axes[1, 0], label='Mismatch hplus')
-        axes[1, 0].set_title('Mismatch hplus')
+        fig.colorbar(cs3, ax=axes[1, 0], label='$h_{+}$ mismatch')
+        # axes[1, 0].set_title('Mismatch hplus')
         axes[1, 0].set_xlabel('Mass Ratio (q)')
-        axes[1, 0].set_ylabel('Chi_eff')
+        axes[1, 0].set_ylabel('Effective Spin ($\\chi_{\\rm eff}$)')
         cs4 = axes[1, 1].contourf(xi, yi, zi_hcross, levels=contour_levels, norm=LogNorm(), cmap='viridis')
-        fig.colorbar(cs4, ax=axes[1, 1], label='Mismatch hcross')
-        axes[1, 1].set_title('Mismatch hcross')
-        axes[1, 1].set_xlabel('Mass Ratio (q)')
-        axes[1, 1].set_ylabel('Chi_eff')
+        fig.colorbar(cs4, ax=axes[1, 1], label='$h_{\\times}$ mismatch')
+        # axes[1, 1].set_title('Mismatch hcross')
+        axes[1, 1].set_xlabel('Mass Ratio (q)', fontsize=12)
+        axes[1, 1].set_ylabel('Effective Spin ($\\chi_{\\rm eff}$)')
+        for ax in axes.flatten():
+            ax.tick_params(which='both', direction='in', top=True, right=True)
         plt.tight_layout()
         savename = self.savedir + 'mmcontour_in_qchi_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png'
         plt.savefig(savename, dpi=300, bbox_inches='tight', transparent=True)
@@ -673,6 +681,7 @@ class Test:
             ax.set_ylabel('Mismatch', fontsize=12)
             ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
             ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+            ax.tick_params(which='both', direction='in', top=True, right=True)
         axes[0].text(0.05, 0.025, label, transform=axes[0].transAxes, ha='left', fontsize=12)
         axes[1].text(0.05, 0.95, label, transform=axes[1].transAxes, ha='left', fontsize=12)
         mu_amp, std_amp = np.mean(mmtot_amp), np.std(mmtot_amp)
@@ -1007,12 +1016,23 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
         axes[0].plot(np.arange(len(recon_amp)), recon_amp, '-', label=f"Reconstructed")
         axes[1].plot(np.arange(len(orig_freq)), orig_freq, '-', label=f"Original")
         axes[1].plot(np.arange(len(recon_freq)), recon_freq, '-', label=f"Reconstructed")
-        axes[1].set_title(f'$m_1$={float(label[0])}, $m_2$={float(label[1])}', fontsize=8)
 
     for i, axlabel in enumerate(['Amplitude', 'Frequency']):
         axes[i].set_xlabel('Sample length', fontsize=12)
         axes[i].set_ylabel(axlabel, fontsize=12)
+        axes[i].xaxis.set_minor_locator(tck.AutoMinorLocator())
+        axes[i].yaxis.set_minor_locator(tck.AutoMinorLocator())
+        axes[i].tick_params(which='both', direction='in', top=True, right=True)
     axes[1].legend(fontsize=8, loc='upper left')
+
+    # Place suptitle closer to the top of the figure, not too far away
+    plt.suptitle(
+        f'$m_1$={float(label[0]):.2f}, $m_2$={float(label[1]):.2f}, '
+        f'$\\chi_1(z)$={float(label[2]):.2f}, $\\chi_2(z)$={float(label[3]):.2f}',
+        fontsize=12,
+        y=0.95  # Move title closer to the top edge (default is 0.99)
+    )
+
     plt.tight_layout()
     # plt.subplots_adjust(wspace=0.2)
     # putils.beautifyPlot(axes)
@@ -1058,11 +1078,9 @@ def plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label,
 
     axes[0].plot(np.arange(len(hp_orig)), hp_orig, label='Original', color='blue')
     axes[0].plot(np.arange(len(hp_recon)), hp_recon, label='Reconstructed', linestyle='--', color='orange')
-
     axes[2].plot(np.arange(len(hc_orig)), hc_orig, label='Original', color='blue')
     axes[2].plot(np.arange(len(hc_recon)), hc_recon, label='Reconstructed', linestyle='--', color='orange')
-    axes[2].set_title(f'$m_1$={float(label[0])}, $m_2$={float(label[1])}', fontsize=8)
-
+    
     # Zoomed view near the maximum
     zoom_halfwidth = 75
     zoom_start = max(0, np.argmax(hp_orig) - zoom_halfwidth)
@@ -1077,11 +1095,24 @@ def plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label,
 
     # TODO: Maybe I can have time on the x-axis!
     for i in range(0,4):
-        axes[i].set_xlabel('Sample length', fontsize=12)
-    axes[0].set_ylabel('$h_{+}$', fontsize=12)
-    axes[2].set_ylabel('$h_{\\times}$', fontsize=12)
+        axes[i].set_xlabel('Sample length', fontsize=15)
+        axes[i].xaxis.set_minor_locator(tck.AutoMinorLocator())
+        axes[i].yaxis.set_minor_locator(tck.AutoMinorLocator())
+        axes[i].tick_params(which='both', direction='in', top=True, right=True)
+        axes[i].tick_params(axis='both', labelsize=12)
+    axes[0].set_ylabel('$h_{+}$', fontsize=15)
+    axes[2].set_ylabel('$h_{\\times}$', fontsize=15)
     axes[0].legend(fontsize=8, loc='upper left')
     axes[2].legend(fontsize=8, loc='upper left')
+
+    # Place suptitle closer to the top of the figure, not too far away
+    plt.suptitle(
+        f'$m_1$={float(label[0]):.2f}, $m_2$={float(label[1]):.2f}, '
+        f'$\\chi_1(z)$={float(label[2]):.2f}, $\\chi_2(z)$={float(label[3]):.2f}',
+        fontsize=15,
+        y=0.97  # Move title closer to the top edge (default is 0.99)
+    )
+
     plt.tight_layout()
     # plt.subplots_adjust(wspace=0.2)
     # putils.beautifyPlot(axes)
@@ -1414,7 +1445,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
             if num_saved_overplots <= 10:
                 plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i],
                                 savename=savedir+'overplot-hphc')
-                num_saved_overplots = 11
+                num_saved_overplots += 9
 
         # Calculate mismatch for hplus and hcross
         mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon)
