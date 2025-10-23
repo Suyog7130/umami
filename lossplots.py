@@ -18,8 +18,8 @@ def plot(ax, fname, logscale=False, save=False, show=True,
 
 
 def plot_running_loss():
-    dir = '../results/20250813/'
-    time = '20250813_033457'
+    dir = '../results/20251005/'
+    time = '20251005_010821'
     trloss = np.loadtxt(dir + 'train-rloss-' + time + '.txt', delimiter=',', skiprows=1)
     vrloss = np.loadtxt(dir + 'valid-rloss-' + time + '.txt', delimiter=',', skiprows=1)
     netloss = np.loadtxt(dir + 'net-loss-' + time + '.csv', delimiter=',', skiprows=1)
