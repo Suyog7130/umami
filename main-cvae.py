@@ -158,10 +158,24 @@ def train(args):
     if args.fcutoff:
         trainhdf += '-f_cutoff'
         validhdf += '-f_cutoff'
-    if args.aligned:
+    elif args.aligned:
         num_classes = 4  # m1, m2, spin1z, spin2z
         trainhdf += '-100000-fcutoff-uniform-aligned'
+        # trainhdf += '-4e5-fcutoff-uniform-aligned'
         validhdf += '-100000-fcutoff-uniform-aligned'
+    
+    if not os.path.isfile(trainhdf + '.hdf'):
+        raise FileNotFoundError(f"Training data file not found: {trainhdf}.hdf")
+    if not os.path.isfile(validhdf + '.hdf'):
+        raise FileNotFoundError(f"Validation data file not found: {validhdf}.hdf")
+
+    # Try opening the HDF file in read-only mode to check for corruption
+    try:
+        with h5py.File(trainhdf + '.hdf', 'r') as f:
+            logging.info(f"Successfully opened {trainhdf}.hdf in read-only mode.")
+    except Exception as e:
+        logging.error(f"Error opening {trainhdf}.hdf: {e}")
+        raise RuntimeError(f"Could not open {trainhdf}.hdf. The file may be corrupted.")
 
     logging.info(f'Reading training data from {trainhdf}.hdf')
     train_set = CustomDataset(forwhat='train', approximant=args.approximant,
@@ -593,6 +607,23 @@ class Test:
         logging.info(f"Mismatch vs spin plot saved to {savename}")
         plt.close()
 
+        # Plot mismatch for hplus and hcross vs individual spins
+        logging.info("Plotting hplus/hcross mismatches vs individual spins.")
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        for i, (spin_col, ax_row) in enumerate(zip(['spin1z', 'spin2z'], axes)):
+            for j, (mm_col, ax) in enumerate(zip(['mismatch_hplus', 'mismatch_hcross'], ax_row)):
+                ax.plot(dfmm[spin_col], dfmm[mm_col], 'o',
+                    markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
+                ax.set_xlabel(f'{spin_col}', fontsize=12)
+                ax.set_ylabel(f'{mm_col}', fontsize=12)
+                ax.set_yscale('log')
+                ax.set_title(f'{mm_col} vs {spin_col}', fontsize=12)
+        plt.tight_layout()
+        savename = self.savedir + 'mm_vs_spin_hphc_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.png'
+        plt.savefig(savename, dpi=300, bbox_inches='tight', transparent=True)
+        logging.info(f"Mismatch hplus/hcross vs spin plot saved to {savename}")
+        plt.close()
+
 
     def test_uq(self):
         """
@@ -799,6 +830,9 @@ class Test:
         logging.info("Model loaded and set to evaluation mode.")
 
         if labels is not None:
+            if not isinstance(labels, torch.Tensor):
+                labels = torch.tensor(labels, dtype=torch.float32)
+
             labels = labels.to(device)
             num_samples = labels.shape[0]
             logging.info(f'Generating {num_samples} samples conditioned on provided labels.')
@@ -821,24 +855,38 @@ class Test:
                     random_labels = torch.tensor(np.random.uniform(
                         [5, 5], [75, 75], size=(num_samples, 2)),
                         dtype=torch.float32).to(device)
-                generated_samples = model.decode(z1, z1p, random_labels)
+                generated = model.decode(z1, z1p, random_labels)
         
         if nomismatch:
-            return generated_samples
+            return generated
+
+        if not self.aligned:
+            raise NotImplementedError("Mismatch calculation for non-aligned spins is not implemented in generate().")
         
         # If nomm is False, calculate and plot mismatches
         logging.info("Calculating mismatches for generated samples.")
-        dummy_keys = torch.tensor(np.tile([[0,1],[0,1]], (num_samples,1,1)), dtype=torch.float32).to(device)
-        dummy_phases = torch.zeros((num_samples, preset_array_size), dtype=torch.float32).to(device)
-        if labels is None:
-            labels = random_labels
+        original = np.zeros((num_samples, 2, preset_array_size))
+        keys = np.zeros((num_samples, 2, 2))
+        phases = np.zeros((num_samples, preset_array_size))
+        for i, label in labels.cpu().numpy():
+            m1, m2, s1, s2 = label
+            hp, hc, amp, phase, freq = Waveform.get_aligned_vals(m1, m2, s1, s2)
+            original[i, 0, :] = amp
+            original[i, 1, :] = freq
+            phases[i, :] = phase
+            # Store normalization keys
+            amp_mean, amp_std = np.mean(amp), np.std(amp)
+            freq_mean, freq_std = np.mean(freq), np.std(freq)
+            keys[i, 0, :] = [amp_mean, amp_std]
+            keys[i, 1, :] = [freq_mean, freq_std]
+
         mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
-            = plot_mismatch(torch.zeros_like(generated_samples), generated_samples, labels, dummy_keys,
+            = plot_mismatch(original, generated, labels, keys,
                             savedir=self.savedir, nobatchwiseplot=True)
         logging.debug("Amplitude and Frequency mismatch calculated for generated samples.")
         logging.debug("Calculating hplus/hcross mismatch for generated samples.")
         mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
-            = plot_polarization_mismatch(torch.zeros_like(generated_samples), generated_samples, labels, dummy_keys, dummy_phases,
+            = plot_polarization_mismatch(original, generated, labels, keys, phases,
                                         savedir=self.savedir, nobatchwiseplot=True,
                                         num_saved_overplots=None)
         return generated_samples
@@ -1001,16 +1049,17 @@ def plot_overplot(x, reconst, labels, keys, savename='../results/overplot',
         
         # NOTE: The overplot waveforms are not normalized!
         # Obtain the keys for normalization
-        # key = keys[i].reshape([2,2])
-        # amp_mean, amp_std = key[0][0], key[0][1]
-        # freq_mean, freq_std = key[1][0], key[1][1]
+        key = keys[i].reshape([2,2])
+        amp_mean, amp_std = key[0][0], key[0][1]
+        freq_mean, freq_std = key[1][0], key[1][1]
 
-        # # De-normalize the original data!
-        # orig_amp = (orig_amp * amp_std) + amp_mean
-        # orig_freq = (orig_freq * freq_std) + freq_mean
-        # # De-normalize the reconstructed data!
-        # recon_amp = (recon_amp * amp_std) + amp_mean
-        # recon_freq = (recon_freq * freq_std) + freq_mean
+        # De-normalize the original data!
+        orig_amp = (orig_amp * amp_std) + amp_mean
+        orig_freq = (orig_freq * freq_std) + freq_mean
+
+        # De-normalize the reconstructed data!
+        recon_amp = (recon_amp * amp_std) + amp_mean
+        recon_freq = (recon_freq * freq_std) + freq_mean
         
         axes[0].plot(np.arange(len(orig_amp)), orig_amp, '-', label=f"Original")
         axes[0].plot(np.arange(len(recon_amp)), recon_amp, '-', label=f"Reconstructed")
