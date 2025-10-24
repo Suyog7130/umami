@@ -196,9 +196,10 @@ class Waveform:
     """
     Main class to generate, save, and load training / test waveforms.
     """
-    def __init__(self, masses, spins=None, fcutoff=True, fname=''):
-        self.masses = masses
-        self.spins = spins if spins is not None else np.random.uniform(-0.999, 0.999, len(masses[0]))
+    def __init__(self, masses=None, spins=None, fcutoff=True, fname='',
+                 preset_array_size=PRESET_ARRAY_SIZE):
+        self.masses = masses if masses is not None else np.random.uniform(5, 75, (1000, 2))
+        self.spins = spins if (spins is not None and masses is not None) else np.random.uniform(-0.999, 0.999, (1000, 2))
         if fcutoff:
             self.cutoffconst = calc_cutoffconst()
         else:
@@ -210,13 +211,12 @@ class Waveform:
         self.delta_t = DELTA_T
         self.f_lower = f_lower
         self.duration = DURATION
-        self.preset_array_size = PRESET_ARRAY_SIZE
+        self.preset_array_size = preset_array_size
 
         self.fname = str(self.approximant) + '-' + fname + 'fcutoff-uniform-aligned'
         if self.otherparams:
             self.fname += '-otherparam'
 
-    @classmethod
     def get_aligned_vals(self, m1, m2, s1, s2):
         """
         Generate the time-domain waveform for the given masses, aligned spins and

@@ -797,7 +797,6 @@ class Test:
         plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
 
-    
     def generate(self, num_samples=1, labels=None, nomismatch=False):
         """
         Generate new waveform samples using the trained CVAE model.
@@ -841,7 +840,7 @@ class Test:
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
                 z1 = model.reparameterize(z1_mean, z1_log_var)
                 z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                generated_samples = model.decode(z1, z1p, labels)
+                generated = model.decode(z1, z1p, labels)
         else:
             logging.info(f'Generating {num_samples} samples by sampling from latent space.')
             with torch.no_grad():
@@ -868,9 +867,14 @@ class Test:
         original = np.zeros((num_samples, 2, preset_array_size))
         keys = np.zeros((num_samples, 2, 2))
         phases = np.zeros((num_samples, preset_array_size))
-        for i, label in labels.cpu().numpy():
+        waves = Waveform(preset_array_size=preset_array_size+1)
+        for i, label in enumerate(labels):
             m1, m2, s1, s2 = label
-            hp, hc, amp, phase, freq = Waveform.get_aligned_vals(m1, m2, s1, s2)
+            hp, hc, amp, phase, freq, _ = waves.get_aligned_vals(m1, m2, s1, s2)
+            # If amp is longer than preset_array_size, truncate the first value(s)
+            if amp.shape[0] > preset_array_size:
+                amp = amp[-preset_array_size:]
+                phase = phase[-preset_array_size:]
             original[i, 0, :] = amp
             original[i, 1, :] = freq
             phases[i, :] = phase
@@ -882,14 +886,14 @@ class Test:
 
         mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
             = plot_mismatch(original, generated, labels, keys,
-                            savedir=self.savedir, nobatchwiseplot=True)
-        logging.debug("Amplitude and Frequency mismatch calculated for generated samples.")
-        logging.debug("Calculating hplus/hcross mismatch for generated samples.")
+                            savedir=self.savedir, nobatchwiseplot=False)
+        logging.info("Amplitude and Frequency mismatch calculated for generated samples.")
+        logging.info("Calculating hplus/hcross mismatch for generated samples.")
         mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
             = plot_polarization_mismatch(original, generated, labels, keys, phases,
-                                        savedir=self.savedir, nobatchwiseplot=True,
-                                        num_saved_overplots=None)
-        return generated_samples
+                                        savedir=self.savedir, nobatchwiseplot=False,
+                                        num_saved_overplots=10)
+        return generated
 
 
 def removezeros(x, reconst, phase, attr):
@@ -1234,11 +1238,11 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
     -------
     Displays a plot of the mismatch values.
     """
-    x = x.cpu().numpy()
-    reconst = reconst.cpu().numpy()
-    labels = labels.cpu().numpy()
-    keys = keys.cpu().numpy()
-    
+    x = x.cpu().numpy() if isinstance(x, torch.Tensor) else x
+    reconst = reconst.cpu().numpy() if isinstance(reconst, torch.Tensor) else reconst
+    labels = labels.cpu().numpy() if isinstance(labels, torch.Tensor) else labels
+    keys = keys.cpu().numpy() if isinstance(keys, torch.Tensor) else keys
+
     chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
     totalmasses = np.zeros((labels.shape[0], 1))  # Store total masses for each sample
     massratios = np.zeros((labels.shape[0], 1))  # Store mass ratios for each sample
@@ -1305,7 +1309,7 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
             # putils.beautifyPlot([ax])
             savename = 'mismatch-'+xname.replace(' ','')+ '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
             plt.savefig(savedir+savename+'.png', dpi=300, bbox_inches='tight')
-            logging.debug(f"Mismatch plot saved to {savedir+savename}.png")
+            logging.info(f"Mismatch plot saved to {savedir+savename}.png")
             plt.close()
     return mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios
 
@@ -1419,11 +1423,11 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
     -------
     Displays a plot of the polarization mismatch values.
     """
-    x = x.cpu().numpy()
-    reconst = reconst.cpu().numpy()
-    labels = labels.cpu().numpy()
-    keys = keys.cpu().numpy()
-    phases = phases.cpu().numpy()
+    x = x.cpu().numpy() if isinstance(x, torch.Tensor) else x
+    reconst = reconst.cpu().numpy() if isinstance(reconst, torch.Tensor) else reconst
+    labels = labels.cpu().numpy() if isinstance(labels, torch.Tensor) else labels
+    keys = keys.cpu().numpy() if isinstance(keys, torch.Tensor) else keys
+    phases = phases.cpu().numpy() if isinstance(phases, torch.Tensor) else phases
     logging.debug(f"x shape: {x.shape}, reconst shape: {reconst.shape}, phases shape: {phases.shape}")
 
     chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
@@ -1494,7 +1498,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
             if num_saved_overplots <= 10:
                 plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i],
                                 savename=savedir+'overplot-hphc')
-                num_saved_overplots += 9
+                num_saved_overplots += 1
 
         # Calculate mismatch for hplus and hcross
         mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon)
@@ -1571,6 +1575,8 @@ if __name__ == "__main__":
                         help='whether to test uncertainty quantification?')
     parser.add_argument('--time-complexity', action='store_true', default=False,
                         help='whether to test time complexity?')
+    parser.add_argument('--generate', action='store_true', default=False,
+                            help='whether to generate samples from trained model?')
     parser.add_argument('--model', action='store', default='../trained-models/model-20250526_070915-1',
                         help='path to already trained model.')
 
@@ -1639,6 +1645,17 @@ if __name__ == "__main__":
             Test(args).test()
         # except RuntimeError as e:
         #     logging.error(f"Error occurred during testing (perhaps try `--fcutoff`): {e}")
+    elif args.generate:
+        labels = np.array([[50.0, 15.0, 0.0, 0.0],
+                           [30.0, 5.0, 0.0, 0.0],
+                           [50.0, 15.0, 0.5, 0.5],
+                           [30.0, 5.0, 0.5, 0.5],
+                           [50.0, 15.0, -0.5, -0.5],
+                           [30.0, 5.0, -0.5, -0.5],
+                           [50.0, 15.0, 0.9, 0.9],
+                           [30.0, 5.0, 0.9, 0.9]])
+        args.nsamples = labels.shape[0]
+        Test(args).generate(labels=labels)
     else:
         # try:
         #     # Always reads data from HDF file now!!
