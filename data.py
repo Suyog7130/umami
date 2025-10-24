@@ -216,6 +216,7 @@ class Waveform:
         if self.otherparams:
             self.fname += '-otherparam'
 
+    @classmethod
     def get_aligned_vals(self, m1, m2, s1, s2):
         """
         Generate the time-domain waveform for the given masses, aligned spins and
@@ -229,6 +230,10 @@ class Waveform:
         - `f_cutoff`: The raw time-domain waveform is generated, and is made to be of
                 the desired duration of 1 second, by changing the lower freq cutoff.
                 Then it is converted to Amp/Freq and saved.
+
+        Returns:
+            hp, hc, amp, phase, freq: numpy arrays of the waveform polarizations,
+                amplitude, phase and frequency.
         """
         extra = {}
         wfkwargs = {
