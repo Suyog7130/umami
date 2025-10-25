@@ -10,7 +10,10 @@ import pandas as pd
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', 
                     datefmt='%Y-%m-%d %H:%M:%S')
 
-from plotutils import putils
+
+from scipy.interpolate import griddata
+from matplotlib.colors import LogNorm
+from datetime import datetime
 
 
 DIR = '../results/20251023/'
@@ -124,30 +127,80 @@ def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13, fname=''):
     logging.info(f'Mismatch histograms saved to {DIR}')
 
 
-def mismatch_anal():
+def plot_mmcontour_in_qchi_space(dfmm, fontsize=15, labelsize=13, fname=''):
+        """
+        Plot the mismatches in the mass ratio and chi_eff plane as contours.
+        """
+        logging.info("Plotting mismatches in the mass ratio and chi_eff plane.")
+        titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
+
+        # Create a grid of points
+        q = dfmm['mass_ratio'].values
+        chi = dfmm['chi_eff'].values
+        xi = np.linspace(min(q), max(q), 100)
+        yi = np.linspace(min(chi), max(chi), 100)
+        xi, yi = np.meshgrid(xi, yi)
+
+        # Interpolate mismatch values onto the grid
+        zi_amp = griddata((q, chi), dfmm['mismatch_amp'].values, (xi, yi), method='linear')
+        zi_freq = griddata((q, chi), dfmm['mismatch_freq'].values, (xi, yi), method='linear')
+        zi_hplus = griddata((q, chi), dfmm['mismatch_hplus'].values, (xi, yi), method='linear')
+        zi_hcross = griddata((q, chi), dfmm['mismatch_hcross'].values, (xi, yi), method='linear')
+        data = [zi_amp, zi_freq, zi_hplus, zi_hcross]
+
+        # Plotting
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        contour_levels = np.logspace(-6, 0, 13)
+
+        for i, ax in enumerate(axes.flat):
+            cs = ax.contourf(xi, yi, data[i], levels=contour_levels, norm=LogNorm(), cmap='viridis')
+            fig.colorbar(cs, ax=ax, label=f'{titles[i]} mismatch')
+            # ax.set_title(titles[i], fontsize=fontsize, fontweight='bold')
+            ax.set_xlabel('q', fontsize=fontsize)
+            ax.set_ylabel('$\\chi_{\\rm eff}$', fontsize=fontsize)
+            ax.minorticks_on()
+            ax.tick_params(which='both', direction='in', top=True, right=True)
+            ax.tick_params(labelsize=labelsize)
+
+        plt.tight_layout()
+        savename = DIR + f'mmcontour_in_qchi'
+        savename += f'{fname}' if fname else ''
+        plt.savefig(savename+'-'+TIME+'.png', dpi=300, bbox_inches='tight', transparent=True)
+        plt.savefig(savename+'-white'+'-'+TIME+'.png', dpi=300, bbox_inches='tight')
+        logging.info(f"Mismatch in q-chi_eff plane plot saved to {savename}")
+        plt.close()
+
+
+def mismatch_anal(args):
     mmfile = DIR + 'mismatch-results-' + TIME + '.h5'
     dfmm = pd.read_hdf(mmfile, key='dfmm')
     # print(dfmm.head())
     print(dfmm.columns)
     # print(dfmm.describe())
 
-    # Plot mismatch histograms
-    plot_mm_hist(dfmm)
-    plot_mm_hist(dfmm, log=True)
-
     # Select regions of interest in parameter space
     chi_range = [-0.80, 0.80]
     dfmmcut = dfmm[(dfmm['chi_eff'] >= chi_range[0]) & (dfmm['chi_eff'] <= chi_range[1])]
     logging.info(f'Selected {len(dfmmcut)} samples within chi_eff range {chi_range}')
     logging.info(f'Original dataset size: {len(dfmm)} samples')
-    plot_mm_hist(dfmmcut, fname='-cut')
-    plot_mm_hist(dfmmcut, log=True, fname='-cut')
+
+    # Plot mismatch histograms
+    if args.histogram:
+        plot_mm_hist(dfmm)
+        plot_mm_hist(dfmm, log=True)
+        plot_mm_hist(dfmmcut, fname='-cut')
+        plot_mm_hist(dfmmcut, log=True, fname='-cut')
+
+    else:
+        plot_mmcontour_in_qchi_space(dfmm)
+        plot_mmcontour_in_qchi_space(dfmmcut, fname='-cut')
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot training and validation loss from a file.")
-    parser.add_argument('fname', type=str, default='loss',
-                        help='Path to the file containing loss data.')
+    parser.add_argument('--histogram', action='store_true',
+                        help='Plot histograms of mismatch values instead of contour plots.')
+    args = parser.parse_args()
 
     # plot_running_loss()
-    mismatch_anal()
+    mismatch_anal(args)
