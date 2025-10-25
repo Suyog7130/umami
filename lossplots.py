@@ -1,8 +1,19 @@
 
+import os
+import h5py
+import logging
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', 
+                    datefmt='%Y-%m-%d %H:%M:%S')
+
 from plotutils import putils
+
+
+DIR = '../results/20251023/'
 
 def plot(ax, fname, logscale=False, save=False, show=True,
          label=''):
@@ -18,8 +29,8 @@ def plot(ax, fname, logscale=False, save=False, show=True,
 
 
 def plot_running_loss():
-    dir = '../results/20251005/'
-    time = '20251005_010821'
+    dir = DIR
+    time = '20251023_045612-10'
     trloss = np.loadtxt(dir + 'train-rloss-' + time + '.txt', delimiter=',', skiprows=1)
     vrloss = np.loadtxt(dir + 'valid-rloss-' + time + '.txt', delimiter=',', skiprows=1)
     netloss = np.loadtxt(dir + 'net-loss-' + time + '.csv', delimiter=',', skiprows=1)
@@ -45,13 +56,7 @@ def plot_running_loss():
     plt.close()
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Plot training and validation loss from a file.")
-    parser.add_argument('fname', type=str, default='loss',
-                        help='Path to the file containing loss data.')
-
-    plot_running_loss()
-    
+  
     # dir = '../results/20250813/'
     # time = '20250813_033457-10'
     # tloss = dir + 'train_loss_' + time + '.txt'
@@ -79,3 +84,48 @@ if __name__ == "__main__":
     # figname = dir + 'loss_plot_' + time + '.png'
     # plt.savefig(figname, dpi=300, bbox_inches='tight')
     # plt.show()
+
+
+def mismatch_anal(log=True, fontsize=15, labelsize=13):
+    TIME = '20251023_075320'
+    mmfile = DIR + 'mismatch-results-' + TIME + '.h5'
+    dfmm = pd.read_hdf(mmfile, key='dfmm')
+    # print(dfmm.head())
+    print(dfmm.columns)
+    # print(dfmm.describe())
+
+    # Plot mismatch histograms
+    types = ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']
+    titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
+    fig, ax = plt.subplots(2, 2, figsize=(10, 10))
+    ax = ax.flatten()
+    for i, t in enumerate(types):
+        bins = np.logspace(np.log10(dfmm[t].min()+1e-10), np.log10(dfmm[t].max()+1e-10), 50)
+        dfmm.hist(t, bins=bins, ax=ax[i], grid=False, edgecolor='black', color='skyblue')
+        ax[i].set_title(None)
+        ax[i].set_xscale('log')
+        if log:
+            ax[i].set_yscale('log')
+        ax[i].set_xlabel('Mismatch', fontsize=fontsize)
+        ax[i].set_ylabel('Frequency', fontsize=fontsize)
+        ax[i].text(0.95, 0.95, f'{titles[i]}', fontweight='bold',
+                   transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
+        ax[i].text(0.95, 0.85, f'Mode: {dfmm[t].mode()[0]:.2e}\nMean: {dfmm[t].mean():.2e}\nMedian: {dfmm[t].median():.2e}', 
+                   transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
+        ax[i].tick_params(which="both", direction='in', top=True, right=True)
+        ax[i].tick_params(labelsize=labelsize)
+    plt.tight_layout()
+    fname = DIR + f'mismatch_hist-'
+    fname += 'log-' if log else ''
+    plt.savefig(fname+TIME+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(fname+'white-'+TIME+'.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    logging.info(f'Mismatch histograms saved to {DIR}')
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Plot training and validation loss from a file.")
+    parser.add_argument('fname', type=str, default='loss',
+                        help='Path to the file containing loss data.')
+
+    # plot_running_loss()
+    mismatch_anal()
