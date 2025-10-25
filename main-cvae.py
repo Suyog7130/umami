@@ -70,6 +70,9 @@ from cvae import CVAE
 
 from data import Waveform
 
+import random
+markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
+
 
 
 # def train_one_epoch(training_loader, epoch_index, tb_writer=None):
@@ -884,9 +887,9 @@ class Test:
             keys[i, 0, :] = [amp_mean, amp_std]
             keys[i, 1, :] = [freq_mean, freq_std]
 
-        mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
-            = plot_mismatch(original, generated, labels, keys,
-                            savedir=self.savedir, nobatchwiseplot=False)
+        # mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
+        #     = plot_mismatch(original, generated, labels, keys,
+        #                     savedir=self.savedir, nobatchwiseplot=False)
         logging.info("Amplitude and Frequency mismatch calculated for generated samples.")
         logging.info("Calculating hplus/hcross mismatch for generated samples.")
         mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
@@ -1520,10 +1523,14 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
         for massarr, xname in zip([chirpmasses, totalmasses, massratios],
                                 ['Chirp Mass', 'Total Mass', 'Mass Ratio']):
             fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-            ax.plot(massarr, mismatch_hplus, '.', label='$h_{+}$',
-                    markeredgewidth=0.75, alpha=0.75)
-            ax.plot(massarr, mismatch_hcross, '.', label='$h_{\\times}$',
-                    markeredgewidth=0.75, alpha=0.75)
+            # ax.plot(massarr, mismatch_hplus, '.', markeredgewidth=0.75, alpha=0.75)
+            # ax.plot(massarr, mismatch_hcross, '.', markeredgewidth=0.75, alpha=0.75)
+            # Set legend for each sample with its label
+            for i in range(labels.shape[0]):
+                ax.plot(massarr[i], mismatch_hplus[i], random.choice(markers),
+                        label=f'{labels[i][0]:.2f}, {labels[i][1]:.2f}, {labels[i][2]:.2f}, {labels[i][3]:.2f}', markeredgewidth=0.75, alpha=0.75)
+                # ax.plot(massarr[i], mismatch_hcross[i], 'x', markeredgewidth=0.75, alpha=0.75)
+            ax.legend(fontsize=5, loc='upper left', title='$m_1$, $m_2$, $\\chi_1(z)$, $\\chi_2(z)$')
             ax.set_xlabel(xname, fontsize=12)
             ax.set_ylabel('Mismatch', fontsize=12)
             ax.set_yscale('log')  # Set y-axis to logarithmic scale
