@@ -892,7 +892,7 @@ class Test:
         mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
             = plot_polarization_mismatch(original, generated, labels, keys, phases,
                                         savedir=self.savedir, nobatchwiseplot=False,
-                                        num_saved_overplots=10)
+                                        num_saved_overplots=0, generating=True)
         return generated
 
 
@@ -1398,7 +1398,7 @@ def polarizations_from_ampfreq(amp, freq, orig_phase=None):
 
 def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=False,
                                savedir='../results/', nobatchwiseplot=False,
-                               num_saved_overplots=0):
+                               num_saved_overplots=0, generating=False):
     """
     Plot the mismatch between the original and reconstructed hplus/hcross waveforms.
 
@@ -1470,9 +1470,12 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, reshape2orig=Fa
         freq_mean, freq_std = key[1][0], key[1][1]
 
         # De-normalize the original data!
-        orig_amp = (orig_amp * amp_std) + amp_mean
-        orig_freq = (orig_freq * freq_std) + freq_mean
-        logging.debug(f"original amp shape: {orig_amp.shape}, freq shape: {orig_freq.shape}")
+        if not generating:
+            # NOTE: If not generating samples, then data is loaded via CustomDataset
+            # and needs de-normalization.
+            orig_amp = (orig_amp * amp_std) + amp_mean
+            orig_freq = (orig_freq * freq_std) + freq_mean
+            logging.debug(f"original amp shape: {orig_amp.shape}, freq shape: {orig_freq.shape}")
         # De-normalize the reconstructed data!
         recon_amp = (recon_amp * amp_std) + amp_mean
         recon_freq = (recon_freq * freq_std) + freq_mean
@@ -1608,7 +1611,8 @@ if __name__ == "__main__":
         os.makedirs(log_dir)
 
     # Set up logging to both console and file
-    log_file = os.path.join(log_dir, f'training_{today}.log')
+    logfname = f'training_{today}.log' if not args.test and not args.generate else f'testing_{today}.log'
+    log_file = os.path.join(log_dir, logfname)
     logging.basicConfig(
         format='%(levelname)s | %(asctime)s: %(message)s',
         level=log_level,
