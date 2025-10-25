@@ -14,6 +14,7 @@ from plotutils import putils
 
 
 DIR = '../results/20251023/'
+TIME = '20251023_075320'
 
 def plot(ax, fname, logscale=False, save=False, show=True,
          label=''):
@@ -86,15 +87,15 @@ def plot_running_loss():
     # plt.show()
 
 
-def mismatch_anal(log=True, fontsize=15, labelsize=13):
-    TIME = '20251023_075320'
-    mmfile = DIR + 'mismatch-results-' + TIME + '.h5'
-    dfmm = pd.read_hdf(mmfile, key='dfmm')
-    # print(dfmm.head())
-    print(dfmm.columns)
-    # print(dfmm.describe())
-
-    # Plot mismatch histograms
+def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13, fname=''):
+    """
+    Plot histograms of mismatch values for different types of mismatches. 
+    The function takes a DataFrame containing mismatch data and creates histograms 
+    for amplitude, frequency, h_plus, and h_cross mismatches. The x-axis is set to 
+    logarithmic scale, and the y-axis can also be set to logarithmic scale based on 
+    the 'log' parameter. Each subplot includes the mode, mean, and median of the 
+    mismatch values for that type.
+    """
     types = ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']
     titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
     fig, ax = plt.subplots(2, 2, figsize=(10, 10))
@@ -115,12 +116,33 @@ def mismatch_anal(log=True, fontsize=15, labelsize=13):
         ax[i].tick_params(which="both", direction='in', top=True, right=True)
         ax[i].tick_params(labelsize=labelsize)
     plt.tight_layout()
-    fname = DIR + f'mismatch_hist-'
-    fname += 'log-' if log else ''
-    plt.savefig(fname+TIME+'.png', dpi=300, bbox_inches='tight', transparent=True)
-    plt.savefig(fname+'white-'+TIME+'.png', dpi=300, bbox_inches='tight')
+    fname = DIR + f'mismatch_hist' + fname
+    fname += '-log' if log else ''
+    plt.savefig(fname+'-'+TIME+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(fname+'-white'+'-'+TIME+'.png', dpi=300, bbox_inches='tight')
     plt.close()
     logging.info(f'Mismatch histograms saved to {DIR}')
+
+
+def mismatch_anal():
+    mmfile = DIR + 'mismatch-results-' + TIME + '.h5'
+    dfmm = pd.read_hdf(mmfile, key='dfmm')
+    # print(dfmm.head())
+    print(dfmm.columns)
+    # print(dfmm.describe())
+
+    # Plot mismatch histograms
+    plot_mm_hist(dfmm)
+    plot_mm_hist(dfmm, log=True)
+
+    # Select regions of interest in parameter space
+    chi_range = [-0.80, 0.80]
+    dfmmcut = dfmm[(dfmm['chi_eff'] >= chi_range[0]) & (dfmm['chi_eff'] <= chi_range[1])]
+    logging.info(f'Selected {len(dfmmcut)} samples within chi_eff range {chi_range}')
+    logging.info(f'Original dataset size: {len(dfmm)} samples')
+    plot_mm_hist(dfmmcut, fname='-cut')
+    plot_mm_hist(dfmmcut, log=True, fname='-cut')
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot training and validation loss from a file.")
