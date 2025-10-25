@@ -236,6 +236,10 @@ class Decoder(nn.Module):
         Returns:
             Tensor: Reconstructed input with the same shape as the original input.
         """
+
+        # TODO: The input to the decoder here could
+        # (z2+z2p)/2 which is concatenated with the labels.
+
         # Concatenate latent variables and labels along the feature dimension
         z = torch.cat([z2, z2p, labels], dim=1)
         logging.debug(z.shape)
