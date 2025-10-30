@@ -33,8 +33,8 @@ def plot(ax, fname, logscale=False, save=False, show=True,
 
 
 def plot_running_loss():
-    dir = DIR
-    time = '20251023_045612-10'
+    dir = '../results/20251004/'
+    time = '20251004_072338'
     trloss = np.loadtxt(dir + 'train-rloss-' + time + '.txt', delimiter=',', skiprows=1)
     vrloss = np.loadtxt(dir + 'valid-rloss-' + time + '.txt', delimiter=',', skiprows=1)
     netloss = np.loadtxt(dir + 'net-loss-' + time + '.csv', delimiter=',', skiprows=1)
@@ -52,6 +52,7 @@ def plot_running_loss():
     ax.set_xlim(1, 10**4)
     ax.xaxis.set_minor_locator(plt.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
     ax.yaxis.set_minor_locator(plt.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+    ax.tick_params(which='both', direction='in', top=True, right=True)
     ax.legend()
     plt.tight_layout()
     figname = dir + 'running_loss_plot_' + time + '.png'
@@ -268,5 +269,5 @@ if __name__ == "__main__":
                         help='Plot contour plots of mismatch values in the mass ratio and chi_eff plane.')
     args = parser.parse_args()
 
-    # plot_running_loss()
-    mismatch_anal(args)
+    plot_running_loss()
+    # mismatch_anal(args)
