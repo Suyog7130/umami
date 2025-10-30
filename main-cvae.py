@@ -232,6 +232,8 @@ def train(args):
             x, labels, keys = x.to(args.device), labels.to(args.device), keys.to(args.device)
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
+            
+            # TODO: have it such that the training target are unnormalized waveforms!
             loss, reconloss, klloss = model.loss_function(x, x_recon, zvars)
             loss.backward()
             optimizer.step()
