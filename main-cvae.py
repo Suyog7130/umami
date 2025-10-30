@@ -327,7 +327,9 @@ class Test:
         if args.fcutoff:
             self.testhdf += '-f_cutoff'
         self.batch_size = args.batch_size
-        self.test_loader = self.setdataloader()
+
+        if not args.time_complexity and not args.time_compare:
+            self.test_loader = self.setdataloader()
 
         self.noshow = args.noshow
         self.nosave = args.nosave
@@ -740,7 +742,6 @@ class Test:
         plt.close()
         print("All UQ tests completed.")
 
-
     def test_timecomplexity(self, num=100):
         """
         Test the time complexity of the model for generating a 1-10e4 ish number of samples.
@@ -761,8 +762,7 @@ class Test:
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
-        modeltimes, basetimes = [], []
-        massratios, chieffs = [], []
+        times = []
         for Nr in Nruns:
             # Generate random labels within the training range
             m1 = np.random.uniform(5, 75, Nr)
@@ -776,7 +776,76 @@ class Test:
             labels = torch.tensor(labels, dtype=torch.float32).to(device)
             logging.info(f'Choosing to test sample size {labels.shape}')
 
-            massratios = m1 / m2
+            # Measure time taken by model to generate samples
+            start_time = time.time()
+            with torch.no_grad():
+                # Use the label-conditioned encoders and decoder to generate data
+                z1_mean, z1_log_var = model.encode_label_for_x(labels)
+                z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
+                z1 = model.reparameterize(z1_mean, z1_log_var)
+                z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                reconst = model.decode(z1, z1p, labels)
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            times.append(elapsed_time)
+            logging.info(f'Time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
+
+        # Plot the time taken v/s number of samples plots
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        ax.plot(Nruns, times, 'o', color='grey', markersize=6,
+                markeredgewidth=0.25, markeredgecolor='black')
+        ax.set_xlabel('Number of Samples', fontsize=12)
+        ax.set_ylabel('Time (seconds)', fontsize=12)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.tick_params(which='both', direction='in', top=True, right=True)
+        ax.text(0.05, 0.95, f'N={len(Nruns)}', transform=ax.transAxes, fontsize=10, verticalalignment='top')
+        plt.tight_layout()
+        figname = f'{self.savedir}/timecomplexity-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        plt.savefig(figname+'.png', dpi=300, transparent=True)
+        plt.savefig(figname+'-white.png', dpi=300)
+        plt.close()
+
+
+    def test_timecomplexity_compare(self, iters=100):
+        """
+        Test the time complexity of the model for generating a 1-10e4 ish number of samples.
+        This is useful for understanding the efficiency of the model in real-time
+        applications.
+        """
+        Nruns = np.arange(iters)
+        logging.info(f"Testing with model: {self.model_path}")
+        # Load the trained model
+        preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
+        num_classes = 4 if args.aligned else 2
+        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                    key_shape=(2,2)).to(args.device)
+        model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(device)
+        model.eval()
+        logging.info("Model loaded and set to evaluation mode.")
+
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+
+        modeltimes, basetimes = [], []
+        massratios, chieffs = [], []
+        for Nr in Nruns:
+            # Generate random labels within the training range
+            m1 = np.random.uniform(5, 75, Nr)
+            q = np.random.uniform(1, 10, Nr)
+            m2 = m1 / q
+            if self.aligned:
+                spin1z = np.random.uniform(-0.9, 0.9, Nr)
+                spin2z = np.random.uniform(-0.9, 0.9, Nr)
+                labels = np.vstack((m1, m2, spin1z, spin2z)).T
+            else:
+                labels = np.vstack((m1, m2)).T
+            labels = torch.tensor(labels, dtype=torch.float32).to(device)
+            logging.info(f'Choosing to test sample size {labels.shape}')
+
+            massratios = q
             chieffs = (m1 * spin1z + m2 * spin2z) / (m1 + m2) if self.aligned else np.zeros(Nr)
             
             # Measure time taken by model to generate samples
@@ -808,35 +877,16 @@ class Test:
                     'delta_t': DELTA_T,
                     'f_lower': 20.0,  # fix this at 20 Hz
                 })
-            hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
+                hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
             end_time = time.time()
             elapsed_time = end_time - start_time
             basetimes.append(elapsed_time)
             logging.info(f'Base time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
 
-        # Plot the time taken v/s number of samples plots
-        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-        ax.plot(Nruns, modeltimes, 'o', color='grey', markersize=6,
-                markeredgewidth=0.25, markeredgecolor='black')
-        ax.set_xlabel('Number of Samples', fontsize=12)
-        ax.set_ylabel('Time (seconds)', fontsize=12)
-        ax.set_xscale('log')
-        ax.set_yscale('log')
-        ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
-        ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
-        ax.tick_params(which='both', direction='in', top=True, right=True)
-        ax.text(0.05, 0.95, f'N={len(Nruns)}', transform=ax.transAxes, fontsize=10, verticalalignment='top')
-        plt.tight_layout()
-        figname = f'{self.savedir}/timecomplexity-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
-        plt.savefig(figname+'.png', dpi=300, transparent=True)
-        plt.savefig(figname+'-white.png', dpi=300)
-        plt.close()
-
         # Plot time taken comparison between model and base
-        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-        ax.plot(Nruns, modeltimes, 'o', color='grey', markersize=6,
+        ax.plot(Nruns, modeltimes, 'o-', color='grey', markersize=6,
                 markeredgewidth=0.25, markeredgecolor='black')
-        ax.plot(Nruns, basetimes, 's', color='grey', markersize=6,
+        ax.plot(Nruns, basetimes, 's-', color='grey', markersize=6,
                 markeredgewidth=0.25, markeredgecolor='black')
         ax.legend(['ML model', 'Base'], loc='upper left')
         ax.set_xlabel('Number of Samples', fontsize=12)
@@ -846,36 +896,36 @@ class Test:
         ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
         ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
         ax.tick_params(which='both', direction='in', top=True, right=True)
-        ax.text(0.05, 0.95, f'N={len(Nruns)}', transform=ax.transAxes, fontsize=10, verticalalignment='top')
         plt.tight_layout()
         figname = f'{self.savedir}/timecomplexity-compare-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(figname+'.png', dpi=300, transparent=True)
         plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
 
-        # Plot time taken for different q / chi-eff bins
-        for times, label in zip([modeltimes, basetimes], 
-                                 ['ML model', 'Base']):
-            fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-            axes[0].plot(massratios, times, 'o', label=label, color='grey', 
-                       markersize=6, markeredgewidth=0.25, markeredgecolor='black')
-            axes[1].plot(chieffs, times, 'o', label=label, color='grey', 
-                       markersize=6, markeredgewidth=0.25, markeredgecolor='black')
-            axes[1].set_xlabel('Chi_eff', fontsize=12)
-            axes[0].set_xlabel('Mass Ratio (q)', fontsize=12)
-            for ax in axes:
-                ax.tick_params(which='both', direction='in', top=True, right=True)
-                ax.set_ylabel('Time (seconds)', fontsize=12)
-                ax.set_yscale('log')
-                ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
-                ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
-                ax.tick_params(which='both', direction='in', top=True, right=True)
-            plt.tight_layout()
-            figname = f'{self.savedir}/timecomplexity-distro-' + label
-            figname += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
-            plt.savefig(figname+'.png', dpi=300, transparent=True)
-            plt.savefig(figname+'-white.png', dpi=300)
-            plt.close()
+        # # Plot time taken for different q / chi-eff bins
+        # for times, label in zip([modeltimes, basetimes], 
+        #                          ['ML model', 'Base']):
+        #     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        #     axes[0].plot(massratios, times, 'o', label=label, color='grey', 
+        #                markersize=6, markeredgewidth=0.25, markeredgecolor='black')
+        #     axes[1].plot(chieffs, times, 'o', label=label, color='grey', 
+        #                markersize=6, markeredgewidth=0.25, markeredgecolor='black')
+        #     axes[1].set_xlabel('Chi_eff', fontsize=12)
+        #     axes[0].set_xlabel('Mass Ratio (q)', fontsize=12)
+        #     for ax in axes:
+        #         ax.tick_params(which='both', direction='in', top=True, right=True)
+        #         ax.set_ylabel('Time (seconds)', fontsize=12)
+        #         ax.set_yscale('log')
+        #         ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
+        #         ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        #         ax.tick_params(which='both', direction='in', top=True, right=True)
+        #     plt.tight_layout()
+        #     figname = f'{self.savedir}/timecomplexity-distro-' + label
+        #     figname += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        #     plt.savefig(figname+'.png', dpi=300, transparent=True)
+        #     plt.savefig(figname+'-white.png', dpi=300)
+        #     plt.close()
+
 
     def generate(self, num_samples=1, labels=None, nomismatch=False):
         """
@@ -1662,6 +1712,8 @@ if __name__ == "__main__":
                         help='whether to test uncertainty quantification?')
     parser.add_argument('--time-complexity', action='store_true', default=False,
                         help='whether to test time complexity?')
+    parser.add_argument('--time-compare', action='store_true', default=False,
+                        help='whether to compare time complexity with standard waveform generation?')
     parser.add_argument('--generate', action='store_true', default=False,
                             help='whether to generate samples from trained model?')
     parser.add_argument('--model', action='store', default='../trained-models/model-20250526_070915-1',
@@ -1729,6 +1781,8 @@ if __name__ == "__main__":
         elif args.time_complexity:
             for n in [100, 500, 1000]:
                 Test(args).test_timecomplexity(n)
+        elif args.time_compare:
+            Test(args).test_timecomplexity_compare()
         else:
             Test(args).test()
         # except RuntimeError as e:
