@@ -905,6 +905,7 @@ class Test:
         plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
 
+        # TODO: This should be done for each `Nrun` or for one of them!
         # Plot bar plot for avg time taken in each q / chi bins
         q_bins = np.linspace(np.min(massratios), np.max(massratios), 11)
         chi_bins = np.linspace(np.min(chieffs), np.max(chieffs), 7)
@@ -950,29 +951,29 @@ class Test:
         plt.savefig(f'{self.savedir}/avg_time_chibins_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300)
         plt.close()
 
-        # Plot time taken for different q / chi-eff bins
-        for times, label in zip([modeltimes, basetimes], 
-                                 ['ML', 'Base']):
-            fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-            axes[0].plot(massratios, times, 'o', label=label, color='grey', 
-                       markersize=6, markeredgewidth=0.25, markeredgecolor='black')
-            axes[1].plot(chieffs, times, 'o', label=label, color='grey', 
-                       markersize=6, markeredgewidth=0.25, markeredgecolor='black')
-            axes[1].set_xlabel('$\\chi_{eff}$', fontsize=12)
-            axes[0].set_xlabel('Mass Ratio (q)', fontsize=12)
-            for ax in axes:
-                ax.tick_params(which='both', direction='in', top=True, right=True)
-                ax.set_ylabel('Time (seconds)', fontsize=12)
-                ax.set_yscale('log')
-                ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
-                ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
-                ax.tick_params(which='both', direction='in', top=True, right=True)
-            plt.tight_layout()
-            figname = f'{self.savedir}/timecomplexity-distro-' + label
-            figname += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
-            plt.savefig(figname+'.png', dpi=300, transparent=True)
-            plt.savefig(figname+'-white.png', dpi=300)
-            plt.close()
+        # # Plot time taken for different q / chi-eff bins
+        # for times, label in zip([modeltimes, basetimes], 
+        #                          ['ML', 'Base']):
+        #     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        #     axes[0].plot(massratios, times, 'o', label=label, color='grey', 
+        #                markersize=6, markeredgewidth=0.25, markeredgecolor='black')
+        #     axes[1].plot(chieffs, times, 'o', label=label, color='grey', 
+        #                markersize=6, markeredgewidth=0.25, markeredgecolor='black')
+        #     axes[1].set_xlabel('$\\chi_{eff}$', fontsize=12)
+        #     axes[0].set_xlabel('Mass Ratio (q)', fontsize=12)
+        #     for ax in axes:
+        #         ax.tick_params(which='both', direction='in', top=True, right=True)
+        #         ax.set_ylabel('Time (seconds)', fontsize=12)
+        #         ax.set_yscale('log')
+        #         ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
+        #         ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        #         ax.tick_params(which='both', direction='in', top=True, right=True)
+        #     plt.tight_layout()
+        #     figname = f'{self.savedir}/timecomplexity-distro-' + label
+        #     figname += '-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        #     plt.savefig(figname+'.png', dpi=300, transparent=True)
+        #     plt.savefig(figname+'-white.png', dpi=300)
+        #     plt.close()
 
 
     def generate(self, num_samples=1, labels=None, nomismatch=False):
