@@ -230,11 +230,22 @@ def plot_mm_vs_chieff(dfmm, fontsize=15, labelsize=13, fname=''):
     plt.close()
 
 
+def apply_chi_cuts(dfmm, cut=0.8):
+    """
+    Apply cuts to the DataFrame based on chi_eff values.
+    """
+    chi_range = [-cut, cut]
+    dfmmcut = dfmm[(dfmm['chi_eff'] >= chi_range[0]) & (dfmm['chi_eff'] <= chi_range[1])]
+    logging.info(f'Selected {len(dfmmcut)} samples within chi_eff range {chi_range}')
+    return dfmmcut
+
+
 def mismatch_anal(args, cut=0.8):
+    logging.info("Starting mismatch analysis...")
     mmfile = DIR + 'mismatch-results-' + TIME + '.h5'
     dfmm = pd.read_hdf(mmfile, key='dfmm')
     # print(dfmm.head())
-    print(dfmm.columns)
+    logging.info(f"Columns in mismatch DataFrame: {dfmm.columns.tolist()}")
     # print(dfmm.describe())
 
     # Select regions of interest in parameter space
@@ -250,15 +261,50 @@ def mismatch_anal(args, cut=0.8):
         plot_mm_hist(dfmmcut, fname='-cut')
         plot_mm_hist(dfmmcut, log=True, fname='-cut')
 
-    elif args.contour:
+    if args.contour:
         plot_mmcontour_in_qchi_space(dfmm)
         plot_mmcontour_in_qchi_space(dfmmcut, fname='-cut')
 
-    else:
+    if args.mm_in_qchi:
         plot_mm_vs_mass(dfmm)
         plot_mm_vs_mass(dfmmcut, fname='-cut')
         plot_mm_vs_chieff(dfmm)
         plot_mm_vs_chieff(dfmmcut, fname='-cut')
+
+    # Output mean, median, best & worst mismatches
+    logging.info("Calculating mean, median, best & worst mismatches...")
+    for t in ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']:
+        mean_mm = dfmm[t].mean()
+        median_mm = dfmm[t].median()
+        best_mm = dfmm[t].min()
+        worst_mm = dfmm[t].max()
+        logging.info(f"{t}: Mean = {mean_mm:.2e}, Median = {median_mm:.2e}, Best = {best_mm:.2e}, Worst = {worst_mm:.2e}")
+        mean_mm_cut = dfmmcut[t].mean()
+        median_mm_cut = dfmmcut[t].median()
+        best_mm_cut = dfmmcut[t].min()
+        worst_mm_cut = dfmmcut[t].max()
+        logging.info(f"{t} (cut): Mean = {mean_mm_cut:.2e}, Median = {median_mm_cut:.2e}, Best = {best_mm_cut:.2e}, Worst = {worst_mm_cut:.2e}")
+    logging.info("Mismatch analysis completed.")
+
+    # Now, find best & worst mismatches at different chi_eff cuts
+    logging.info("Analyzing mismatches at different chi_eff cuts...")
+    chi_cuts = [0.5, 0.6, 0.75, 0.8]
+    for cut in chi_cuts:
+        dfmmcut = apply_chi_cuts(dfmm, cut=cut)
+        logging.info(f"Chi_eff cut: ±{cut}")
+        for t in ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']:
+            best_mm_cut = dfmmcut[t].min()
+            worst_mm_cut = dfmmcut[t].max()
+            logging.info(f"{t} (cut ±{cut}): Best = {best_mm_cut:.2e}, Worst = {worst_mm_cut:.2e}")
+    logging.info("Mismatch analysis completed.")
+
+    # save log to a file
+    log_filename = DIR + 'calc-mismatches-' + TIME + '.log'
+    file_handler = logging.FileHandler(log_filename)
+    file_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    logging.getLogger().addHandler(file_handler)
 
 
 if __name__ == "__main__":
@@ -267,7 +313,9 @@ if __name__ == "__main__":
                         help='Plot histograms of mismatch values instead of contour plots.')
     parser.add_argument('--contour', action='store_true',
                         help='Plot contour plots of mismatch values in the mass ratio and chi_eff plane.')
+    parser.add_argument('--mm_in_qchi', action='store_true',
+                        help='Plot mismatch values against mass parameters and chi_eff.')
     args = parser.parse_args()
 
-    plot_running_loss()
-    # mismatch_anal(args)
+    # plot_running_loss()
+    mismatch_anal(args)
