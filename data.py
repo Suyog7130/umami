@@ -6,6 +6,9 @@ import argparse
 import numpy as np
 import pandas as pd
 
+import lalsimulation as lalsim
+import lal
+
 import pycbc.waveform
 
 from tqdm import tqdm
@@ -74,21 +77,30 @@ def splitspins(nsamples=1e5):
 
 
 class CheckWaveform:
-    def __init__(self, masses, fcutoff=False, aligned=True, 
+    def __init__(self, masses, approximant=APPROXIMANT, 
+                 fcutoff=False, aligned=True, precess=False,
+                 use_lal_sim=False,
                  nosave=False, fname='waveforms'):
         self.masses = masses
         self.nosave = nosave
-        self.approximant = APPROXIMANT
+        self.approximant = approximant
+        self.fcutoff = fcutoff
+        self.aligned = aligned
+        self.precess = precess
+        self.use_lal_sim = use_lal_sim
+
+        self.wfloader = self._set_waveform_loader()
+
         self.fname = fname + '-' + self.approximant
-        if aligned:
+        if self.aligned:
             self.fname += '-aligned'
-        if fcutoff:
+        if self.fcutoff:
             self.fname += '-fcutoff'
-            self.cutoffconst = calc_cutoffconst(aligned=aligned)
+            self.cutoffconst = calc_cutoffconst(aligned=self.aligned)
         else:
             self.cutoffconst = None
         self.init_plot()
-        self.waveform(aligned=aligned)
+        self.waveform()
 
     def savefig(self, axes):
         plt.tight_layout()
@@ -135,20 +147,78 @@ class CheckWaveform:
             self.ax2.set_ylabel('Frequency', fontsize=12)
         self.savefig([self.ax, self.ax1, self.ax2])
 
-    def get_waveform(self, m1, m2, aligned=True):
-        wfkwargs = {
-            "approximant": APPROXIMANT,
-            "delta_t": DELTA_T,
-            "f_lower": f_lower,
-            "mass1": m1,
-            "mass2": m2,
-        }
-        if aligned:
-            wfkwargs["spin1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
-            wfkwargs["spin2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
+    def _set_waveform_loader(self):
+        if self.use_lal_sim:
+            return lalsim.SimInspiralChooseTDWaveform
+        else:
+            return pycbc.waveform.get_td_waveform
+        
+    def _set_wfkwargs(self, m1, m2):
+        wfkwargs = {}
+        if self.use_lal_sim:
+            wfkwargs["deltaT"] = DELTA_T
+            wfkwargs["f_min"] = f_lower
+            wfkwargs["f_ref"] = 0.0 # Reference frequency
+            wfkwargs["distance"] = 400 * lal.PC_SI # Distance in parsecs
+            wfkwargs["inclination"] = 0.0 # Inclination angle
+            wfkwargs["phiRef"] = 0.0 # Reference phase
+            wfkwargs["longAscNodes"] = 0.0 # Longitude of ascending nodes
+            wfkwargs["eccentricity"] = 0.0 # Eccentricity
+            wfkwargs["meanPerAno"] = 0.0 # Mean anomaly of pericenter
+            wfkwargs["params"] = lal.CreateDict() # Additional params
+            wfkwargs["m1"] = m1 * lal.MSUN_SI
+            wfkwargs["m2"] = m2 * lal.MSUN_SI
+            wfkwargs["approximant"] = lalsim.IMRPhenomD    
+            if self.aligned or self.precess:
+                wfkwargs["s1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
+                wfkwargs["s2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
+            if self.precess:
+                wfkwargs["s1x"] = 0.1
+                wfkwargs["s1y"] = 0.5
+                wfkwargs["s2x"] = -0.4
+                wfkwargs["s2y"] = 0.2
+        else:
+            wfkwargs["delta_t"] = DELTA_T
+            wfkwargs["f_lower"] = f_lower
+            wfkwargs["mass1"] = m1
+            wfkwargs["mass2"] = m2
+            wfkwargs["approximant"] = self.approximant
+            if self.aligned or self.precess:
+                wfkwargs["spin1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
+                wfkwargs["spin2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
+            if self.precess:
+                wfkwargs["spin1x"] = 0.1
+                wfkwargs["spin1y"] = 0.5
+                wfkwargs["spin2x"] = -0.4
+                wfkwargs["spin2y"] = 0.2
+        return wfkwargs
+    
+    def get_lal_waveform(self, m1, m2):
+        wfkwargs = self._set_wfkwargs(m1, m2)
         logging.debug(f"Masses: {m1}, {m2}")
         print(wfkwargs)
-        hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
+
+        print(lalsim.SimInspiralChooseTDWaveform.__doc__)
+        # print(lalsim.__dict__)
+
+        hp, hc = lalsim.SimInspiralChooseTDWaveform(**wfkwargs)
+        logging.info("Generated lal wavefroms!")
+        hp, hc = hp.trim_zeros(), hc.trim_zeros()
+        amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
+        phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
+        freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
+        logging.debug(f'Length of hp: {len(hp)}, hc: {len(hc)}')
+        logging.debug(f'Length of amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
+        # print(hp.__dict__)
+        return m1, m2, hp, hc, amp, phase, freq
+
+    def get_waveform(self, m1, m2):
+        wfkwargs = self._set_wfkwargs(m1, m2)
+        logging.debug(f"Masses: {m1}, {m2}")
+        print(wfkwargs)
+
+        # Call PyCBC function by default!
+        hp, hc = self.wfloader(**wfkwargs)
         hp, hc = hp.trim_zeros(), hc.trim_zeros()
 
         if self.cutoffconst is not None:
@@ -174,30 +244,33 @@ class CheckWaveform:
         # print(hp.__dict__)
         return m1, m2, hp, hc, amp, phase, freq
 
-    def waveform(self, aligned=True):
-        self.fname += '-aligned' if aligned else ''
+    def waveform(self):
         m1s, m2s = self.masses
         if len(m1s) == 2:
             hps, amps, phases, freqs = [], [], [], []
             for m1, m2 in zip(m1s, m2s):
-                m1, m2, hp, hc, amp, phase, freq = self.get_waveform(m1, m2, aligned=aligned)
+                m1, m2, hp, hc, amp, phase, freq = self.get_waveform(m1, m2)
                 hps.append(hp)
                 amps.append(amp)
                 phases.append(phase)
                 freqs.append(freq)
             self.plot_two_wfs(m1s, m2s, hps, amps, phases, freqs)
         else:
-            m1, m2, hp, hc, amp, phase, freq = self.get_waveform(m1s[0], m2s[0], aligned=aligned)
+            if self.use_lal_sim:
+                m1, m2, hp, hc, amp, phase, freq = self.get_lal_waveform(m1s[0], m2s[0])
+            else:
+                m1, m2, hp, hc, amp, phase, freq = self.get_waveform(m1s[0], m2s[0])
             self.fname += f'_m1_{m1:.2f}_m2_{m2:.2f}'
             self.plot_single_wf(m1, m2, hp, hc, amp, phase, freq)
 
 
-class Waveform:
+class Waveform(CheckWaveform):
     """
     Main class to generate, save, and load training / test waveforms.
     """
     def __init__(self, masses=None, spins=None, fcutoff=True, fname='',
                  preset_array_size=PRESET_ARRAY_SIZE):
+        super().__init__()
         self.masses = masses if masses is not None else np.random.uniform(5, 75, (1000, 2))
         self.spins = spins if (spins is not None and masses is not None) else np.random.uniform(-0.999, 0.999, (1000, 2))
         if fcutoff:
@@ -443,10 +516,15 @@ def main(args):
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description="Generate and plot gravitational waveforms.")
     
+    parser.add_argument('--approximant', type=str, default=APPROXIMANT,
+                        help='Waveform approximant to use.')
+
     parser.add_argument("--aligned", action="store_true", help="Generate aligned-spin waveforms.")
+    parser.add_argument("--precess", action="store_true", help="Generate precessing-spin waveforms.")
+
+    parser.add_argument("--use-lal-sim", action="store_true", help="Use LALSimulation for waveform generation.")
     parser.add_argument("--fname", type=str, default="waveforms", help="Filename for saving the plots.")
     parser.add_argument("--nosave", action="store_true", help="Do not save the plots.")
-
     parser.add_argument('--nsample', type=int, default=1e5,
                         help='Number of samples to generate.')
     parser.add_argument('--checkhdf', action='store_true', default=False,
@@ -454,7 +532,7 @@ if __name__=="__main__":
 
     parser.add_argument('--fcutoff', action='store_true', default=False,
                         help='Use fcutoff to generate waveforms of equal duration.')
-    parser.add_argument('--checkwaveform', action='store_true', default=False,
+    parser.add_argument('--check-waveform', action='store_true', default=False,
                         help='Check waveform generation and plotting.')
     
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
@@ -474,10 +552,14 @@ if __name__=="__main__":
     if args.checkhdf:
         fname = 'SEOBNRv4-train-100-fcutoff-uniform-aligned.hdf'
         check_hdf(fname)
-    elif args.checkwaveform:
-        CheckWaveform(masses=[[50, 30], [15, 5]], 
+    elif args.check_waveform:
+        CheckWaveform(masses=[[50], [15]],
+                      #masses=[[50, 30], [15, 5]],
+                      approximant=args.approximant,
                       aligned=args.aligned,
+                      precess=args.precess,
                       nosave=args.nosave,
-                      fcutoff=args.fcutoff)
+                      fcutoff=args.fcutoff,
+                      use_lal_sim=args.use_lal_sim)
     else:
         main(args)
