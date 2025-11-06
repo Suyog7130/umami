@@ -204,16 +204,18 @@ class CheckWaveform:
         print(lalsim.SimInspiralChooseTDWaveform.__dir__)
 
         hp, hc = lalsim.SimInspiralChooseTDWaveform(**wfkwargs)
+        # epoch = hp.epoch.gpsSeconds + hp.epoch.gpsNanoSeconds * 1e-9
         logging.info("Generated lal wavefroms!")
         print(hp.__dict__)
         print(hp.data.__dir__())
-        hp, hc = np.array(hp.data), np.array(hc.data)
+        hp, hc = np.array(hp.data.data, copy=False), np.array(hp.data.data, copy=False)
         print(np.asarray(hp.data))
         print(f"hp shape: {hp.shape}, hc shape: {hc.shape}")
+
+        # TODO: Implement Ampl/Phase/Freq conversion for lal waveforms!
         hp = pycbc.types.TimeSeries(hp, delta_t=wfkwargs["deltaT"])
         hc = pycbc.types.TimeSeries(hc, delta_t=wfkwargs["deltaT"])
-        hp, hc = hp.trim_zeros(), hc.trim_zeros()
-        # TODO: Implement Ampl/Phase/Freq conversion for lal waveforms!
+        # hp, hc = hp.trim_zeros(), hc.trim_zeros()
         amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
         phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
         freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
