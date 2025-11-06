@@ -7,10 +7,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', 
-                    datefmt='%Y-%m-%d %H:%M:%S')
-
-
 from scipy.interpolate import griddata
 from matplotlib.colors import LogNorm
 from datetime import datetime
@@ -18,6 +14,19 @@ from datetime import datetime
 
 DIR = '../results/20251023/'
 TIME = '20251023_075320'
+
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', 
+                    datefmt='%Y-%m-%d %H:%M:%S')
+
+# save log to a file
+log_filename = DIR + 'calc-mismatches-' + TIME + '.log'
+file_handler = logging.FileHandler(log_filename)
+file_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logging.getLogger().addHandler(file_handler)
+
 
 def plot(ax, fname, logscale=False, save=False, show=True,
          label=''):
@@ -297,14 +306,6 @@ def mismatch_anal(args, cut=0.8):
             worst_mm_cut = dfmmcut[t].max()
             logging.info(f"{t} (cut ±{cut}): Best = {best_mm_cut:.2e}, Worst = {worst_mm_cut:.2e}")
     logging.info("Mismatch analysis completed.")
-
-    # save log to a file
-    log_filename = DIR + 'calc-mismatches-' + TIME + '.log'
-    file_handler = logging.FileHandler(log_filename)
-    file_handler.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-    logging.getLogger().addHandler(file_handler)
 
 
 if __name__ == "__main__":
