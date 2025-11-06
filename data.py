@@ -25,7 +25,7 @@ DURATION = 1.00
 sample_len = int(DURATION * SAMPLE_RATE)
 DELTA_T = DURATION / SAMPLE_RATE   # delta_t is just 1/sample_rate!
 delta_f = 1.0 / DURATION  # delta_f = 1.0 / duration(s)
-f_lower = 40.0
+f_lower = FMIN = 40.0
 f_len = sample_len // 2 + 1  # upper frequency
 
 np_gen = np.random.default_rng()
@@ -79,9 +79,10 @@ def splitspins(nsamples=1e5):
 class CheckWaveform:
     def __init__(self, masses, approximant=APPROXIMANT, 
                  fcutoff=False, aligned=True, precess=False,
-                 use_lal_sim=False,
+                 use_lal_sim=False, f_lower=FMIN,
                  nosave=False, fname='waveforms'):
         self.masses = masses
+        self.f_lower = f_lower
         self.nosave = nosave
         self.approximant = approximant
         self.fcutoff = fcutoff
@@ -157,7 +158,7 @@ class CheckWaveform:
         wfkwargs = {}
         if self.use_lal_sim:
             wfkwargs["deltaT"] = DELTA_T
-            wfkwargs["f_min"] = f_lower
+            wfkwargs["f_min"] = self.f_lower
             wfkwargs["f_ref"] = 0.0 # Reference frequency
             wfkwargs["distance"] = 400 * lal.PC_SI # Distance in parsecs
             wfkwargs["inclination"] = 0.0 # Inclination angle
@@ -168,18 +169,18 @@ class CheckWaveform:
             wfkwargs["params"] = lal.CreateDict() # Additional params
             wfkwargs["m1"] = m1 * lal.MSUN_SI
             wfkwargs["m2"] = m2 * lal.MSUN_SI
-            wfkwargs["approximant"] = lalsim.IMRPhenomD    
+            wfkwargs["approximant"] = lalsim.IMRPhenomD
             if self.aligned or self.precess:
                 wfkwargs["s1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
                 wfkwargs["s2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
             if self.precess:
-                wfkwargs["s1x"] = 0.1
-                wfkwargs["s1y"] = 0.5
-                wfkwargs["s2x"] = -0.4
-                wfkwargs["s2y"] = 0.2
+                wfkwargs["s1x"] = 0.0
+                wfkwargs["s1y"] = 0.0
+                wfkwargs["s2x"] = 0.0
+                wfkwargs["s2y"] = 0.0
         else:
             wfkwargs["delta_t"] = DELTA_T
-            wfkwargs["f_lower"] = f_lower
+            wfkwargs["f_lower"] = self.f_lower
             wfkwargs["mass1"] = m1
             wfkwargs["mass2"] = m2
             wfkwargs["approximant"] = self.approximant
@@ -200,10 +201,19 @@ class CheckWaveform:
 
         print(lalsim.SimInspiralChooseTDWaveform.__doc__)
         # print(lalsim.__dict__)
+        print(lalsim.SimInspiralChooseTDWaveform.__dir__)
 
         hp, hc = lalsim.SimInspiralChooseTDWaveform(**wfkwargs)
         logging.info("Generated lal wavefroms!")
+        print(hp.__dict__)
+        print(hp.data.__dir__())
+        hp, hc = np.array(hp.data), np.array(hc.data)
+        print(np.asarray(hp.data))
+        print(f"hp shape: {hp.shape}, hc shape: {hc.shape}")
+        hp = pycbc.types.TimeSeries(hp, delta_t=wfkwargs["deltaT"])
+        hc = pycbc.types.TimeSeries(hc, delta_t=wfkwargs["deltaT"])
         hp, hc = hp.trim_zeros(), hc.trim_zeros()
+        # TODO: Implement Ampl/Phase/Freq conversion for lal waveforms!
         amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
         phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
         freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
@@ -211,6 +221,7 @@ class CheckWaveform:
         logging.debug(f'Length of amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
         # print(hp.__dict__)
         return m1, m2, hp, hc, amp, phase, freq
+
 
     def get_waveform(self, m1, m2):
         wfkwargs = self._set_wfkwargs(m1, m2)
@@ -560,6 +571,7 @@ if __name__=="__main__":
                       precess=args.precess,
                       nosave=args.nosave,
                       fcutoff=args.fcutoff,
+                      f_lower=20.0,
                       use_lal_sim=args.use_lal_sim)
     else:
         main(args)
