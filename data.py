@@ -17,8 +17,11 @@ import matplotlib.pyplot as plt
 from datacvae import calc_cutoffconst
 from plotutils import putils
 
-APPROXIMANT = 'SEOBNRv4'
 
+# TODO: remove dependence on these global params!
+# TODO: have separate class for each interested approximant.
+
+APPROXIMANT = 'SEOBNRv4'
 
 SAMPLE_RATE = 8192.0  # n_samples = duration(s) / sample_rate
 DURATION = 1.00
@@ -75,12 +78,23 @@ def splitspins(nsamples=1e5):
     return train_spins, val_spins, test_spins
 
 
+class BaseWaveform:
 
-class CheckWaveform:
-    def __init__(self, masses, approximant=APPROXIMANT, 
-                 fcutoff=False, aligned=True, precess=False,
-                 use_lal_sim=False, f_lower=FMIN,
-                 nosave=False, fname='waveforms'):
+    def __init__(self, masses, 
+                 approximant=APPROXIMANT, 
+                 fcutoff=False, 
+                 aligned=True, 
+                 precess=False,
+                 f_lower=FMIN,
+                 nosave=False,
+                 wflibname='pycbc',
+                 fname='waveforms'):
+        # Base source param distributions
+        self.mass_range = [5,75]
+        self.mtot_ragne = [10,200]
+        self.q_range = [1,10]
+        self.chi_range = [-0.8,0.8]
+
         self.masses = masses
         self.f_lower = f_lower
         self.nosave = nosave
@@ -88,8 +102,8 @@ class CheckWaveform:
         self.fcutoff = fcutoff
         self.aligned = aligned
         self.precess = precess
-        self.use_lal_sim = use_lal_sim
 
+        self.wflibname = 'pycbc'
         self.wfloader = self._set_waveform_loader()
 
         self.fname = fname + '-' + self.approximant
@@ -149,50 +163,75 @@ class CheckWaveform:
         self.savefig([self.ax, self.ax1, self.ax2])
 
     def _set_waveform_loader(self):
-        if self.use_lal_sim:
-            return lalsim.SimInspiralChooseTDWaveform
-        else:
+        """
+        Set the waveform loader function based on the chosen library.
+        By default import only Time-Domain waveforms!
+        1. 'pycbc' : pycbc.waveform.get_td_waveform
+        2. 'lalsim' : lalsim TD or FD
+        4. 'pyseobnr' / 'pySEOBNR' : 
+        5. 'teobresums' / 'TEOBResumS' : 
+        6. 'gwsurrogate' / 'GWSurrogate'
+        """
+        if self.wflibname == 'pycbc':
+            logging.info("Using PyCBC waveform generator.")
             return pycbc.waveform.get_td_waveform
-        
-    def _set_wfkwargs(self, m1, m2):
-        wfkwargs = {}
-        if self.use_lal_sim:
-            wfkwargs["deltaT"] = DELTA_T
-            wfkwargs["f_min"] = self.f_lower
-            wfkwargs["f_ref"] = 0.0 # Reference frequency
-            wfkwargs["distance"] = 400 * lal.PC_SI # Distance in parsecs
-            wfkwargs["inclination"] = 0.0 # Inclination angle
-            wfkwargs["phiRef"] = 0.0 # Reference phase
-            wfkwargs["longAscNodes"] = 0.0 # Longitude of ascending nodes
-            wfkwargs["eccentricity"] = 0.0 # Eccentricity
-            wfkwargs["meanPerAno"] = 0.0 # Mean anomaly of pericenter
-            wfkwargs["params"] = lal.CreateDict() # Additional params
-            wfkwargs["m1"] = m1 * lal.MSUN_SI
-            wfkwargs["m2"] = m2 * lal.MSUN_SI
-            wfkwargs["approximant"] = lalsim.IMRPhenomD
-            if self.aligned or self.precess:
-                wfkwargs["s1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
-                wfkwargs["s2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
-            if self.precess:
-                wfkwargs["s1x"] = 0.0
-                wfkwargs["s1y"] = 0.0
-                wfkwargs["s2x"] = 0.0
-                wfkwargs["s2y"] = 0.0
+        if self.wflibname == 'lalsim':
+            logging.info("Using LALSimulation waveform generator.")
+            return lalsim.SimInspiralChooseTDWaveform
+        if self.wflibname == 'pyseobnr' or self.wflibname == 'pySEOBNR':
+            raise NotImplementedError("PySEOBNR waveform loader not implemented yet.")
+        if self.wflibname == 'teobresums' or self.wflibname == 'TEOBResumS':
+            raise NotImplementedError("TEOBResumS waveform loader not implemented yet.")
+        if self.wflibname == 'gwsurrogate' or self.wflibname == 'GWSurrogate':
+            raise NotImplementedError("GWSurrogate waveform loader not implemented yet.")
         else:
-            wfkwargs["delta_t"] = DELTA_T
-            wfkwargs["f_lower"] = self.f_lower
-            wfkwargs["mass1"] = m1
-            wfkwargs["mass2"] = m2
-            wfkwargs["approximant"] = self.approximant
-            if self.aligned or self.precess:
-                wfkwargs["spin1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
-                wfkwargs["spin2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
-            if self.precess:
-                wfkwargs["spin1x"] = 0.1
-                wfkwargs["spin1y"] = 0.5
-                wfkwargs["spin2x"] = -0.4
-                wfkwargs["spin2y"] = 0.2
+            raise ValueError(f"Waveform loader '{self.wflibname}' not implemented yet.")
+        
+    def _set_lal_wfkwargs(self, params: dict, wfkwargs={}):
+        wfkwargs["deltaT"] = DELTA_T
+        wfkwargs["f_min"] = self.f_lower
+        wfkwargs["f_ref"] = 0.0 # Reference frequency
+        wfkwargs["distance"] = 400 * lal.PC_SI # Distance in parsecs
+        wfkwargs["inclination"] = 0.0 # Inclination angle
+        wfkwargs["phiRef"] = 0.0 # Reference phase
+        wfkwargs["longAscNodes"] = 0.0 # Longitude of ascending nodes
+        wfkwargs["eccentricity"] = 0.0 # Eccentricity
+        wfkwargs["meanPerAno"] = 0.0 # Mean anomaly of pericenter
+        wfkwargs["params"] = lal.CreateDict() # Additional params
+        wfkwargs["m1"] = params.get('m1') * lal.MSUN_SI
+        wfkwargs["m2"] = params.get('m2') * lal.MSUN_SI
+        wfkwargs["approximant"] = self.approximant
+        if self.aligned or self.precess:
+            wfkwargs["s1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
+            wfkwargs["s2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
+        if self.precess:
+            wfkwargs["s1x"] = 0.0
+            wfkwargs["s1y"] = 0.0
+            wfkwargs["s2x"] = 0.0
+            wfkwargs["s2y"] = 0.0
         return wfkwargs
+    
+    def _set_pycbc_wfkwargs(self, params: dict, wfkwargs={}):
+        wfkwargs["delta_t"] = DELTA_T
+        wfkwargs["f_lower"] = self.f_lower
+        wfkwargs["mass1"] = params.get('m1')
+        wfkwargs["mass2"] = params.get('m2')
+        wfkwargs["approximant"] = self.approximant
+        if self.aligned or self.precess:
+            wfkwargs["spin1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
+            wfkwargs["spin2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
+        if self.precess:
+            wfkwargs["spin1x"] = 0.1
+            wfkwargs["spin1y"] = 0.5
+            wfkwargs["spin2x"] = -0.4
+            wfkwargs["spin2y"] = 0.2
+        return wfkwargs
+
+    def _set_wfkwargs(self, params: dict):
+        if self.wflibname=='lalsim':
+            return self._set_lal_wfkwargs(params)
+        else:
+            return self._set_pycbc_wfkwargs(params)
     
     def get_lal_waveform(self, m1, m2):
         wfkwargs = self._set_wfkwargs(m1, m2)
@@ -225,8 +264,17 @@ class CheckWaveform:
         return m1, m2, hp, hc, amp, phase, freq
 
 
-    def get_waveform(self, m1, m2):
-        wfkwargs = self._set_wfkwargs(m1, m2)
+    def get_waveform(self, params: dict):
+        """
+        Get the waveform for one set of source parameters.
+
+        Returns
+        -------
+        tuple
+            A tuple containing the masses and the waveforms (hp, hc, amp, phase, freq).
+        """
+        wfkwargs = self._set_wfkwargs(params)
+        m1, m2 = params['m1'], params['m2']
         logging.debug(f"Masses: {m1}, {m2}")
         print(wfkwargs)
 
@@ -255,7 +303,7 @@ class CheckWaveform:
         logging.debug(f'Length of hp: {len(hp)}, hc: {len(hc)}')
         logging.debug(f'Length of amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
         # print(hp.__dict__)
-        return m1, m2, hp, hc, amp, phase, freq
+        return (hp, hc, amp, phase, freq)
 
     def waveform(self):
         m1s, m2s = self.masses
@@ -277,7 +325,7 @@ class CheckWaveform:
             self.plot_single_wf(m1, m2, hp, hc, amp, phase, freq)
 
 
-class Waveform(CheckWaveform):
+class Waveform(BaseWaveform):
     """
     Main class to generate, save, and load training / test waveforms.
     """
