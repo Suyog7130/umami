@@ -81,7 +81,6 @@ def splitspins(nsamples=1e5):
 class BaseWaveform:
     def __init__(self,
                  approximant=APPROXIMANT, 
-                 fcutoff=False, 
                  aligned=True, 
                  precess=False,
                  baseparams={},
@@ -105,7 +104,6 @@ class BaseWaveform:
         # higher-level options
         self.nosave = nosave
         self.approximant = approximant
-        self.fcutoff = fcutoff
         self.aligned = aligned
         self.precess = precess
 
@@ -115,13 +113,9 @@ class BaseWaveform:
         self.fname = fname + '-' + self.approximant
         if self.aligned:
             self.fname += '-aligned'
-        if self.fcutoff:
-            self.fname += '-fcutoff'
-            self.cutoffconst = calc_cutoffconst(aligned=self.aligned)
-        else:
-            self.cutoffconst = None
         self.init_plot()
         self.waveform()
+
 
     def savefig(self, axes):
         plt.tight_layout()
@@ -344,35 +338,149 @@ class Waveform(BaseWaveform):
     """
     Main class to generate, save, and load training / test waveforms.
     """
-    def __init__(self, nsamples=1e5, 
-                 sample_in_q=False,
+    def __init__(self, nsamples=1e5, fcutoff=None,
+                 param_space=['q', 's1', 's2'],
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.nsamples = nsamples
-        self.sample_in_q = sample_in_q
+        self.param_space = param_space
         self.tttratio = [0.7, 0.1, 0.2]  # train, val, test
         self.set_parameter_space()
 
+        self.fcutoff = fcutoff
+        if self.fcutoff:
+            self.fname += '-fcutoff'
+            self.cutoffconst = self.calc_cutoffconst()
+        else:
+            self.cutoffconst = None
+
+    def calc_cutoffconst(self, nsamples=1000):
+        """
+        Calculate the cutoff constant for the waveform duration
+        calculation based on the approximate relation:
+
+            DURATION = C * fcutoff^(-8/3) * mchirp^(-5/3)
+        
+        where, C is the cutoff constant to be calculated.
+        """
+        logging.info("Calculating cutoff constant for waveform duration...")
+        consts = np.zeros(nsamples)
+        for i in range(nsamples):
+            param = self.get_params(i)
+            data = self.get_waveform(*param)
+            hp, hc = data[0], data[1]
+            duration = hp.duration
+            m1, m2 = param['m1'], param['m2']
+            mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+            fcutoff = param['f_lower']
+            consts[i] = duration * fcutoff**(8/3) * mchirp**(5/3)
+        cutoffconst = np.mean(consts)
+        logging.info(f"Cutoff constant calculated: {cutoffconst}")
+        return cutoffconst
+
     def set_parameter_space(self):
+        """
+        Set the parameter space for waveform generation using the
+        parameter names passed in `self.param_space` and the range
+        defined in `self.mass_range`, `self.q_range`, `self.chi_range`.
+        """
         mmin, mmax = self.mass_range
         qmin, qmax = self.q_range
         smin, smax = self.chi_range
-        self.masses = np.random.uniform(mmin, mmax, (int(self.nsamples), 2))
-        if self.sample_in_q:
+        masses = np.random.uniform(mmin, mmax, (int(self.nsamples), 2))
+        if 'm1' in self.param_space and 'm2' in self.param_space:
+            self.m1s = masses[:,0]
+            self.m2s = masses[:,1]
+        if 'q' in self.param_space:
             q = np.random.uniform(qmin, qmax, int(self.nsamples))
-            m2 = self.masses[:,0] / q
-            self.masses[:,1] = m2
+            m2 = self.m1s / q
+            self.m2s = m2
             self.qs = q
-        self.spins = np.random.uniform(smin, smax, (int(self.nsamples), 2))
+        if 's1' in self.param_space and 's2' in self.param_space:
+            self.s1s = np.random.uniform(smin, smax, int(self.nsamples))
+            self.s2s = np.random.uniform(smin, smax, int(self.nsamples))
+        if self.precess:
+            self.s1zs = self.s1s
+            self.s2zs = self.s2s
+            self.s1xs = np.random.uniform(smin, smax, int(self.nsamples))
+            self.s1ys = np.random.uniform(smin, smax, int(self.nsamples))
+            self.s2xs = np.random.uniform(smin, smax, int(self.nsamples))
+            self.s2ys = np.random.uniform(smin, smax, int(self.nsamples))
 
-    def _tttsplits(self, paramset: np.ndarray):
-        train_size = int(self.nsamples * self.tttratio[0])
-        val_size = int(self.nsamples * self.tttratio[1])
-        test_size = int(self.nsamples * self.tttratio[2])
-        trainset = paramset[:train_size]
-        valset = paramset[train_size:train_size+val_size]
-        testset = paramset[train_size+val_size:test_size]
-        return (trainset, valset, testset)
+    def _tttsplits(self):
+        indices = np.arange(self.nsamples)
+        train_indices = indices[:int(self.nsamples * self.tttratio[0])]
+        val_indices = indices[int(self.nsamples * self.tttratio[0]):int(self.nsamples * self.tttratio[1])]
+        test_indices = indices[int(self.nsamples * self.tttratio[1]):]
+        np.random.shuffle(train_indices)
+        np.random.shuffle(val_indices)
+        np.random.shuffle(test_indices)
+        return (train_indices, val_indices, test_indices)
+
+    def get_params(self, index):
+        """
+        Get the parameters for the given index from the parameter space.
+        """
+        params = self.baseparams.copy()
+        for param in self.param_space:
+            params[param] = getattr(self, param+'s')[index]
+        if 'q' in self.param_space:
+            params['m1'] = params['m2'] * params['q']
+        return params
+    
+    def write_hdf_grp(self, hf, data, grpname):
+        """
+        Write the data to the HDF5 file.
+        `data` is a list or dictionary of arrays.
+            'hp', 'hc', 'amp', 'phase', 'freq'
+        Either passed as a list or a dictionary.
+        """
+        if isinstance(data, np.ndarray):
+            logging.info('Assuming data is the `hp` strain.')
+            hf[grpname].create_dataset('hp', data=data)
+
+        elif isinstance(data, list):
+            dsnames = ['hp', 'hc', 'amp', 'phase', 'freq']
+            logging.info(f'Assuming data array is in the form {dsnames}')
+            # Do not write the extra info since it was already written!
+            for name, tsdata in zip(dsnames, data[:-1]):
+                logging.debug(f"{name}, {tsdata.shape}")
+                ds = hf[grpname].create_dataset(name, data=tsdata)
+
+        elif isinstance(data, dict):
+            logging.info(f'Assuming data array is in the form {data.keys()}')
+            for name, d in data.items():
+                if isinstance(d, np.ndarray):
+                    hf[grpname].create_dataset(name, data=d)
+                else:
+                    raise ValueError(f"Data for {name} is not a numpy array.")
+        else:
+            raise ValueError("Data must be a numpy array or a list of arrays or \
+                            a dictionary of arrays.")
+    
+    def write_data_to_hdf(self, which='train'):
+        """
+        Write the data to HDF5 file for the given split: train, val, test.
+        """
+        logging.info(f'Writing {which} data to HDF5 file {self.fname}.hdf')
+        if os.path.exists(self.fname+'.hdf'):
+            logging.info(f'File {self.fname}.hdf already exists. Using an incremented name.')
+            self.fname = self.fname.split('.hdf')[0] + '-1'
+
+        split_indices = self._tttsplits()[{'train':0, 'val':1, 'test':2}[which]]
+
+        with h5py.File(self.fname+'.hdf', 'w') as hf:
+            # Create a group for each mass
+            for i in tqdm(split_indices, desc='samples-written', ncols=100):
+                params = self.get_params(i)
+                grpname = f'sample{i}'
+                data = self.get_waveform(*params)
+                hfgrp = hf.create_group(grpname)
+                for param, value in params.items():
+                    hfgrp.attrs[param] = value
+                self.write_hdf_grp(hf, data, grpname)
+        logging.info(f"Data written to {self.fname+'.hdf'} successfully.")
+
 
 
 class SEOBNRv4:
