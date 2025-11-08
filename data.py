@@ -79,31 +79,37 @@ def splitspins(nsamples=1e5):
 
 
 class BaseWaveform:
-
-    def __init__(self, masses, 
+    def __init__(self,
                  approximant=APPROXIMANT, 
                  fcutoff=False, 
                  aligned=True, 
                  precess=False,
-                 f_lower=FMIN,
+                 baseparams={},
                  nosave=False,
                  wflibname='pycbc',
                  fname='waveforms'):
         # Base source param distributions
         self.mass_range = [5,75]
-        self.mtot_ragne = [10,200]
+        self.mtot_range = [10,200]
         self.q_range = [1,10]
         self.chi_range = [-0.8,0.8]
 
-        self.masses = masses
         self.f_lower = f_lower
+
+        self.baseparams = {
+            'f_lower': baseparams.get('f_lower', FMIN),
+            'delta_t': baseparams.get('delta_t', DELTA_T),
+            'approximant': baseparams.get('approximant', approximant),
+        }
+
+        # higher-level options
         self.nosave = nosave
         self.approximant = approximant
         self.fcutoff = fcutoff
         self.aligned = aligned
         self.precess = precess
 
-        self.wflibname = 'pycbc'
+        self.wflibname = wflibname
         self.wfloader = self._set_waveform_loader()
 
         self.fname = fname + '-' + self.approximant
@@ -188,8 +194,8 @@ class BaseWaveform:
             raise ValueError(f"Waveform loader '{self.wflibname}' not implemented yet.")
         
     def _set_lal_wfkwargs(self, params: dict, wfkwargs={}):
-        wfkwargs["deltaT"] = DELTA_T
-        wfkwargs["f_min"] = self.f_lower
+        wfkwargs["deltaT"] = params.get('delta_t')
+        wfkwargs["f_min"] = params.get('f_lower')
         wfkwargs["f_ref"] = 0.0 # Reference frequency
         wfkwargs["distance"] = 400 * lal.PC_SI # Distance in parsecs
         wfkwargs["inclination"] = 0.0 # Inclination angle
@@ -212,11 +218,11 @@ class BaseWaveform:
         return wfkwargs
     
     def _set_pycbc_wfkwargs(self, params: dict, wfkwargs={}):
-        wfkwargs["delta_t"] = DELTA_T
-        wfkwargs["f_lower"] = self.f_lower
+        wfkwargs["delta_t"] = params.get('delta_t')
+        wfkwargs["f_lower"] = params.get('f_lower')
         wfkwargs["mass1"] = params.get('m1')
         wfkwargs["mass2"] = params.get('m2')
-        wfkwargs["approximant"] = self.approximant
+        wfkwargs["approximant"] = params.get('approximant', self.approximant)
         if self.aligned or self.precess:
             wfkwargs["spin1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
             wfkwargs["spin2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
@@ -233,35 +239,16 @@ class BaseWaveform:
         else:
             return self._set_pycbc_wfkwargs(params)
     
-    def get_lal_waveform(self, m1, m2):
-        wfkwargs = self._set_wfkwargs(m1, m2)
-        logging.debug(f"Masses: {m1}, {m2}")
-        print(wfkwargs)
-
-        print(lalsim.SimInspiralChooseTDWaveform.__doc__)
-        # print(lalsim.__dict__)
-        print(lalsim.SimInspiralChooseTDWaveform.__dir__)
-
-        hp, hc = lalsim.SimInspiralChooseTDWaveform(**wfkwargs)
-        # epoch = hp.epoch.gpsSeconds + hp.epoch.gpsNanoSeconds * 1e-9
-        logging.info("Generated lal wavefroms!")
-        print(hp.__dict__)
-        print(hp.data.__dir__())
-        hp, hc = np.array(hp.data.data, copy=False), np.array(hp.data.data, copy=False)
-        print(np.asarray(hp.data))
-        print(f"hp shape: {hp.shape}, hc shape: {hc.shape}")
-
-        # TODO: Implement Ampl/Phase/Freq conversion for lal waveforms!
-        hp = pycbc.types.TimeSeries(hp, delta_t=wfkwargs["deltaT"])
-        hc = pycbc.types.TimeSeries(hc, delta_t=wfkwargs["deltaT"])
-        # hp, hc = hp.trim_zeros(), hc.trim_zeros()
-        amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
-        phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
-        freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
-        logging.debug(f'Length of hp: {len(hp)}, hc: {len(hc)}')
-        logging.debug(f'Length of amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
-        # print(hp.__dict__)
-        return m1, m2, hp, hc, amp, phase, freq
+    # def get_lal_waveform(self, m1, m2):
+    #     wfkwargs = self._set_wfkwargs(m1, m2)
+    #     logging.debug(f"Masses: {m1}, {m2}")
+    #     print(wfkwargs)
+    #     print(lalsim.SimInspiralChooseTDWaveform.__doc__)
+    #     # print(lalsim.__dict__)
+    #     print(lalsim.SimInspiralChooseTDWaveform.__dir__)
+    #     hp, hc = lalsim.SimInspiralChooseTDWaveform(**wfkwargs)
+    #     # epoch = hp.epoch.gpsSeconds + hp.epoch.gpsNanoSeconds * 1e-9
+    #     return m1, m2, hp, hc, amp, phase, freq
 
 
     def get_waveform(self, params: dict):
@@ -280,32 +267,60 @@ class BaseWaveform:
 
         # Call PyCBC function by default!
         hp, hc = self.wfloader(**wfkwargs)
-        hp, hc = hp.trim_zeros(), hc.trim_zeros()
 
-        if self.cutoffconst is not None:
-            logging.info(f'f_low={f_lower}, duration={hp.duration}')
-            # calculate new f_lower
-            mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
-            new_fcutoff = ( DURATION / (self.cutoffconst * mchirp ** (-5/3)) )**(-3/8)
-            logging.info(f'New f_lower={new_fcutoff}')
-            # adjust the new f_lower to allow for some error
-            new_fcutoff -= 0.2*new_fcutoff
-            # generate a second waveform
-            wfkwargs['f_lower'] = new_fcutoff
-            hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
+        if self.wflibname=='lalsim':
+            logging.info("Generated lal wavefroms!")
+            print(hp.__dict__)
+            print(hp.data.__dir__())
+            hp, hc = np.array(hp.data.data, copy=False), np.array(hp.data.data, copy=False)
+            print(np.asarray(hp.data))
+            print(f"hp shape: {hp.shape}, hc shape: {hc.shape}")
+
+            # TODO: Implement Ampl/Phase/Freq conversion for lal waveforms!
+            hp = pycbc.types.TimeSeries(hp, delta_t=wfkwargs["deltaT"])
+            hc = pycbc.types.TimeSeries(hc, delta_t=wfkwargs["deltaT"])
+            # hp, hc = hp.trim_zeros(), hc.trim_zeros()
+            amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
+            phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
+            freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
+            logging.debug(f'Length of hp: {len(hp)}, hc: {len(hc)}')
+            logging.debug(f'Length of amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
+            # print(hp.__dict__)
+
+        if self.wflibname=='pycbc':
             hp, hc = hp.trim_zeros(), hc.trim_zeros()
-            logging.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
-            logging.info(f'sample_len={len(hp)}')
 
-        amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
-        phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
-        freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
-        logging.debug(f'Length of hp: {len(hp)}, hc: {len(hc)}')
-        logging.debug(f'Length of amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
-        # print(hp.__dict__)
+            if self.cutoffconst is not None:
+                logging.info(f'f_low={f_lower}, duration={hp.duration}')
+                # calculate new f_lower
+                mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+                new_fcutoff = ( DURATION / (self.cutoffconst * mchirp ** (-5/3)) )**(-3/8)
+                logging.info(f'New f_lower={new_fcutoff}')
+                # adjust the new f_lower to allow for some error
+                new_fcutoff -= 0.2*new_fcutoff
+                # generate a second waveform
+                wfkwargs['f_lower'] = new_fcutoff
+                hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
+                hp, hc = hp.trim_zeros(), hc.trim_zeros()
+                logging.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
+                logging.info(f'sample_len={len(hp)}')
+
+            amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
+            phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
+            freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
+            logging.debug(f'Length of hp: {len(hp)}, hc: {len(hc)}')
+            logging.debug(f'Length of amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
+            # print(hp.__dict__)
+
         return (hp, hc, amp, phase, freq)
 
-    def waveform(self):
+    def waveform(self, num=1):
+        """
+        Get N number of waveforms for the given param ranges.
+        """
+        params = self.baseparams.copy()
+        params['m1'] = 30.0
+        params['m2'] = 30.0
         m1s, m2s = self.masses
         if len(m1s) == 2:
             hps, amps, phases, freqs = [], [], [], []
@@ -328,6 +343,41 @@ class BaseWaveform:
 class Waveform(BaseWaveform):
     """
     Main class to generate, save, and load training / test waveforms.
+    """
+    def __init__(self, nsamples=1e5, 
+                 sample_in_q=False,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.nsamples = nsamples
+        self.sample_in_q = sample_in_q
+        self.tttratio = [0.7, 0.1, 0.2]  # train, val, test
+        self.set_parameter_space()
+
+    def set_parameter_space(self):
+        mmin, mmax = self.mass_range
+        qmin, qmax = self.q_range
+        smin, smax = self.chi_range
+        self.masses = np.random.uniform(mmin, mmax, (int(self.nsamples), 2))
+        if self.sample_in_q:
+            q = np.random.uniform(qmin, qmax, int(self.nsamples))
+            m2 = self.masses[:,0] / q
+            self.masses[:,1] = m2
+            self.qs = q
+        self.spins = np.random.uniform(smin, smax, (int(self.nsamples), 2))
+
+    def _tttsplits(self, paramset: np.ndarray):
+        train_size = int(self.nsamples * self.tttratio[0])
+        val_size = int(self.nsamples * self.tttratio[1])
+        test_size = int(self.nsamples * self.tttratio[2])
+        trainset = paramset[:train_size]
+        valset = paramset[train_size:train_size+val_size]
+        testset = paramset[train_size+val_size:test_size]
+        return (trainset, valset, testset)
+
+
+class SEOBNRv4:
+    """
+    Class to generate SEOBNRv4 waveforms.
     """
     def __init__(self, masses=None, spins=None, fcutoff=True, fname='',
                  preset_array_size=PRESET_ARRAY_SIZE):
@@ -565,11 +615,11 @@ def main(args):
     print(f"Generating {nsample} samples.")
     train_masses, val_masses, test_masses = tttdatasets(nsamples=nsample)
     train_spins, val_spins, test_spins = splitspins(nsamples=nsample)
-    trainwf = Waveform(masses=train_masses, spins=train_spins, fname=f'train-{int(nsample)}-')
+    trainwf = SEOBNRv4(masses=train_masses, spins=train_spins, fname=f'train-{int(nsample)}-')
     trainwf.write_data_to_hdf()
-    valwf = Waveform(masses=val_masses, spins=val_spins, fname=f'val-{int(nsample)}-')
+    valwf = SEOBNRv4(masses=val_masses, spins=val_spins, fname=f'val-{int(nsample)}-')
     valwf.write_data_to_hdf()
-    testwf = Waveform(masses=test_masses, spins=test_spins, fname=f'test-{int(nsample)}-')
+    testwf = SEOBNRv4(masses=test_masses, spins=test_spins, fname=f'test-{int(nsample)}-')
     testwf.write_data_to_hdf()
 
 
