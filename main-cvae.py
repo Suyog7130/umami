@@ -830,11 +830,9 @@ class Test:
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
-        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-
         modeltimes, basetimes = [], []
         massratios, chieffs = [], []
-        for Nr in Nruns:
+        for Nr in tqdm(Nruns, ncols=100):
             # Generate random labels within the training range
             m1 = np.random.uniform(5, 75, Nr)
             q = np.random.uniform(1, 10, Nr)
@@ -886,11 +884,13 @@ class Test:
             logging.info(f'Base time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
 
         # Plot time taken comparison between model and base
-        ax.plot(Nruns, basetimes, 's', color='grey', markersize=6,
-                markeredgewidth=0.25, markeredgecolor='black')
-        ax.plot(Nruns, modeltimes, 'o', color='grey', markersize=6,
-                markeredgewidth=0.25, markeredgecolor='black')
-        ax.legend(['Base', 'ML model'], loc='upper left')
+        logging.info("Plotting time complexity comparison between model and base.")
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        ax.plot(Nruns, basetimes, '.', color='grey', markersize=10,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.plot(Nruns, modeltimes, '*', color='grey', markersize=6,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.legend([self.approximant+'-base', self.approximant+'-ml'], loc='upper left')
         ax.set_xlabel('Number of Samples', fontsize=12)
         ax.set_ylabel('Time (seconds)', fontsize=12)
         ax.set_xscale('log')
@@ -904,52 +904,53 @@ class Test:
         plt.savefig(figname+'.png', dpi=300, transparent=True)
         plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
+        logging.info("Time complexity comparison plot saved.")
 
-        # TODO: This should be done for each `Nrun` or for one of them!
-        # Plot bar plot for avg time taken in each q / chi bins
-        q_bins = np.linspace(np.min(massratios), np.max(massratios), 11)
-        chi_bins = np.linspace(np.min(chieffs), np.max(chieffs), 7)
+        # # TODO: This should be done for each `Nrun` or for one of them!
+        # # Plot bar plot for avg time taken in each q / chi bins
+        # q_bins = np.linspace(np.min(massratios), np.max(massratios), 11)
+        # chi_bins = np.linspace(np.min(chieffs), np.max(chieffs), 7)
 
-        # Digitize massratios and chieffs into bins
-        q_idx = np.digitize(massratios, q_bins) - 1
-        chi_idx = np.digitize(chieffs, chi_bins) - 1
+        # # Digitize massratios and chieffs into bins
+        # q_idx = np.digitize(massratios, q_bins) - 1
+        # chi_idx = np.digitize(chieffs, chi_bins) - 1
 
-        # Compute average times per bin
-        avg_modeltimes_q = [np.mean([modeltimes[i] for i in range(len(q_idx)) if q_idx[i] == b])
-                    for b in range(len(q_bins)-1)]
-        avg_basetimes_q = [np.mean([basetimes[i] for i in range(len(q_idx)) if q_idx[i] == b])
-                   for b in range(len(q_bins)-1)]
-        avg_modeltimes_chi = [np.mean([modeltimes[i] for i in range(len(chi_idx)) if chi_idx[i] == b])
-                      for b in range(len(chi_bins)-1)]
-        avg_basetimes_chi = [np.mean([basetimes[i] for i in range(len(chi_idx)) if chi_idx[i] == b])
-                     for b in range(len(chi_bins)-1)]
+        # # Compute average times per bin
+        # avg_modeltimes_q = [np.mean([modeltimes[i] for i in range(len(q_idx)) if q_idx[i] == b])
+        #             for b in range(len(q_bins)-1)]
+        # avg_basetimes_q = [np.mean([basetimes[i] for i in range(len(q_idx)) if q_idx[i] == b])
+        #            for b in range(len(q_bins)-1)]
+        # avg_modeltimes_chi = [np.mean([modeltimes[i] for i in range(len(chi_idx)) if chi_idx[i] == b])
+        #               for b in range(len(chi_bins)-1)]
+        # avg_basetimes_chi = [np.mean([basetimes[i] for i in range(len(chi_idx)) if chi_idx[i] == b])
+        #              for b in range(len(chi_bins)-1)]
 
-        # Plot bar plots for q bins
-        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-        width = 0.35
-        bin_centers_q = 0.5 * (q_bins[:-1] + q_bins[1:])
-        ax.bar(bin_centers_q - width/2, avg_modeltimes_q, width, label='ML model')
-        ax.bar(bin_centers_q + width/2, avg_basetimes_q, width, label='Base')
-        ax.set_xlabel('Mass Ratio (q)', fontsize=12)
-        ax.set_ylabel('Avg Time (seconds)', fontsize=12)
-        ax.set_yscale('log')
-        ax.legend()
-        plt.tight_layout()
-        plt.savefig(f'{self.savedir}/avg_time_qbins_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300)
-        plt.close()
+        # # Plot bar plots for q bins
+        # fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+        # width = 0.35
+        # bin_centers_q = 0.5 * (q_bins[:-1] + q_bins[1:])
+        # ax.bar(bin_centers_q - width/2, avg_modeltimes_q, width, label='ML model')
+        # ax.bar(bin_centers_q + width/2, avg_basetimes_q, width, label='Base')
+        # ax.set_xlabel('Mass Ratio (q)', fontsize=12)
+        # ax.set_ylabel('Avg Time (seconds)', fontsize=12)
+        # ax.set_yscale('log')
+        # ax.legend()
+        # plt.tight_layout()
+        # plt.savefig(f'{self.savedir}/avg_time_qbins_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300)
+        # plt.close()
 
-        # Plot bar plots for chi_eff bins
-        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-        bin_centers_chi = 0.5 * (chi_bins[:-1] + chi_bins[1:])
-        ax.bar(bin_centers_chi - width/2, avg_modeltimes_chi, width, label='ML model')
-        ax.bar(bin_centers_chi + width/2, avg_basetimes_chi, width, label='Base')
-        ax.set_xlabel('$\\chi_{eff}$', fontsize=12)
-        ax.set_ylabel('Avg Time (seconds)', fontsize=12)
-        ax.set_yscale('log')
-        ax.legend()
-        plt.tight_layout()
-        plt.savefig(f'{self.savedir}/avg_time_chibins_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300)
-        plt.close()
+        # # Plot bar plots for chi_eff bins
+        # fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+        # bin_centers_chi = 0.5 * (chi_bins[:-1] + chi_bins[1:])
+        # ax.bar(bin_centers_chi - width/2, avg_modeltimes_chi, width, label='ML model')
+        # ax.bar(bin_centers_chi + width/2, avg_basetimes_chi, width, label='Base')
+        # ax.set_xlabel('$\\chi_{eff}$', fontsize=12)
+        # ax.set_ylabel('Avg Time (seconds)', fontsize=12)
+        # ax.set_yscale('log')
+        # ax.legend()
+        # plt.tight_layout()
+        # plt.savefig(f'{self.savedir}/avg_time_chibins_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300)
+        # plt.close()
 
         # # Plot time taken for different q / chi-eff bins
         # for times, label in zip([modeltimes, basetimes], 
