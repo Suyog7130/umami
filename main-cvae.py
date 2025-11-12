@@ -327,6 +327,7 @@ class Test:
         if args.fcutoff:
             self.testhdf += '-f_cutoff'
         self.batch_size = args.batch_size
+        self.device = args.device
 
         if not args.time_complexity and not args.time_compare:
             self.test_loader = self.setdataloader()
@@ -900,7 +901,7 @@ class Test:
         ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
         ax.tick_params(which='both', direction='in', top=True, right=True)
         plt.tight_layout()
-        figname = f'{self.savedir}/timecomplexity-compare-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        figname = f'{self.savedir}/timecomplexity-compare-' + f'{self.device}-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(figname+'.png', dpi=300, transparent=True)
         plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
