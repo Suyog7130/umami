@@ -996,9 +996,10 @@ class Test:
         Plot the time complexity comparison from a saved csv file.
         """
         if fname is None:
-            fname = self.savedir + 'timecomplexity-compare-' + f'{self.device}-' + 'data.csv'
+            raise NotImplementedError("Please provide the filename of the saved csv file for plotting.")
         logging.info(f"Plotting time complexity comparison from file: {fname}")
-        df = pd.read_csv(fname)
+        df = pd.read_csv(self.savedir+fname+'.csv')
+        # logging.info(df.describe().to_string())
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
         ax.plot(df['Nruns'], df['base_time'], '.', color='grey', markersize=10,
                 markeredgewidth=0.5, markeredgecolor='black')
@@ -1015,7 +1016,7 @@ class Test:
         ax.tick_params(which='both', direction='in', top=True, right=True)
         plt.tight_layout()
         figname = fname.replace('.csv', '.png')
-        plt.savefig(figname, dpi=300, transparent=True)
+        plt.savefig(self.savedir+figname, dpi=300, transparent=True)
         plt.close()
         logging.info("Time complexity comparison plot saved.")
 
