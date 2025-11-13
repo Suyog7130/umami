@@ -1845,7 +1845,8 @@ if __name__ == "__main__":
         os.makedirs(log_dir)
 
     # Set up logging to both console and file
-    logfname = f'training_{today}.log' if not args.test and not args.generate else f'testing_{today}.log'
+    now = datetime.now().strftime('%Y%m%d_%H%M%S')
+    logfname = f'training_{now}.log' if not args.test and not args.generate else f'testing_{today}.log'
     log_file = os.path.join(log_dir, logfname)
     logging.basicConfig(
         format='%(levelname)s | %(asctime)s: %(message)s',
