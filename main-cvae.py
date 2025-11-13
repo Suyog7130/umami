@@ -714,16 +714,17 @@ class Test:
                 mmtot_hcross.append(mismatch_hcross.flatten()[0])
         axes[0].legend(['Amplitude', 'Frequency'], loc='upper right')
         axes[1].legend(['$h_{+}$', '$h_{\\times}$'], loc='upper right')
-        label = f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}' + ' $M_{\\odot}$'
+        label = f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}, $\\chi_1$={labels[0][2]:.2f}, $\\chi_2$={labels[0][3]:.2f}' \
+            if self.aligned else f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}'
         for ax in [axes[0], axes[1]]:
             ax.set_yscale('log')
-            ax.set_xlabel('Sample', fontsize=12)
+            ax.set_xlabel('Iteration', fontsize=12)
             ax.set_ylabel('Mismatch', fontsize=12)
             ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
             ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
             ax.tick_params(which='both', direction='in', top=True, right=True)
         axes[0].text(0.05, 0.025, label, transform=axes[0].transAxes, ha='left', fontsize=12)
-        axes[1].text(0.05, 0.95, label, transform=axes[1].transAxes, ha='left', fontsize=12)
+        axes[1].text(0.05, 0.10, label, transform=axes[1].transAxes, ha='left', fontsize=12)
         mu_amp, std_amp = np.mean(mmtot_amp), np.std(mmtot_amp)
         mu_freq, std_freq = np.mean(mmtot_freq), np.std(mmtot_freq)
         mu_hplus, std_hplus = np.mean(mmtot_hplus), np.std(mmtot_hplus)
@@ -734,7 +735,7 @@ class Test:
         logging.info(f'Mean hcross Mismatch: {mu_hcross:.2e} ± {std_hcross:.2e}')
         axes[0].text(0.05, 0.03,  f'$|\\delta A|$={mu_amp:.2e}' + ', ' +
                     f'$|\\delta f|$={mu_freq:.2e}\n', transform=axes[0].transAxes, ha='left', fontsize=12)
-        axes[1].text(0.05, 0.90, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}' + ', ' +
+        axes[1].text(0.05, 0.05, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}' + ', ' +
                     '$|\\delta h_{\\times}|$='+f'{mu_hcross:.2e}', transform=axes[1].transAxes, ha='left', fontsize=12)
         plt.tight_layout()
         figname = f'{self.savedir}/uq-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
