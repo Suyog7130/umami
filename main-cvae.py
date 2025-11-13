@@ -337,9 +337,10 @@ class Test:
         self.maxiters = args.nsamples
 
         today = datetime.today().strftime('%Y%m%d') if args.today is None else args.today
-        if not os.path.isdir(f'../results/{today}/'):
-            os.makedirs(f'../results/{today}/')
-        self.savedir = f'../results/{today}/'
+        savedir = args.savedir if args.savedir is not None else '../results'
+        if not os.path.isdir(savedir+f'/{today}/'):
+            os.makedirs(savedir+f'/{today}/')
+        self.savedir = savedir+f'/{today}/'
 
         self.epochs = 1
         self.model_path = '../trained-models/' + args.model
@@ -885,6 +886,18 @@ class Test:
             basetimes.append(elapsed_time)
             logging.info(f'Base time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
 
+        # Save data to csv file
+        df_time = pd.DataFrame({
+            'Nruns': Nruns,
+            'model_time': modeltimes,
+            'base_time': basetimes,
+            'mass_ratio': massratios,
+            'chi_eff': chieffs
+        })
+        csvname = self.savedir + 'timecomplexity_compare_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv'
+        df_time.to_csv(csvname, index=False)
+        logging.info(f"Time complexity comparison data saved to {csvname}")
+
         # Plot time taken comparison between model and base
         logging.info("Plotting time complexity comparison between model and base.")
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
@@ -893,7 +906,7 @@ class Test:
         ax.plot(Nruns, modeltimes, '*', color='grey', markersize=6,
                 markeredgewidth=0.5, markeredgecolor='black')
         ax.legend([self.approximant+'-base', self.approximant+'-ml'], loc='upper left')
-        ax.set_xlabel('Number of Samples', fontsize=12)
+        ax.set_xlabel('Number of Waveforms Generated', fontsize=12)
         ax.set_ylabel('Time (seconds)', fontsize=12)
         ax.set_xscale('log')
         ax.set_yscale('log')
@@ -977,6 +990,34 @@ class Test:
         #     plt.savefig(figname+'.png', dpi=300, transparent=True)
         #     plt.savefig(figname+'-white.png', dpi=300)
         #     plt.close()
+
+    def plot_time_complexity_compare(self, fname=None):
+        """
+        Plot the time complexity comparison from a saved csv file.
+        """
+        if fname is None:
+            fname = self.savedir + 'timecomplexity-compare-' + f'{self.device}-' + 'data.csv'
+        logging.info(f"Plotting time complexity comparison from file: {fname}")
+        df = pd.read_csv(fname)
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        ax.plot(df['Nruns'], df['base_time'], '.', color='grey', markersize=10,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.plot(df['Nruns'], df['model_time'], '*', color='grey', markersize=6,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.legend([self.approximant+'-base', self.approximant+'-ml'], loc='upper left')
+        ax.set_xlabel('Number of Waveforms Generated', fontsize=12)
+        ax.set_ylabel('Time (seconds)', fontsize=12)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.grid(True)
+        ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.tick_params(which='both', direction='in', top=True, right=True)
+        plt.tight_layout()
+        figname = fname.replace('.csv', '.png')
+        plt.savefig(figname, dpi=300, transparent=True)
+        plt.close()
+        logging.info("Time complexity comparison plot saved.")
 
 
     def generate(self, num_samples=1, labels=None, nomismatch=False):
@@ -1770,10 +1811,15 @@ if __name__ == "__main__":
                             help='whether to generate samples from trained model?')
     parser.add_argument('--model', action='store', default='../trained-models/model-20250526_070915-1',
                         help='path to already trained model.')
-
+    
     parser.add_argument('--today', action='store', default=None,
                         help='Date of the model we are currently using, in YYYYMMDD. \
                             Results will be saved to this folder. (default=%(default)')
+    parser.add_argument('--fname', action='store', default=None,
+                        help='Dummy filename argument. (default=%(default)s)')
+    parser.add_argument('--savedir', action='store', default=None,
+                        help='Directory to save results. (default=%(default)s)')
+    
     parser.add_argument('--noshow', action='store_true', default=False,
                             help='Do not show output Plot !')
     parser.add_argument('--nosave', action='store_true', default=False,
@@ -1834,7 +1880,10 @@ if __name__ == "__main__":
             for n in [100, 500, 1000]:
                 Test(args).test_timecomplexity(n)
         elif args.time_compare:
-            Test(args).test_timecomplexity_compare()
+            if args.fname is not None:
+                Test(args).plot_time_complexity_compare(fname=args.fname)
+            else:
+                Test(args).plot_time_complexity_compare()
         else:
             Test(args).test()
         # except RuntimeError as e:
