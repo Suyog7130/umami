@@ -80,7 +80,8 @@ def splitspins(nsamples=1e5):
 
 class BaseWaveform:
     def __init__(self,
-                 approximant=APPROXIMANT, 
+                 approximant=APPROXIMANT,
+                 fcutoff=False, 
                  aligned=True, 
                  precess=False,
                  baseparams={},
@@ -101,11 +102,19 @@ class BaseWaveform:
             'approximant': baseparams.get('approximant', approximant),
         }
 
+        self.fcutoff = fcutoff
+        if self.fcutoff:
+            self.fname += '-fcutoff'
+            self.cutoffconst = self.calc_cutoffconst()
+        else:
+            self.cutoffconst = None
+
         # higher-level options
         self.nosave = nosave
         self.approximant = approximant
         self.aligned = aligned
         self.precess = precess
+        self.use_lal_sim = (wflibname == 'lalsim')
 
         self.wflibname = wflibname
         self.wfloader = self._set_waveform_loader()
@@ -114,8 +123,36 @@ class BaseWaveform:
         if self.aligned:
             self.fname += '-aligned'
         self.init_plot()
-        self.waveform()
+        # self.waveform()
 
+    def calc_cutoffconst(self, nsamples=1000):
+        """
+        Calculate the cutoff constant for the waveform duration
+        calculation based on the approximate relation:
+
+            DURATION = C * fcutoff^(-8/3) * mchirp^(-5/3)
+        
+        where, C is the cutoff constant to be calculated.
+        """
+        logging.info("Calculating cutoff constant for waveform duration...")
+        consts = np.zeros(nsamples)
+        for i in range(nsamples):
+            param = self.get_params(i)
+            data = self.get_waveform(*param)
+            hp, hc = data[0], data[1]
+            duration = hp.duration
+            m1, m2 = param['m1'], param['m2']
+            mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+            fcutoff = param['f_lower']
+            consts[i] = duration * fcutoff**(8/3) * mchirp**(5/3)
+        cutoffconst = np.mean(consts)
+        logging.info(f"Cutoff constant calculated: {cutoffconst}")
+        return cutoffconst
+
+    def _set_masses(self, num=100):
+        m1s = np.random.uniform(self.mass_range[0], self.mass_range[1], num)
+        m2s = np.random.uniform(self.mass_range[0], self.mass_range[1], num)
+        return np.vstack((m1s, m2s))
 
     def savefig(self, axes):
         plt.tight_layout()
@@ -200,7 +237,7 @@ class BaseWaveform:
         wfkwargs["params"] = lal.CreateDict() # Additional params
         wfkwargs["m1"] = params.get('m1') * lal.MSUN_SI
         wfkwargs["m2"] = params.get('m2') * lal.MSUN_SI
-        wfkwargs["approximant"] = self.approximant
+        wfkwargs["approximant"] = getattr(lalsim, self.approximant)
         if self.aligned or self.precess:
             wfkwargs["s1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
             wfkwargs["s2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
@@ -313,9 +350,9 @@ class BaseWaveform:
         Get N number of waveforms for the given param ranges.
         """
         params = self.baseparams.copy()
-        params['m1'] = 30.0
-        params['m2'] = 30.0
-        m1s, m2s = self.masses
+        params['m1'] = 10.0
+        params['m2'] = 15.0
+        m1s, m2s = self._set_masses(num)
         if len(m1s) == 2:
             hps, amps, phases, freqs = [], [], [], []
             for m1, m2 in zip(m1s, m2s):
@@ -326,12 +363,9 @@ class BaseWaveform:
                 freqs.append(freq)
             self.plot_two_wfs(m1s, m2s, hps, amps, phases, freqs)
         else:
-            if self.use_lal_sim:
-                m1, m2, hp, hc, amp, phase, freq = self.get_lal_waveform(m1s[0], m2s[0])
-            else:
-                m1, m2, hp, hc, amp, phase, freq = self.get_waveform(m1s[0], m2s[0])
-            self.fname += f'_m1_{m1:.2f}_m2_{m2:.2f}'
-            self.plot_single_wf(m1, m2, hp, hc, amp, phase, freq)
+            hp, hc, amp, phase, freq = self.get_waveform(params)
+            self.fname += f'_m1_{params["m1"]:.2f}_m2_{params["m2"]:.2f}'
+            self.plot_single_wf(params['m1'], params['m2'], hp, hc, amp, phase, freq)
 
 
 class Waveform(BaseWaveform):
@@ -346,37 +380,6 @@ class Waveform(BaseWaveform):
         self.param_space = param_space
         self.tttratio = [0.7, 0.1, 0.2]  # train, val, test
         self.set_parameter_space()
-
-        self.fcutoff = fcutoff
-        if self.fcutoff:
-            self.fname += '-fcutoff'
-            self.cutoffconst = self.calc_cutoffconst()
-        else:
-            self.cutoffconst = None
-
-    def calc_cutoffconst(self, nsamples=1000):
-        """
-        Calculate the cutoff constant for the waveform duration
-        calculation based on the approximate relation:
-
-            DURATION = C * fcutoff^(-8/3) * mchirp^(-5/3)
-        
-        where, C is the cutoff constant to be calculated.
-        """
-        logging.info("Calculating cutoff constant for waveform duration...")
-        consts = np.zeros(nsamples)
-        for i in range(nsamples):
-            param = self.get_params(i)
-            data = self.get_waveform(*param)
-            hp, hc = data[0], data[1]
-            duration = hp.duration
-            m1, m2 = param['m1'], param['m2']
-            mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
-            fcutoff = param['f_lower']
-            consts[i] = duration * fcutoff**(8/3) * mchirp**(5/3)
-        cutoffconst = np.mean(consts)
-        logging.info(f"Cutoff constant calculated: {cutoffconst}")
-        return cutoffconst
 
     def set_parameter_space(self):
         """
@@ -393,7 +396,7 @@ class Waveform(BaseWaveform):
             self.m2s = masses[:,1]
         if 'q' in self.param_space:
             q = np.random.uniform(qmin, qmax, int(self.nsamples))
-            m2 = self.m1s / q
+            m2 = masses[:,0] / q
             self.m2s = m2
             self.qs = q
         if 's1' in self.param_space and 's2' in self.param_space:
@@ -485,6 +488,7 @@ class Waveform(BaseWaveform):
 
 class SEOBNRv4:
     """
+    DEPRECATED! NOTE: Please use the generic `Waveforms` class!
     Class to generate SEOBNRv4 waveforms.
     """
     def __init__(self, masses=None, spins=None, fcutoff=True, fname='',
@@ -610,7 +614,6 @@ class SEOBNRv4:
         extra['inclination'] = wfkwargs.get('inclination', None)
         return [hp, hc, amp, phase, freq, extra]
 
-
     def write_hdf_grp(self, hf, data, grpname):
         """
         Write the data to the HDF5 file.
@@ -640,7 +643,6 @@ class SEOBNRv4:
         else:
             raise ValueError("Data must be a numpy array or a list of arrays or \
                             a dictionary of arrays.")
-        
 
     def write_data_to_hdf(self):
         logging.info(f'Writing data to HDF5 file {self.fname}.hdf')
@@ -714,11 +716,7 @@ def check_hdf(fname):
 
 
 
-    
-
-
-
-def main(args):
+def get_SEOBNRv4_data(args):
     nsample = args.nsample  # default 1e5
     print(f"Generating {nsample} samples.")
     train_masses, val_masses, test_masses = tttdatasets(nsamples=nsample)
@@ -730,6 +728,11 @@ def main(args):
     testwf = SEOBNRv4(masses=test_masses, spins=test_spins, fname=f'test-{int(nsample)}-')
     testwf.write_data_to_hdf()
 
+
+def get_NRSur_data(args):
+    wave = Waveform(approximant=args.approximant,
+                    wflibname='lalsim', precess=args.precess,)
+    wave.waveform()
 
 
 if __name__=="__main__":
@@ -772,7 +775,7 @@ if __name__=="__main__":
         fname = 'SEOBNRv4-train-100-fcutoff-uniform-aligned.hdf'
         check_hdf(fname)
     elif args.check_waveform:
-        CheckWaveform(masses=[[50], [15]],
+        BaseWaveform(masses=[[50], [15]],
                       #masses=[[50, 30], [15, 5]],
                       approximant=args.approximant,
                       aligned=args.aligned,
@@ -782,4 +785,5 @@ if __name__=="__main__":
                       f_lower=20.0,
                       use_lal_sim=args.use_lal_sim)
     else:
-        main(args)
+        # get_SEOBNRv4_data(args)
+        get_NRSur_data(args)
