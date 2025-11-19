@@ -327,6 +327,7 @@ class Test:
         if args.fcutoff:
             self.testhdf += '-f_cutoff'
         self.batch_size = args.batch_size
+        self.device = args.device
 
         if not args.time_complexity and not args.time_compare:
             self.test_loader = self.setdataloader()
@@ -336,9 +337,10 @@ class Test:
         self.maxiters = args.nsamples
 
         today = datetime.today().strftime('%Y%m%d') if args.today is None else args.today
-        if not os.path.isdir(f'../results/{today}/'):
-            os.makedirs(f'../results/{today}/')
-        self.savedir = f'../results/{today}/'
+        savedir = args.savedir if args.savedir is not None else '../results'
+        if not os.path.isdir(savedir+f'/{today}/'):
+            os.makedirs(savedir+f'/{today}/')
+        self.savedir = savedir+f'/{today}/'
 
         self.epochs = 1
         self.model_path = '../trained-models/' + args.model
@@ -713,16 +715,17 @@ class Test:
                 mmtot_hcross.append(mismatch_hcross.flatten()[0])
         axes[0].legend(['Amplitude', 'Frequency'], loc='upper right')
         axes[1].legend(['$h_{+}$', '$h_{\\times}$'], loc='upper right')
-        label = f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}' + ' $M_{\\odot}$'
+        label = f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}, $\\chi_1$={labels[0][2]:.2f}, $\\chi_2$={labels[0][3]:.2f}' \
+            if self.aligned else f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}'
         for ax in [axes[0], axes[1]]:
             ax.set_yscale('log')
-            ax.set_xlabel('Sample', fontsize=12)
+            ax.set_xlabel('Iteration', fontsize=12)
             ax.set_ylabel('Mismatch', fontsize=12)
             ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
             ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
             ax.tick_params(which='both', direction='in', top=True, right=True)
         axes[0].text(0.05, 0.025, label, transform=axes[0].transAxes, ha='left', fontsize=12)
-        axes[1].text(0.05, 0.95, label, transform=axes[1].transAxes, ha='left', fontsize=12)
+        axes[1].text(0.05, 0.10, label, transform=axes[1].transAxes, ha='left', fontsize=12)
         mu_amp, std_amp = np.mean(mmtot_amp), np.std(mmtot_amp)
         mu_freq, std_freq = np.mean(mmtot_freq), np.std(mmtot_freq)
         mu_hplus, std_hplus = np.mean(mmtot_hplus), np.std(mmtot_hplus)
@@ -733,7 +736,7 @@ class Test:
         logging.info(f'Mean hcross Mismatch: {mu_hcross:.2e} ± {std_hcross:.2e}')
         axes[0].text(0.05, 0.03,  f'$|\\delta A|$={mu_amp:.2e}' + ', ' +
                     f'$|\\delta f|$={mu_freq:.2e}\n', transform=axes[0].transAxes, ha='left', fontsize=12)
-        axes[1].text(0.05, 0.90, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}' + ', ' +
+        axes[1].text(0.05, 0.05, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}' + ', ' +
                     '$|\\delta h_{\\times}|$='+f'{mu_hcross:.2e}', transform=axes[1].transAxes, ha='left', fontsize=12)
         plt.tight_layout()
         figname = f'{self.savedir}/uq-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -830,11 +833,9 @@ class Test:
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
-        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-
         modeltimes, basetimes = [], []
         massratios, chieffs = [], []
-        for Nr in Nruns:
+        for Nr in tqdm(Nruns, ncols=100):
             # Generate random labels within the training range
             m1 = np.random.uniform(5, 75, Nr)
             q = np.random.uniform(1, 10, Nr)
@@ -885,13 +886,27 @@ class Test:
             basetimes.append(elapsed_time)
             logging.info(f'Base time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
 
+        # Save data to csv file
+        df_time = pd.DataFrame({
+            'Nruns': Nruns,
+            'model_time': modeltimes,
+            'base_time': basetimes,
+            'mass_ratio': massratios,
+            'chi_eff': chieffs
+        })
+        csvname = self.savedir + 'timecomplexity_compare_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv'
+        df_time.to_csv(csvname, index=False)
+        logging.info(f"Time complexity comparison data saved to {csvname}")
+
         # Plot time taken comparison between model and base
-        ax.plot(Nruns, basetimes, 's', color='grey', markersize=6,
-                markeredgewidth=0.25, markeredgecolor='black')
-        ax.plot(Nruns, modeltimes, 'o', color='grey', markersize=6,
-                markeredgewidth=0.25, markeredgecolor='black')
-        ax.legend(['Base', 'ML model'], loc='upper left')
-        ax.set_xlabel('Number of Samples', fontsize=12)
+        logging.info("Plotting time complexity comparison between model and base.")
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        ax.plot(Nruns, basetimes, '.', color='grey', markersize=10,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.plot(Nruns, modeltimes, '*', color='grey', markersize=6,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.legend([self.approximant+'-base', self.approximant+'-ml'], loc='upper left')
+        ax.set_xlabel('Number of Waveforms Generated', fontsize=12)
         ax.set_ylabel('Time (seconds)', fontsize=12)
         ax.set_xscale('log')
         ax.set_yscale('log')
@@ -900,56 +915,57 @@ class Test:
         ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
         ax.tick_params(which='both', direction='in', top=True, right=True)
         plt.tight_layout()
-        figname = f'{self.savedir}/timecomplexity-compare-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        figname = f'{self.savedir}/timecomplexity-compare-' + f'{self.device}-' + datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(figname+'.png', dpi=300, transparent=True)
         plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
+        logging.info("Time complexity comparison plot saved.")
 
-        # TODO: This should be done for each `Nrun` or for one of them!
-        # Plot bar plot for avg time taken in each q / chi bins
-        q_bins = np.linspace(np.min(massratios), np.max(massratios), 11)
-        chi_bins = np.linspace(np.min(chieffs), np.max(chieffs), 7)
+        # # TODO: This should be done for each `Nrun` or for one of them!
+        # # Plot bar plot for avg time taken in each q / chi bins
+        # q_bins = np.linspace(np.min(massratios), np.max(massratios), 11)
+        # chi_bins = np.linspace(np.min(chieffs), np.max(chieffs), 7)
 
-        # Digitize massratios and chieffs into bins
-        q_idx = np.digitize(massratios, q_bins) - 1
-        chi_idx = np.digitize(chieffs, chi_bins) - 1
+        # # Digitize massratios and chieffs into bins
+        # q_idx = np.digitize(massratios, q_bins) - 1
+        # chi_idx = np.digitize(chieffs, chi_bins) - 1
 
-        # Compute average times per bin
-        avg_modeltimes_q = [np.mean([modeltimes[i] for i in range(len(q_idx)) if q_idx[i] == b])
-                    for b in range(len(q_bins)-1)]
-        avg_basetimes_q = [np.mean([basetimes[i] for i in range(len(q_idx)) if q_idx[i] == b])
-                   for b in range(len(q_bins)-1)]
-        avg_modeltimes_chi = [np.mean([modeltimes[i] for i in range(len(chi_idx)) if chi_idx[i] == b])
-                      for b in range(len(chi_bins)-1)]
-        avg_basetimes_chi = [np.mean([basetimes[i] for i in range(len(chi_idx)) if chi_idx[i] == b])
-                     for b in range(len(chi_bins)-1)]
+        # # Compute average times per bin
+        # avg_modeltimes_q = [np.mean([modeltimes[i] for i in range(len(q_idx)) if q_idx[i] == b])
+        #             for b in range(len(q_bins)-1)]
+        # avg_basetimes_q = [np.mean([basetimes[i] for i in range(len(q_idx)) if q_idx[i] == b])
+        #            for b in range(len(q_bins)-1)]
+        # avg_modeltimes_chi = [np.mean([modeltimes[i] for i in range(len(chi_idx)) if chi_idx[i] == b])
+        #               for b in range(len(chi_bins)-1)]
+        # avg_basetimes_chi = [np.mean([basetimes[i] for i in range(len(chi_idx)) if chi_idx[i] == b])
+        #              for b in range(len(chi_bins)-1)]
 
-        # Plot bar plots for q bins
-        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-        width = 0.35
-        bin_centers_q = 0.5 * (q_bins[:-1] + q_bins[1:])
-        ax.bar(bin_centers_q - width/2, avg_modeltimes_q, width, label='ML model')
-        ax.bar(bin_centers_q + width/2, avg_basetimes_q, width, label='Base')
-        ax.set_xlabel('Mass Ratio (q)', fontsize=12)
-        ax.set_ylabel('Avg Time (seconds)', fontsize=12)
-        ax.set_yscale('log')
-        ax.legend()
-        plt.tight_layout()
-        plt.savefig(f'{self.savedir}/avg_time_qbins_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300)
-        plt.close()
+        # # Plot bar plots for q bins
+        # fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+        # width = 0.35
+        # bin_centers_q = 0.5 * (q_bins[:-1] + q_bins[1:])
+        # ax.bar(bin_centers_q - width/2, avg_modeltimes_q, width, label='ML model')
+        # ax.bar(bin_centers_q + width/2, avg_basetimes_q, width, label='Base')
+        # ax.set_xlabel('Mass Ratio (q)', fontsize=12)
+        # ax.set_ylabel('Avg Time (seconds)', fontsize=12)
+        # ax.set_yscale('log')
+        # ax.legend()
+        # plt.tight_layout()
+        # plt.savefig(f'{self.savedir}/avg_time_qbins_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300)
+        # plt.close()
 
-        # Plot bar plots for chi_eff bins
-        fig, ax = plt.subplots(1, 1, figsize=(8, 5))
-        bin_centers_chi = 0.5 * (chi_bins[:-1] + chi_bins[1:])
-        ax.bar(bin_centers_chi - width/2, avg_modeltimes_chi, width, label='ML model')
-        ax.bar(bin_centers_chi + width/2, avg_basetimes_chi, width, label='Base')
-        ax.set_xlabel('$\\chi_{eff}$', fontsize=12)
-        ax.set_ylabel('Avg Time (seconds)', fontsize=12)
-        ax.set_yscale('log')
-        ax.legend()
-        plt.tight_layout()
-        plt.savefig(f'{self.savedir}/avg_time_chibins_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300)
-        plt.close()
+        # # Plot bar plots for chi_eff bins
+        # fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+        # bin_centers_chi = 0.5 * (chi_bins[:-1] + chi_bins[1:])
+        # ax.bar(bin_centers_chi - width/2, avg_modeltimes_chi, width, label='ML model')
+        # ax.bar(bin_centers_chi + width/2, avg_basetimes_chi, width, label='Base')
+        # ax.set_xlabel('$\\chi_{eff}$', fontsize=12)
+        # ax.set_ylabel('Avg Time (seconds)', fontsize=12)
+        # ax.set_yscale('log')
+        # ax.legend()
+        # plt.tight_layout()
+        # plt.savefig(f'{self.savedir}/avg_time_chibins_{datetime.now().strftime("%Y%m%d_%H%M%S")}.png', dpi=300)
+        # plt.close()
 
         # # Plot time taken for different q / chi-eff bins
         # for times, label in zip([modeltimes, basetimes], 
@@ -974,6 +990,35 @@ class Test:
         #     plt.savefig(figname+'.png', dpi=300, transparent=True)
         #     plt.savefig(figname+'-white.png', dpi=300)
         #     plt.close()
+
+    def plot_time_complexity_compare(self, fname=None):
+        """
+        Plot the time complexity comparison from a saved csv file.
+        """
+        if fname is None:
+            raise NotImplementedError("Please provide the filename of the saved csv file for plotting.")
+        logging.info(f"Plotting time complexity comparison from file: {fname}")
+        df = pd.read_csv(self.savedir+fname+'.csv')
+        # logging.info(df.describe().to_string())
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        ax.plot(df['Nruns'], df['base_time'], '.', color='grey', markersize=10,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.plot(df['Nruns'], df['model_time'], '*', color='grey', markersize=6,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.legend([self.approximant+'-base', self.approximant+'-ml'], loc='upper left')
+        ax.set_xlabel('Number of Waveforms Generated', fontsize=12)
+        ax.set_ylabel('Time (seconds)', fontsize=12)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.grid(True)
+        ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.tick_params(which='both', direction='in', top=True, right=True)
+        plt.tight_layout()
+        figname = fname.replace('.csv', '.png')
+        plt.savefig(self.savedir+figname, dpi=300, transparent=True)
+        plt.close()
+        logging.info("Time complexity comparison plot saved.")
 
 
     def generate(self, num_samples=1, labels=None, nomismatch=False):
@@ -1767,10 +1812,15 @@ if __name__ == "__main__":
                             help='whether to generate samples from trained model?')
     parser.add_argument('--model', action='store', default='../trained-models/model-20250526_070915-1',
                         help='path to already trained model.')
-
+    
     parser.add_argument('--today', action='store', default=None,
                         help='Date of the model we are currently using, in YYYYMMDD. \
                             Results will be saved to this folder. (default=%(default)')
+    parser.add_argument('--fname', action='store', default=None,
+                        help='Dummy filename argument. (default=%(default)s)')
+    parser.add_argument('--savedir', action='store', default=None,
+                        help='Directory to save results. (default=%(default)s)')
+    
     parser.add_argument('--noshow', action='store_true', default=False,
                             help='Do not show output Plot !')
     parser.add_argument('--nosave', action='store_true', default=False,
@@ -1796,7 +1846,8 @@ if __name__ == "__main__":
         os.makedirs(log_dir)
 
     # Set up logging to both console and file
-    logfname = f'training_{today}.log' if not args.test and not args.generate else f'testing_{today}.log'
+    now = datetime.now().strftime('%Y%m%d_%H%M%S')
+    logfname = f'training_{now}.log' if not args.test and not args.generate else f'testing_{today}.log'
     log_file = os.path.join(log_dir, logfname)
     logging.basicConfig(
         format='%(levelname)s | %(asctime)s: %(message)s',
@@ -1831,7 +1882,10 @@ if __name__ == "__main__":
             for n in [100, 500, 1000]:
                 Test(args).test_timecomplexity(n)
         elif args.time_compare:
-            Test(args).test_timecomplexity_compare()
+            if args.fname is not None:
+                Test(args).plot_time_complexity_compare(fname=args.fname)
+            else:
+                Test(args).plot_time_complexity_compare()
         else:
             Test(args).test()
         # except RuntimeError as e:
