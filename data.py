@@ -731,7 +731,7 @@ def get_SEOBNRv4_data(args):
 
 def get_NRSur_data(args):
     wave = Waveform(approximant=args.approximant,
-                    wflibname='lalsim', precess=args.precess,)
+                    wflibname='pycbc', precess=args.precess,)
     wave.waveform()
 
 
