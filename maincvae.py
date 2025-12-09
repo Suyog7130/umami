@@ -69,7 +69,7 @@ from datacvae import CustomDataset, CustomDataLoader
 from datacvae import PRESET_ARRAY_SIZE, SAMPLE_RATE, DELTA_T, f_lower, sample_len
 from cvae import CVAE
 
-from data import Waveform
+from data import SEOBNRv4
 
 import random
 markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
@@ -1091,7 +1091,7 @@ class Test:
         original = np.zeros((num_samples, 2, preset_array_size))
         keys = np.zeros((num_samples, 2, 2))
         phases = np.zeros((num_samples, preset_array_size))
-        waves = Waveform(preset_array_size=preset_array_size+1)
+        waves = SEOBNRv4(preset_array_size=preset_array_size+1)
         for i, label in enumerate(labels):
             m1, m2, s1, s2 = label
             hp, hc, amp, phase, freq, _ = waves.get_aligned_vals(m1, m2, s1, s2)
