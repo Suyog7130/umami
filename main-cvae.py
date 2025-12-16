@@ -224,20 +224,20 @@ def train(args):
         # avg_loss = train_one_epoch(training_loader, epoch)
 
         # Train model for one Epoch
-        for x, labels, keys in tqdm(training_loader, total=len(training_loader),
+        for x, target, labels, keys in tqdm(training_loader, total=len(training_loader),
                                     desc='batch'):
             """
             `x` is [freq, amp], `labels` is [m1,m2] etc. and
             `keys` is [[amp-mean,amp-var],[freq-mean,freq-var]]
             """
-            x, labels, keys = x.to(args.device), labels.to(args.device), keys.to(args.device)
+            x, target, labels, keys = x.to(args.device), target.to(args.device), labels.to(args.device), keys.to(args.device)
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
             
             # TODO: have it such that the training target are unnormalized waveforms!
-            loss, reconloss, klloss = model.loss_function(x, x_recon, zvars)
+            # loss, reconloss, klloss = model.loss_function(x, x_recon, zvars)
+            loss, reconloss, klloss = model.loss_function(target, x_recon, zvars)
             loss.backward()
-            optimizer.step()
             train_rloss.append(loss.item())
             netreconloss.append(reconloss.item())
             netklloss.append(klloss.item())
@@ -253,6 +253,8 @@ def train(args):
                 valid_rloss.append(vloss.item())
             valid_loss.append(vloss.item())
         tqdm.write(f'Epoch {epoch+1} : train loss {loss.item()} & valid loss {vloss.item()}')
+        
+        optimizer.step()  # Do optimization step after validation
         scheduler.step()  # Update learning rate
         logging.debug(f"x shape: {x.shape}, labels shape: {labels.shape}, keys shape: {keys.shape}")
     
