@@ -1226,6 +1226,7 @@ class CustomDataset(Dataset):
             freq_keys = [np.mean(freq), np.std(freq)]
             logging.debug(f"Amplitude Keys: {amp_keys}")
             logging.debug(f"Frequency Keys: {freq_keys}")
+            unnorm_amp, unnorm_freq = amp.copy(), freq.copy()
             amp = (amp - np.mean(amp)) / np.std(amp)
             freq = (freq - np.mean(freq)) / np.std(freq)
             if self.returnattr:
@@ -1238,6 +1239,7 @@ class CustomDataset(Dataset):
                         np.array(phase).astype(np.float32),
                         dict(attr))
             return (np.vstack((amp, freq)).astype(np.float32), 
+                    np.vstack((unnorm_amp, unnorm_freq)).astype(np.float32), 
                     np.array(labels).astype(np.float32), 
                     np.array([amp_keys, freq_keys]).astype(np.float32))
         
