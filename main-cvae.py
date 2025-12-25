@@ -246,10 +246,10 @@ def train(args):
         model.eval()
         with torch.no_grad():  # Disable gradient computation for validation
             # just reconstruct target and calculate diff
-            for vx, vlabels, vkeys in tqdm(validation_loader, desc='val-batch'):
-                vx, vlabels, vkeys = vx.to(args.device), vlabels.to(args.device), vkeys.to(args.device)
+            for vx, target, vlabels, vkeys in tqdm(validation_loader, desc='val-batch'):
+                vx, target, vlabels, vkeys = vx.to(args.device), target.to(args.device), vlabels.to(args.device), vkeys.to(args.device)
                 vx_recon, vzvars = model(vx, vlabels, vkeys)
-                vloss, _reconloss, _klloss = model.loss_function(vx, vx_recon, vzvars)
+                vloss, _reconloss, _klloss = model.loss_function(target, vx_recon, vzvars)
                 valid_rloss.append(vloss.item())
             valid_loss.append(vloss.item())
         tqdm.write(f'Epoch {epoch+1} : train loss {loss.item()} & valid loss {vloss.item()}')
