@@ -26,7 +26,7 @@ from cvae import CVAE
 
 
 class SEOBNRv4ml:
-    def __init__(self, model_path="models/cvae_model_final.pth"):
+    def __init__(self, model_path="../trained-models/model-20251004_072338-10"):
         self.load_model(model_path)
         self.device = (
             "cuda"
@@ -45,10 +45,10 @@ class SEOBNRv4ml:
         self.model = model
 
     def __call__(self, **wfkwargs):
-        mass_1 = wfkwargs["mass_1"]
-        mass_2 = wfkwargs["mass_2"]
-        chi_1 = wfkwargs["chi_1"]
-        chi_2 = wfkwargs["chi_2"]
+        mass_1 = wfkwargs["m1"]
+        mass_2 = wfkwargs["m2"]
+        chi_1 = wfkwargs["chi1z"]
+        chi_2 = wfkwargs["chi2z"]
 
         params = np.array([[mass_1, mass_2, chi_1, chi_2]])
 
