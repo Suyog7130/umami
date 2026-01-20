@@ -12,21 +12,8 @@ from matplotlib.colors import LogNorm
 from datetime import datetime
 
 
-DIR = '../results/20251023/'
-TIME = '20251023_075320'
-
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', 
-                    datefmt='%Y-%m-%d %H:%M:%S')
-
-# save log to a file
-log_filename = DIR + 'calc-mismatches-' + TIME + '.log'
-file_handler = logging.FileHandler(log_filename)
-file_handler.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-logging.getLogger().addHandler(file_handler)
-
+DIR = '../results/251225/'
+TIME = '20251225_003516'
 
 def plot(ax, fname, logscale=False, save=False, show=True,
          label=''):
@@ -41,9 +28,9 @@ def plot(ax, fname, logscale=False, save=False, show=True,
         plt.show()
 
 
-def plot_running_loss():
-    dir = '../results/20251004/'
-    time = '20251004_072338'
+def plot_running_loss(dir=DIR, time=TIME):
+    # dir = '../results/20251004/'
+    # time = '20251004_072338'
     trloss = np.loadtxt(dir + 'train-rloss-' + time + '.txt', delimiter=',', skiprows=1)
     vrloss = np.loadtxt(dir + 'valid-rloss-' + time + '.txt', delimiter=',', skiprows=1)
     netloss = np.loadtxt(dir + 'net-loss-' + time + '.csv', delimiter=',', skiprows=1)
@@ -318,5 +305,18 @@ if __name__ == "__main__":
                         help='Plot mismatch values against mass parameters and chi_eff.')
     args = parser.parse_args()
 
-    # plot_running_loss()
-    mismatch_anal(args)
+    # # save log to a file
+    # log_filename = DIR + 'calc-mismatches-' + TIME + '.log'
+    # file_handler = logging.FileHandler(log_filename)
+    # file_handler.setLevel(logging.INFO)
+    # formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    # file_handler.setFormatter(formatter)
+    # logging.getLogger().addHandler(file_handler)
+
+
+    # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', 
+    #                     datefmt='%Y-%m-%d %H:%M:%S')
+
+
+    plot_running_loss()
+    # mismatch_anal(args)
