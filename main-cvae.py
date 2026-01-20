@@ -837,6 +837,7 @@ class Test:
 
         modeltimes, basetimes = [], []
         massratios, chieffs = [], []
+        romtimes, opttimes = [], []
         for Nr in tqdm(Nruns, ncols=100):
             # Generate random labels within the training range
             m1 = np.random.uniform(5, 75, Nr)
@@ -888,31 +889,79 @@ class Test:
             basetimes.append(elapsed_time)
             logging.info(f'Base time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
 
+            # Compare ROM approximant genration times
+            waveform_kwargs['approximant'] = 'SEOBNRv4_ROM' # or 'SEOBNRv4ROM'
+            start_time = time.time()
+            for i in range(Nr):
+                waveform_kwargs['mass1'] = m1[i]
+                waveform_kwargs['mass2'] = m2[i]
+                if self.aligned:
+                    waveform_kwargs['spin1z'] = spin1z[i]
+                    waveform_kwargs['spin2z'] = spin2z[i]
+                waveform_kwargs.update({
+                    'approximant': self.approximant,
+                    'delta_t': DELTA_T,
+                    'f_lower': 20.0,  # fix this at 20 Hz
+                })
+                hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            romtimes.append(elapsed_time)
+            logging.info(f'ROM time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
+
+            # Compare SEOBNRv4opt approximant genration times
+            waveform_kwargs['approximant'] = 'SEOBNRv4_opt'  # or 'SEOBNRv4Opt'
+            start_time = time.time()
+            for i in range(Nr):
+                waveform_kwargs['mass1'] = m1[i]
+                waveform_kwargs['mass2'] = m2[i]
+                if self.aligned:
+                    waveform_kwargs['spin1z'] = spin1z[i]
+                    waveform_kwargs['spin2z'] = spin2z[i]
+                waveform_kwargs.update({
+                    'approximant': self.approximant,
+                    'delta_t': DELTA_T,
+                    'f_lower': 20.0,  # fix this at 20 Hz
+                })
+                hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            opttimes.append(elapsed_time)
+            logging.info(f'Optimized base time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
+
+
         # Save data to csv file
+        logging.info(f"Nruns shape: {np.shape(Nruns)}, modeltimes shape: {np.shape(modeltimes)}, basetimes shape: {np.shape(basetimes)}, romtimes shape: {np.shape(romtimes)}, massratios shape: {np.shape(massratios)}, chieffs shape: {np.shape(chieffs)}")
         df_time = pd.DataFrame({
             'Nruns': Nruns,
             'model_time': modeltimes,
             'base_time': basetimes,
-            'mass_ratio': massratios,
-            'chi_eff': chieffs
+            'rom_time': romtimes,
+            'opt_time': opttimes,
+            # 'mass_ratio': massratios, # TODO
+            # 'chi_eff': chieffs
         })
         csvname = self.savedir + 'timecomplexity_compare_' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv'
         df_time.to_csv(csvname, index=False)
         logging.info(f"Time complexity comparison data saved to {csvname}")
 
-        # Plot time taken comparison between model and base
-        logging.info("Plotting time complexity comparison between model and base.")
+        # Plot time taken comparison between model, base, and ROM
+        logging.info("Plotting time complexity comparison between model, base, and ROM.")
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
-        ax.plot(Nruns, basetimes, '.', color='grey', markersize=10,
+        ax.plot(Nruns, basetimes, '.', color='black', markersize=10,
                 markeredgewidth=0.5, markeredgecolor='black')
-        ax.plot(Nruns, modeltimes, '*', color='grey', markersize=6,
+        ax.plot(Nruns, modeltimes, '*', color='blue', markersize=6,
                 markeredgewidth=0.5, markeredgecolor='black')
-        ax.legend([self.approximant+'-base', self.approximant+'-ml'], loc='upper left')
+        ax.plot(Nruns, romtimes, '^', color='red', markersize=6,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.plot(Nruns, opttimes, 'v', color='green', markersize=6,
+                markeredgewidth=0.5, markeredgecolor='black')
+        ax.legend([self.approximant+'-base', self.approximant+'-ml', 'ROM', 'opt'], loc='upper left')
         ax.set_xlabel('Number of Waveforms Generated', fontsize=12)
         ax.set_ylabel('Time (seconds)', fontsize=12)
         ax.set_xscale('log')
         ax.set_yscale('log')
-        ax.grid(True)
+        ax.grid(True, which='both', linestyle='--', linewidth=0.5)
         ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
         ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
         ax.tick_params(which='both', direction='in', top=True, right=True)
@@ -1887,7 +1936,7 @@ if __name__ == "__main__":
             if args.fname is not None:
                 Test(args).plot_time_complexity_compare(fname=args.fname)
             else:
-                Test(args).plot_time_complexity_compare()
+                Test(args).test_timecomplexity_compare(iters=100)
         else:
             Test(args).test()
         # except RuntimeError as e:
