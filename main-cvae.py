@@ -820,7 +820,7 @@ class Test:
         This is useful for understanding the efficiency of the model in real-time
         applications.
         """
-        Nruns = np.arange(1,iters)
+        Nruns = np.arange(1,iters+1)
         np.random.shuffle(Nruns)
         logging.info(f"Using {Nruns=}")
 
