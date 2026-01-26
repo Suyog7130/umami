@@ -903,6 +903,7 @@ class Test:
                     'delta_t': DELTA_T,
                     'f_lower': 20.0,  # fix this at 20 Hz
                 })
+                print(waveform_kwargs)
                 hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
             end_time = time.time()
             elapsed_time = end_time - start_time
@@ -923,6 +924,7 @@ class Test:
                     'delta_t': DELTA_T,
                     'f_lower': 20.0,  # fix this at 20 Hz
                 })
+                print(waveform_kwargs)
                 hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
             end_time = time.time()
             elapsed_time = end_time - start_time
@@ -1824,7 +1826,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--nsamples', action='store', default=1000, type=int,
                             help='default=%(default)s')
-    parser.add_argument('--approximant', action='store', default='IMRPhenomD', )
+    parser.add_argument('--approximant', action='store', default='SEOBNRv4', )
     parser.add_argument('--batch-size', action='store', default=50, type=int,
                             help='default=%(default)s')
     parser.add_argument('--epochs', action='store', default=10, type=int,
