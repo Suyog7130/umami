@@ -1,4 +1,30 @@
 
+"""
+This program benchmarks and compares the time complexity of generating gravitational waveforms 
+using different waveform approximants from the PyCBC library: SEOBNRv4, SEOBNRv4_ROM, and SEOBNRv4_opt.
+
+It performs the following tasks:
+- Generates random sets of binary black hole parameters.
+- Measures the time taken to generate waveforms for each approximant.
+- Saves timing data to CSV files.
+- Produces comparative plots.
+- Provides utilities to plot and compare timing results from previously saved CSV files, 
+including results from machine learning-based waveform generators.
+
+Functions
+---------
+test_timecomplexity_compare(self, iters=100)
+    Benchmarks the time taken to generate a specified number of gravitational waveforms using 
+    three different PyCBC approximants (SEOBNRv4, SEOBNRv4_ROM, SEOBNRv4_opt). For each run, 
+    it randomly samples binary parameters, generates waveforms, records the elapsed time, 
+    saves results to a CSV file, and plots the timing comparison.
+
+plot_time_complexity_compare(self, basedf_name=None, modeldf_name=None)
+    Plots a comparative graph of waveform generation times using data from saved CSV files. 
+    It can include results from standard PyCBC approximants and machine learning-based waveform 
+    generators, displaying the time taken as a function of the number of waveforms generated.
+"""
+
 import os
 import numpy as np
 import pandas as pd
@@ -155,6 +181,43 @@ def test_timecomplexity_compare(self, iters=100):
     logging.info("Time complexity comparison plot saved.")
 
 
+
+def plot_time_complexity_compare(self, basedf_name=None, modeldf_name=None):
+    """
+    Plot the time complexity comparison from a saved csv file.
+    """
+    if basedf_name is None or modeldf_name is None:
+        raise NotImplementedError("Please provide the filenames of the saved csv files for plotting.")
+    logging.info(f"Plotting time complexity comparison from files: {basedf_name}, {modeldf_name}")
+    dfbase = pd.read_csv('../results/20260126/'+basedf_name)
+    dfmodel = pd.read_csv('../results/20260122/'+modeldf_name)
+    # logging.info(df.describe().to_string())
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+    ax.plot(dfbase['Nruns'], dfbase['base_time'], '.', color='black', markersize=10,
+            markeredgewidth=0.5, markeredgecolor='black')
+    ax.plot(dfbase['Nruns'], dfbase['rom_time'], '^', color='red', markersize=6,
+            markeredgewidth=0.5, markeredgecolor='black')
+    ax.plot(dfbase['Nruns'], dfbase['opt_time'], 'v', color='green', markersize=6,
+            markeredgewidth=0.5, markeredgecolor='black')
+    ax.plot(dfmodel['Nruns'], dfmodel['model_time'], '*', color='blue', markersize=6,
+            markeredgewidth=0.5, markeredgecolor='black')
+    ax.legend(['SEOBNRv4', 'SEOBNRv4_ROM', 'SEOBNRv4_opt', 'SEOBNRv4_ml'], loc='upper left')
+    ax.set_xlabel('Number of Waveforms Generated', fontsize=12)
+    ax.set_ylabel('Time (seconds)', fontsize=12)
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+    ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+    ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+    ax.tick_params(which='both', direction='in', top=True, right=True)
+    plt.tight_layout()
+    figname = f'{self.savedir}/timecomplexity-compare-combined-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+    plt.savefig(figname+'.png', dpi=300, transparent=True)
+    plt.savefig(figname+'-white.png', dpi=300)
+    plt.close()
+    logging.info("Time complexity comparison plot saved.")
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -203,4 +266,9 @@ if __name__ == "__main__":
     trial.args = args
     trial.device = 'cpu'
 
-    test_timecomplexity_compare(trial, iters=100)
+    # test_timecomplexity_compare(trial, iters=100)
+
+    plot_time_complexity_compare(trial,
+        basedf_name='timecomplexity_compare_20260126_031310.csv',
+        modeldf_name='timecomplexity_compare_20260122_144242.csv'
+    )
