@@ -44,7 +44,7 @@ def objective(trial):
         "tag": f"optuna_cnn{n_cnn}_fc{n_fc}_cond{cond_dim}_base{base_out}"
     }
 
-    # Build and train model for a few epochs, return validation loss
+    # Build and train model for a few{)} epochs, return validation loss
     trainer = MultiTrainer(
         train_data=train_loader,
         val_data=val_loader,
