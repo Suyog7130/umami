@@ -1,3 +1,8 @@
+"""
+Gonna remove reliance on this in favour of optimization using "optuna".
+"""
+
+
 # Multi Trainer - configuration search + pruning + retrain (PyTorch)
 # ---------------------------------------------------------------
 # Minimal-friction module that works with the Multi CVAE refactor.
