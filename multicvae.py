@@ -255,7 +255,8 @@ class BaseDecoder(BaseCoder):
 # Conditioner (C)
 # ----------------
 class Conditioner(nn.Module):
-    """Embeds labels y to y_embed. Useful when concatenating a compact y.
+    """
+    Encodes the label y into a continuous embedding in the latent space.
 
     Args:
         in_dim: y input dim (usually num_classes)
@@ -370,24 +371,26 @@ class BaseCVAE(nn.Module):
 
     # ---- helpers to access C/E/D ----
     def condition(self, y: torch.Tensor, idx: int = 0) -> Optional[torch.Tensor]:
+        """
+        This acts as a separate encoder for labels y, which are contatenated with
+        the inputs, but are also separately transformed via Conditioners. So that,
+        later, the inputs can be removed and only the conditioned labels can be used
+        to guide the generation.
+        """
         if self.n_conditioners == 0:
             return None
         return self.conditioners[idx % self.n_conditioners](y)
 
-    def encode(self, x: torch.Tensor, y: torch.Tensor, encoder_idx: int = 0,
-               conditioner_idx: int = 0) -> torch.Tensor:
-        y_emb = self.condition(y, conditioner_idx)
-        return self.encoders[encoder_idx](x, y, y_emb)
+    def encode(self, x: torch.Tensor, y: torch.Tensor, encoder_idx: int = 0) -> torch.Tensor:
+        return self.encoders[encoder_idx](x, y)
 
-    def decode(self, z: torch.Tensor, y: torch.Tensor, decoder_idx: int = 0,
-               conditioner_idx: int = 0) -> torch.Tensor:
-        y_emb = self.condition(y, conditioner_idx)
-        return self.decoders[decoder_idx](z, y, y_emb)
+    def decode(self, z: torch.Tensor, y: torch.Tensor, decoder_idx: int = 0) -> torch.Tensor:
+        return self.decoders[decoder_idx](z, y)
 
     def forward(self, x: torch.Tensor, y: torch.Tensor,
-                encoder_idx: int = 0, decoder_idx: int = 0, conditioner_idx: int = 0):
-        z = self.encode(x, y, encoder_idx, conditioner_idx)
-        out = self.decode(z, y, decoder_idx, conditioner_idx)
+                encoder_idx: int = 0, decoder_idx: int = 0):
+        z = self.encode(x, y, encoder_idx)
+        out = self.decode(z, y, decoder_idx)
         return out
 
 
@@ -448,36 +451,75 @@ def build_model_from_code(code: str, **kwargs) -> BaseCVAE:
     )
 
 
-# ----------------------------------------------------
-# Back-compat examples (same names, upgraded guts)
-# ----------------------------------------------------
 class TwoC2E1D(BaseCVAE):
-    """Concrete: 2 Encoders, 1 Decoder (keeps original spirit).
+    """Concrete: 2 Conditioners, 2 Encoders, 1 Decoder (keeps original spirit).
     If you also want 2 Conditioners, call build_model_from_code("2C2E1D", ...).
     """
     def __init__(self, **kwargs):
-        super(TwoC2E1D, self).__init__(n_conditioners=0, n_encoders=2, n_decoders=1, **kwargs)
+        super(TwoC2E1D, self).__init__(n_conditioners=2, n_encoders=2, n_decoders=1, **kwargs)
 
     def forward(self, x, y):
-        z1 = self.encode(x, y, encoder_idx=0)
-        z2 = self.encode(x, y, encoder_idx=1)
-        z = torch.cat([z1, z2], dim=1)
-        out = self.decode(z, y, decoder_idx=0)
-        return out
-
-
-class TwoC2E2D(BaseCVAE):
-    """Concrete: 2 Encoders, 2 Decoders (back-compat)."""
-    def __init__(self, **kwargs):
-        super(TwoC2E2D, self).__init__(n_conditioners=0, n_encoders=2, n_decoders=2, **kwargs)
-
-    def forward(self, x, y):
-        z1 = self.encode(x, y, encoder_idx=0)
-        z2 = self.encode(x, y, encoder_idx=1)
-        z = torch.cat([z1, z2], dim=1)
-        out1 = self.decode(z, y, decoder_idx=0)
-        out2 = self.decode(z, y, decoder_idx=1)
-        return out1, out2
+        z1 = self.encode(x, y, encoder_idx=0, conditioner_idx=0)
+        z1_mean, z1_logvar = z1.chunk(2, dim=1)
+        z1p = self.condition(y, idx=0)
+        z1p_mean, z1p_logvar = z1p.chunk(2, dim=1)
+        z2 = self.encode(x, y, encoder_idx=1, conditioner_idx=1)
+        z2_mean, z2_logvar = z2.chunk(2, dim=1)
+        z2p = self.condition(y, idx=1)
+        z2p_mean, z2p_logvar = z2p.chunk(2, dim=1)
+        z = torch.cat([z1, z1p, z2, z2p], dim=1)
+        x_recon = self.decode(z, y, decoder_idx=0)
+        zvars = (z1_mean, z1_logvar, z1p_mean, z1p_logvar, z2_mean, z2_logvar, z2p_mean, z2p_logvar)
+        return (x_recon, zvars)
+    
+    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        """Reparameterization trick to sample from N(mu, var) from N(0,1)."""
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+    
+    def latent_loss(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        """ 
+        Compute the KL divergence loss between the learned latent distribution
+        and the standard normal distribution.
+        """
+        logvar = torch.clamp(logvar, min=-10.0, max=10.0)
+        kll = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+        return torch.mean(kll)
+    
+    def latent_loss_bet_encoders(self, z1_vars, z1p_vars, z2_vars, z2p_vars):
+        """ 
+        Compute the KL divergence loss between two encoder distributions.
+        """
+        mu1, logvar1 = z1_vars
+        mu2, logvar2 = z2_vars
+        logvar1 = torch.clamp(logvar1, min=-10.0, max=10.0)
+        logvar2 = torch.clamp(logvar2, min=-10.0, max=10.0)
+        kll = 0.5 * torch.sum(
+            logvar2 - logvar1 + 
+            (torch.exp(logvar1) + (mu1 - mu2).pow(2)) / torch.exp(logvar2) - 1,
+            dim=1
+        )
+        return torch.mean(kll)
+    
+    def loss_function(self, x_recon, x_target, zvars, beta=0.1):
+        """ 
+        Loss function combining reconstruction loss and KL divergence.
+        """
+        recon_loss = F.mse_loss(x_recon, x_target, reduction='mean')
+        z1_mean, z1_logvar, z1p_mean, z1p_logvar, z2_mean, z2_logvar, z2p_mean, z2p_logvar = zvars
+        # latent loss between latent and standard normal distribution
+        kl_loss_enc1 = self.latent_loss(z1_mean, z1_logvar)
+        kl_loss_cond1 = self.latent_loss(z1p_mean, z1p_logvar)
+        kl_loss_enc2 = self.latent_loss(z2_mean, z2_logvar)
+        kl_loss_cond2 = self.latent_loss(z2p_mean, z2p_logvar)
+        # latent loss between encoders
+        kll1 = self.latent_loss_bet_encoders(z1_mean, z1_logvar, z2_mean, z2_logvar)
+        # latent loss between conditioners
+        kll2 = self.latent_loss_bet_encoders(z1p_mean, z1p_logvar, z2p_mean, z2p_logvar)
+        kl_loss = kl_loss_enc1 + kl_loss_cond1 + kl_loss_enc2 + kl_loss_cond2 + kll1 + kll2
+        total_loss = recon_loss + beta * kl_loss
+        return (total_loss, recon_loss, kl_loss)
 
 
 # -----------------------------
