@@ -6,6 +6,11 @@ we should not be converting the strain to freq-amp.
 Instead, for the Phenom models atleast, we should be
 able to directly use the freq-amp values from lalsuite.
 However, as the initial work, this code is alrighto.
+
+2026/02/13
+This code is to read already saved waveforms from HDF5 files,
+and then load them as PyTorch Datasets and DataLoaders.
+These waveforms and input files are created using `data.py`.
 """
 
 import os
