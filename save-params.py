@@ -13,6 +13,7 @@ Defaults:
 from __future__ import annotations
 
 import os
+import argparse
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -61,7 +62,6 @@ def generate_gw_prior_samples_csv(
     distance_prior: Literal["uniform", "uniform_in_volume"] = "uniform",
     enforce_m1_ge_m2: bool = True,
     seed: Optional[int] = None,
-    filename_prefix: str = "gw_prior_samples",
 ) -> None:
     """
     Writes CSV files:
@@ -74,6 +74,9 @@ def generate_gw_prior_samples_csv(
       - generates rows in chunks of `rows_per_commit`
       - opens file in append mode, writes the chunk, closes it
     """
+    fname = f'm{mass_min}-{mass_max}_s{spin_min}-{spin_max}_dL{dL_min_mpc}-{dL_max_mpc}_prior-{distance_prior}_samples'
+    fname = fname.replace('.', 'p')
+    out_dir = out_dir + "/" + fname
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -96,7 +99,7 @@ def generate_gw_prior_samples_csv(
     header = "index,m1_msun,m2_msun,chi1x,chi1y,chi1z,chi2x,chi2y,chi2z,dL_Mpc"
 
     for file_idx in range(n_files):
-        out_path = out_dir / f"{filename_prefix}_{file_idx:03d}.csv"
+        out_path = out_dir / f"seed{seed}-params_{file_idx:03d}.csv"
 
         # If file exists, remove it so we always get exactly rows_per_file rows.
         if out_path.exists():
@@ -150,113 +153,144 @@ def generate_gw_prior_samples_csv(
         print(f"Wrote {rows_per_file} rows -> {out_path}")
 
 
-# Optional: HDF5 writer (faster and smaller than CSV for big datasets).
-# This version ALSO closes and reopens every commit, as you requested.
-def generate_gw_prior_samples_hdf5(
-    out_dir: str | Path,
-    total_samples: int = 1_000_000,
-    n_files: int = 10,
-    rows_per_file: int = 100_000,
-    rows_per_commit: int = 10_000,  # HDF5 is fine with bigger chunks
-    mass_min: float = 5.0,
-    mass_max: float = 75.0,
-    spin_min: float = -0.99,
-    spin_max: float = 0.99,
-    dL_min_mpc: float = 200.0,
-    dL_max_mpc: float = 600.0,
-    distance_prior: Literal["uniform", "uniform_in_volume"] = "uniform",
-    enforce_m1_ge_m2: bool = True,
-    seed: Optional[int] = None,
-    filename_prefix: str = "gw_prior_samples",
-) -> None:
-    """
-    Requires: pip install h5py
-    Writes HDF5 files with datasets:
-      /params  shape=(rows_per_file, 5)
-      /columns stored as an attribute
-    """
-    import h5py  # local import so CSV-only users do not need it
+# # Optional: HDF5 writer (faster and smaller than CSV for big datasets).
+# # This version ALSO closes and reopens every commit, as you requested.
+# def generate_gw_prior_samples_hdf5(
+#     out_dir: str | Path,
+#     total_samples: int = 1_000_000,
+#     n_files: int = 10,
+#     rows_per_file: int = 100_000,
+#     rows_per_commit: int = 10_000,  # HDF5 is fine with bigger chunks
+#     mass_min: float = 5.0,
+#     mass_max: float = 75.0,
+#     spin_min: float = -0.99,
+#     spin_max: float = 0.99,
+#     dL_min_mpc: float = 200.0,
+#     dL_max_mpc: float = 600.0,
+#     distance_prior: Literal["uniform", "uniform_in_volume"] = "uniform",
+#     enforce_m1_ge_m2: bool = True,
+#     seed: Optional[int] = None,
+#     filename_prefix: str = "gw_prior_samples",
+# ) -> None:
+#     """
+#     Requires: pip install h5py
+#     Writes HDF5 files with datasets:
+#       /params  shape=(rows_per_file, 5)
+#       /columns stored as an attribute
+#     """
+#     import h5py  # local import so CSV-only users do not need it
 
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+#     out_dir = Path(out_dir)
+#     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if total_samples != n_files * rows_per_file:
-        raise ValueError("total_samples must equal n_files*rows_per_file")
+#     if total_samples != n_files * rows_per_file:
+#         raise ValueError("total_samples must equal n_files*rows_per_file")
 
-    rng = np.random.default_rng(seed)
-    columns = ["m1_msun", "m2_msun", "chi1x", "chi1y", "chi1z", "chi2x", "chi2y", "chi2z", "dL_Mpc"]
+#     rng = np.random.default_rng(seed)
+#     columns = ["m1_msun", "m2_msun", "chi1x", "chi1y", "chi1z", "chi2x", "chi2y", "chi2z", "dL_Mpc"]
 
-    for file_idx in range(n_files):
-        out_path = out_dir / f"{filename_prefix}_{file_idx:03d}.h5"
-        if out_path.exists():
-            out_path.unlink()
+#     for file_idx in range(n_files):
+#         out_path = out_dir / f"{filename_prefix}_{file_idx:03d}.h5"
+#         if out_path.exists():
+#             out_path.unlink()
 
-        written = 0
-        while written < rows_per_file:
-            n_chunk = min(rows_per_commit, rows_per_file - written)
+#         written = 0
+#         while written < rows_per_file:
+#             n_chunk = min(rows_per_commit, rows_per_file - written)
 
-            m1 = rng.uniform(mass_min, mass_max, size=n_chunk)
-            m2 = rng.uniform(mass_min, mass_max, size=n_chunk)
+#             m1 = rng.uniform(mass_min, mass_max, size=n_chunk)
+#             m2 = rng.uniform(mass_min, mass_max, size=n_chunk)
 
-            if enforce_m1_ge_m2:
-                m_hi = np.maximum(m1, m2)
-                m_lo = np.minimum(m1, m2)
-                m1, m2 = m_hi, m_lo
+#             if enforce_m1_ge_m2:
+#                 m_hi = np.maximum(m1, m2)
+#                 m_lo = np.minimum(m1, m2)
+#                 m1, m2 = m_hi, m_lo
 
-            chi1x = rng.uniform(spin_min, spin_max, size=n_chunk)
-            chi1y = rng.uniform(spin_min, spin_max, size=n_chunk)
-            chi1z = rng.uniform(spin_min, spin_max, size=n_chunk)
-            chi2x = rng.uniform(spin_min, spin_max, size=n_chunk)
-            chi2y = rng.uniform(spin_min, spin_max, size=n_chunk)
-            chi2z = rng.uniform(spin_min, spin_max, size=n_chunk)
-            dL = sample_distance(rng, n_chunk, dL_min_mpc, dL_max_mpc, distance_prior)
+#             chi1x = rng.uniform(spin_min, spin_max, size=n_chunk)
+#             chi1y = rng.uniform(spin_min, spin_max, size=n_chunk)
+#             chi1z = rng.uniform(spin_min, spin_max, size=n_chunk)
+#             chi2x = rng.uniform(spin_min, spin_max, size=n_chunk)
+#             chi2y = rng.uniform(spin_min, spin_max, size=n_chunk)
+#             chi2z = rng.uniform(spin_min, spin_max, size=n_chunk)
+#             dL = sample_distance(rng, n_chunk, dL_min_mpc, dL_max_mpc, distance_prior)
 
-            data = np.column_stack([m1, m2, chi1x, chi1y, chi1z, chi2x, chi2y, chi2z, dL])
-            data = np.round(data, 2).astype(np.float32)  # float32 is plenty for 2 decimals
-            data[:, 0] = data[:, 0].astype(int)
+#             data = np.column_stack([m1, m2, chi1x, chi1y, chi1z, chi2x, chi2y, chi2z, dL])
+#             data = np.round(data, 2).astype(np.float32)  # float32 is plenty for 2 decimals
+#             data[:, 0] = data[:, 0].astype(int)
 
-            # Close and reopen every commit, as requested
-            with h5py.File(out_path, "a") as f:
-                if "params" not in f:
-                    dset = f.create_dataset(
-                        "params",
-                        shape=(rows_per_file, 9),
-                        maxshape=(rows_per_file, 9),
-                        dtype=np.float32,
-                        chunks=(min(rows_per_commit, rows_per_file), 9),
-                        compression="gzip",
-                        compression_opts=4,
-                    )
-                    dset.attrs["columns"] = np.array(columns, dtype="S")
-                else:
-                    dset = f["params"]
+#             # Close and reopen every commit, as requested
+#             with h5py.File(out_path, "a") as f:
+#                 if "params" not in f:
+#                     dset = f.create_dataset(
+#                         "params",
+#                         shape=(rows_per_file, 9),
+#                         maxshape=(rows_per_file, 9),
+#                         dtype=np.float32,
+#                         chunks=(min(rows_per_commit, rows_per_file), 9),
+#                         compression="gzip",
+#                         compression_opts=4,
+#                     )
+#                     dset.attrs["columns"] = np.array(columns, dtype="S")
+#                 else:
+#                     dset = f["params"]
 
-                dset[written:written + n_chunk, :] = data
+#                 dset[written:written + n_chunk, :] = data
 
-            written += n_chunk
+#             written += n_chunk
 
-        print(f"Wrote {rows_per_file} rows -> {out_path}")
+#         print(f"Wrote {rows_per_file} rows -> {out_path}")
 
 
 if __name__ == "__main__":
-    # Example usage (CSV):
-    generate_gw_prior_samples_csv(
-        out_dir="data/params",
-        total_samples=1_000_000,
-        n_files=10,
-        rows_per_file=100_000,
-        rows_per_commit=100,  # reopen every 100 rows
-        mass_min=5.0,
-        mass_max=200.0,
-        spin_min=-0.99,
-        spin_max=0.99,
-        dL_min_mpc=100.0,
-        dL_max_mpc=1000.0,
-        distance_prior="uniform_in_volume",  # or "uniform_in_volume"
-        enforce_m1_ge_m2=True,
-        seed=100,  # set an int for reproducibility
-        filename_prefix="params",
-    )
 
-    # If you prefer HDF5, uncomment:
-    # generate_gw_prior_samples_hdf5(out_dir="data/params_h5")
+    DEFAULTS = {
+        "out_dir": "data/params",
+        "total_samples": 1_000_000,
+        "mass_min": 5.0,
+        "mass_max": 200.0,
+        "spin_min": -0.99,
+        "spin_max": 0.99,
+        "dL_min_mpc": 100.0,
+        "dL_max_mpc": 1000.0,
+        "distance_prior": "uniform_in_volume",
+        "random_seed": 100,
+    }
+
+    parser = argparse.ArgumentParser(description="Generate gravitational-wave prior samples and save to CSV files.")
+    parser.add_argument( "--out-dir", type=str, default=DEFAULTS["out_dir"],
+                        help="Output directory to save parameter files.")
+    parser.add_argument( "--random-seed", type=int, default=DEFAULTS["random_seed"],
+                        help="Random seed for reproducibility (default: 100).")
+    parser.add_argument('--mass-min', type=float, default=DEFAULTS["mass_min"], 
+                        help='Minimum component mass (Msun).')
+    parser.add_argument('--mass-max', type=float, default=DEFAULTS["mass_max"], 
+                        help='Maximum component mass (Msun).')
+    parser.add_argument('--spin-min', type=float, default=DEFAULTS["spin_min"], 
+                        help='Minimum spin component.')
+    parser.add_argument('--spin-max', type=float, default=DEFAULTS["spin_max"], 
+                        help='Maximum spin component.')
+    parser.add_argument('--dL-min-mpc', type=float, default=DEFAULTS["dL_min_mpc"], 
+                        help='Minimum luminosity distance (Mpc).')
+    parser.add_argument('--dL-max-mpc', type=float, default=DEFAULTS["dL_max_mpc"], 
+                        help='Maximum luminosity distance (Mpc).')
+    parser.add_argument('--distance-prior', type=str, choices=['uniform', 'uniform_in_volume'], 
+                        default=DEFAULTS["distance_prior"],
+                        help='Distance prior type.')
+    args = parser.parse_args()
+
+    generate_gw_prior_samples_csv(
+        out_dir=args.out_dir,  # default="data/params"
+        total_samples=DEFAULTS["total_samples"],  # 1_000_000
+        n_files=10,
+        rows_per_file=DEFAULTS["total_samples"] // 10,
+        rows_per_commit=100,
+        mass_min=args.mass_min,
+        mass_max=args.mass_max,
+        spin_min=args.spin_min,
+        spin_max=args.spin_max,
+        dL_min_mpc=args.dL_min_mpc,
+        dL_max_mpc=args.dL_max_mpc,
+        distance_prior=args.distance_prior,
+        enforce_m1_ge_m2=True,
+        seed=args.random_seed,
+    )
