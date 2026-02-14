@@ -52,13 +52,13 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
-        for batch_idx, (x, cond) in enumerate(train_loader):
+        for batch_idx, (x, target, labels, keys) in enumerate(train_loader):
             if batch_idx >= num_train_batches:
                 break
-            x, cond = x.to(device), cond.to(device)
+            x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
             optimizer.zero_grad()
-            x_recon, zvars = model(x, cond)
-            loss, recon_loss, kl_loss = model.loss_function(x_recon, x, zvars)
+            x_recon, zvars = model(x, labels, keys)
+            loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
@@ -68,10 +68,10 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
     model.eval()
     val_loss = 0.0
     with torch.no_grad():
-        for x, cond in val_loader:
-            x, cond = x.to(device), cond.to(device)
-            x_recon, zvars = model(x, cond)
-            loss, recon_loss, kl_loss = model.loss_function(x_recon, x, zvars)
+        for x, target, labels, keys in val_loader:
+            x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
+            x_recon, zvars = model(x, labels, keys)
+            loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
             val_loss += loss.item()
     avg_val_loss = val_loss / len(val_loader)
     logging.info(f"Validation Loss: {avg_val_loss:.4f}")

@@ -458,17 +458,52 @@ class TwoC2E1D(BaseCVAE):
     def __init__(self, **kwargs):
         super(TwoC2E1D, self).__init__(n_conditioners=2, n_encoders=2, n_decoders=1, **kwargs)
 
-    def forward(self, x, y):
-        z1 = self.encode(x, y, encoder_idx=0, conditioner_idx=0)
+    def __call__(self, x, labels, keys):
+        """
+        Overrides the __call__ method to directly call the forward method.
+        
+        Args:
+            x (Tensor): Input data.
+            labels (Tensor): Conditional labels.
+            keys (Tensor): Key data.
+
+        Returns:
+            Output of the forward method.
+        """
+        # print('__call__')
+        return self.forward(x, labels, keys)
+
+    def forward(self, x, labels, keys=None):
+        """
+        Since there are two encoders and two conditioners, we encode the input x and keys separately,
+        and also condition the labels separately for each encoder. Then we concatenate all the latent
+        representations and pass them to the decoder to reconstruct the input. 
+        The method returns the reconstructed output and the latent variables
+        for both encoders and conditioners, which can be used for computing the loss.
+
+        Arguments:
+            x (Tensor): The input data to be encoded and reconstructed.
+            labels (Tensor): The conditional labels that guide the encoding and decoding process.
+            keys (Tensor, optional): Additional input data that can be encoded separately. 
+                Defaults to None.
+
+        Returns:
+            Tuple[Tensor, Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]]:
+                - The first element is the reconstructed output from the decoder.
+                - The second element is a tuple containing mean and log variance of latent variables
+                  for both encoders and conditioners: 
+                    (z1_mean, z1_logvar, z1p_mean, z1p_logvar, z2_mean, z2_logvar, z2p_mean, z2p_logvar).
+        """
+        z1 = self.encode(x, labels, encoder_idx=0, conditioner_idx=0)
         z1_mean, z1_logvar = z1.chunk(2, dim=1)
-        z1p = self.condition(y, idx=0)
+        z1p = self.condition(labels, idx=0)
         z1p_mean, z1p_logvar = z1p.chunk(2, dim=1)
-        z2 = self.encode(x, y, encoder_idx=1, conditioner_idx=1)
+        z2 = self.encode(keys, labels, encoder_idx=1, conditioner_idx=1)
         z2_mean, z2_logvar = z2.chunk(2, dim=1)
-        z2p = self.condition(y, idx=1)
+        z2p = self.condition(labels, idx=1)
         z2p_mean, z2p_logvar = z2p.chunk(2, dim=1)
         z = torch.cat([z1, z1p, z2, z2p], dim=1)
-        x_recon = self.decode(z, y, decoder_idx=0)
+        x_recon = self.decode(z, labels, decoder_idx=0)
         zvars = (z1_mean, z1_logvar, z1p_mean, z1p_logvar, z2_mean, z2_logvar, z2p_mean, z2p_logvar)
         return (x_recon, zvars)
     
@@ -502,7 +537,7 @@ class TwoC2E1D(BaseCVAE):
         )
         return torch.mean(kll)
     
-    def loss_function(self, x_recon, x_target, zvars, beta=0.1):
+    def loss_function(self, x_target, x_recon, zvars, beta=0.1):
         """ 
         Loss function combining reconstruction loss and KL divergence.
         """
