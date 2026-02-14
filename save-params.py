@@ -74,7 +74,8 @@ def generate_gw_prior_samples_csv(
       - generates rows in chunks of `rows_per_commit`
       - opens file in append mode, writes the chunk, closes it
     """
-    fname = f'm{mass_min}-{mass_max}_s{spin_min}-{spin_max}_dL{dL_min_mpc}-{dL_max_mpc}_prior-{distance_prior}_samples'
+    dpname = 'u' if distance_prior == 'uniform' else 'uvol'
+    fname = f'm{int(mass_min)}-{int(mass_max)}_s{spin_min}-{spin_max}_dL{int(dL_min_mpc)}-{int(dL_max_mpc)}_{dpname}'
     fname = fname.replace('.', 'p')
     out_dir = out_dir + "/" + fname
     out_dir = Path(out_dir)
