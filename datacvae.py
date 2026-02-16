@@ -958,8 +958,8 @@ def _compute_best_phase_alignment(h_orig, h_recon):
     between the two waveforms. The aligned waveform is then given by:
 
     :math:
-        h_{recon} = h_{recon} \cdot e^{i \Delta\phi}
-        \Delta\phi = \\argmax_{ \Sum_t h_{orig}(t) \cdot h_{recon}^{*}(t) }
+        h_{recon} = h_{recon} \\cdot e^{i \\Delta\\phi}
+        \\Delta\\phi = \\argmax_{ \\Sum_t h_{orig}(t) \\cdot h_{recon}^{*}(t) }
     """
     # # Compute the cross-correlation between h_orig and h_recon
     # correlation = np.correlate(h_orig, h_recon, mode='full')
@@ -1127,8 +1127,7 @@ def check_ampfreq(fname, noshow=False, usephase=False):
     logging.info(f"Checked amp-freq reconstruction for {fname}.hdf successfully.")
 
 
-# -- NOT IMPLEMENTED YET -- #
-def check_ampfreq_via_wavegen(noshow=False):
+def check_ampfreq_via_wavegen(noshow=False, usephase=False, f_lower=20.0):
     """
     This is a more direct check of the amp-freq reconstruction, where we
     directly generate a waveform using `pycbc.waveform.get_td_waveform`, 
@@ -1148,11 +1147,23 @@ def check_ampfreq_via_wavegen(noshow=False):
     hp = hp.trim_zeros()
     hc = hc.trim_zeros()
 
-    # Convert to amp-freq and back to hp-hc
+    # Convert to amp-freq and back to hphc
+# NOTE: The dumbass pycbc code `phase_from_polarization`
+# func by default set the starting phase to 0, without even
+# informing the user a warning that this was being done.
+# Correctly it brings the mismatch value to 1e-16 !
     amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
-    phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
+    phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc, remove_start_phase=False)
     freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
-    recon_hp, recon_hc = _polarizations_from_ampfreq(amp.data, freq.data)
+    # amp = np.sqrt(hp**2 + hc**2)
+    phase = np.unwrap(np.arctan2(hc, hp))
+    # freq = np.gradient(phase) / (2 * np.pi * hp.delta_t)
+    if usephase:
+        logging.info('Using the original phase for reconstruction.')
+        recon_hp = amp * np.cos(phase)
+        recon_hc = amp * np.sin(phase)
+    else:
+        recon_hp, recon_hc = _polarizations_from_ampfreq(amp.data, freq.data)
     print(f'Original hp shape: {hp.shape}, recon_hp shape: {recon_hp.shape}')
 
     # Convert the reconstructed waveforms to `pycbc` TimeSeries objects for mismatch calculation
@@ -1176,6 +1187,22 @@ def check_ampfreq_via_wavegen(noshow=False):
     mismatch_hp = 1 - match_hp
     mismatch_hc = 1 - match_hc
     print(f"Mismatch for hp: {mismatch_hp}, Mismatch for hc: {mismatch_hc}")
+
+    if not noshow:
+        fig, axes = plt.subplots(2, 1, figsize=(10,5))
+        axes[0].plot(range(len(hp)), hp, label='Original hp')
+        axes[0].plot(range(len(recon_hp)), recon_hp, label='Recombined hp', linestyle='dashed')
+        axes[0].set_xlabel('Time (s)')
+        axes[0].set_ylabel('Strain')
+        axes[0].legend()
+        axes[1].plot(range(len(hc)), hc, label='Original hc')
+        axes[1].plot(range(len(recon_hc)), recon_hc, label='Recombined hc', linestyle='dashed')
+        axes[1].set_xlabel('Time (s)')
+        axes[1].set_ylabel('Strain')
+        axes[1].legend()
+        plt.tight_layout()
+        plt.show()
+    logging.info(f"Checked amp-freq reconstruction via direct waveform generation successfully.")
 
 
 
@@ -2417,5 +2444,5 @@ if __name__=="__main__":
 
     if args.checkampfreq:
         fname = 'SEOBNRv4-train-100-fcutoff-uniform-aligned'
-        check_ampfreq(fname, noshow=args.noshow, usephase=True)
-        # check_ampfreq_via_wavegen(noshow=args.noshow)
+        # check_ampfreq(fname, noshow=args.noshow, usephase=True)
+        check_ampfreq_via_wavegen(noshow=args.noshow, usephase=True)
