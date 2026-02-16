@@ -91,7 +91,7 @@ WFKW_SHAPE = 6
 OUTPUT_SHAPE = INPUT_SHAPE
 
 
-NOW = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+NOW = datetime.now().strftime("%Y-%m-%d-%H%M%S")
 
 def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
              m2delta=None, criterion=True, plot=False, splitTT=True,
@@ -961,15 +961,19 @@ def _compute_best_phase_alignment(h_orig, h_recon):
         h_{recon} = h_{recon} \cdot e^{i \Delta\phi}
         \Delta\phi = \\argmax_{ \Sum_t h_{orig}(t) \cdot h_{recon}^{*}(t) }
     """
-    # Compute the cross-correlation between h_orig and h_recon
-    correlation = np.correlate(h_orig, h_recon, mode='full')
-    # Find the index of the maximum correlation
-    max_index = np.argmax(correlation)
-    # Calculate the corresponding phase shift
-    phase_shift = 2 * np.pi * (max_index - len(h_orig) + 1) / len(h_orig)
-    # Apply the phase shift to the reconstructed waveform
-    h_recon_aligned = h_recon * np.exp(1j * phase_shift)
-    return h_recon_aligned
+    # # Compute the cross-correlation between h_orig and h_recon
+    # correlation = np.correlate(h_orig, h_recon, mode='full')
+    # # Find the index of the maximum correlation
+    # max_index = np.argmax(correlation)
+    # # Calculate the corresponding phase shift
+    # phase_shift = 2 * np.pi * (max_index - len(h_orig) + 1) / len(h_orig)
+    # # Apply the phase shift to the reconstructed waveform
+    # h_recon_aligned = h_recon * np.exp(1j * phase_shift)
+    # return h_recon_aligned
+
+    # do h = hp + 1j*hc
+    dphi = np.angle(np.sum(h_orig * np.conj(h_recon)))
+    return h_recon * np.exp(1j * dphi)
 
 def _phase_from_freq_intervals(freq, dt, theta0=0.0):
     """
@@ -982,7 +986,7 @@ def _phase_from_freq_intervals(freq, dt, theta0=0.0):
     theta[1:] = theta0 + np.cumsum(dtheta)      # length N
     return theta
 
-def _polarizations_from_ampfreq(amp, freq):
+def _polarizations_from_ampfreq(amp, freq, theta0=0.0):
     """
     Convert amplitude and frequency to hplus and hcross polarizations.
     Phase array will have one element less than the amp, since the freq array
@@ -992,7 +996,7 @@ def _polarizations_from_ampfreq(amp, freq):
     """
     print(f'amp shape: {amp.shape}, freq shape: {freq.shape}')
     # phase = _phase_from_frequency(freq, dt=1.0/SAMPLE_RATE)
-    theta = _phase_from_freq_intervals(freq, dt=1.0/SAMPLE_RATE)
+    theta = _phase_from_freq_intervals(freq, dt=1.0/SAMPLE_RATE, theta0=theta0)
     print(f'amp shape: {amp.shape}, freq shape: {freq.shape}, phase shape: {theta.shape}')
     # amp = amp[1:] # to have equal sized arrays
     # print(f'amp shape after slicing: {amp.shape}')
@@ -1034,9 +1038,10 @@ def check_ampfreq(fname, noshow=False):
             print(f'PSD length: {len(psd)}, PSD delta_f: {psd.delta_f}')
             
             # Reconstruct the waveform from the amp and freq
-            recon_hp, recon_hc = _polarizations_from_ampfreq(amp, freq)
+            print(f'Reference phase: {phase[0]}')
+            recon_hp, recon_hc = _polarizations_from_ampfreq(amp, freq, theta0=phase[0])
 
-            recon_hp, recon_hc = _compute_best_phase_alignment(hp, recon_hp), _compute_best_phase_alignment(hc, recon_hc)
+            # recon_hp, recon_hc = _compute_best_phase_alignment(hp, recon_hp), _compute_best_phase_alignment(hc, recon_hc)
             
             # Convert all waveforms to float64 numpy arrays for consistency in mismatch calculation
             recon_hp = np.asarray(recon_hp, dtype=np.float64)
@@ -1069,8 +1074,10 @@ def check_ampfreq(fname, noshow=False):
             psd_resampled = pycbc.types.FrequencySeries(psd_interp, delta_f=hp.delta_f, dtype=psd.dtype)
 
             # Calculate the mismatch using pycbc function
-            match_hp, i = pycbc.filter.optimized_match(hp, recon_hp, psd=psd_resampled, low_frequency_cutoff=f_lower)
-            match_hc, j = pycbc.filter.optimized_match(hc, recon_hc, psd=psd_resampled, low_frequency_cutoff=f_lower)
+            # match_hp, i = pycbc.filter.optimized_match(hp, recon_hp, psd=psd_resampled, low_frequency_cutoff=f_lower)
+            # match_hc, j = pycbc.filter.optimized_match(hc, recon_hc, psd=psd_resampled, low_frequency_cutoff=f_lower)
+            match_hp, a = pycbc.filter.match(hp, recon_hp, psd=psd_resampled, low_frequency_cutoff=f_lower)
+            match_hc, b = pycbc.filter.match(hc, recon_hc, psd=psd_resampled, low_frequency_cutoff=f_lower)
             mismatchs[0].append(1 - match_hp)
             mismatchs[1].append(1 - match_hc)
             print(f"Mismatch for sample {key}: {1 - match_hp}, {1 - match_hc}")
@@ -1094,7 +1101,7 @@ def check_ampfreq(fname, noshow=False):
     # Plot the recombined and original waveforms for a few samples to visually check the reconstruction
     if not noshow:
         with h5py.File(datadir+fname+'.hdf', 'r') as hf:
-            for key in np.random.choice(list(hf.keys()),10):
+            for key in hf.keys(): #np.random.choice(list(hf.keys()), 25):
                 grp = hf[key]
                 hp = np.array(grp['hp'])
                 hc = np.array(grp['hc'])
@@ -1102,7 +1109,7 @@ def check_ampfreq(fname, noshow=False):
                 phase = np.array(grp['phase'])
                 freq = np.array(grp['freq'])
 
-                recon_hp, recon_hc = _polarizations_from_ampfreq(amp, freq)
+                recon_hp, recon_hc = _polarizations_from_ampfreq(amp, freq, theta0=phase[0])
 
                 fig, axes = plt.subplots(2, 1, figsize=(10,5))
                 axes[0].plot(range(len(hp)), hp, label='Original hp')
@@ -1118,7 +1125,7 @@ def check_ampfreq(fname, noshow=False):
                 axes[1].legend()
 
                 plt.tight_layout()
-                # plt.savefig(f'checkampfreq-{fname}_{key}.png', dpi=300)
+                plt.savefig(f'checkampfreq-{fname}_{key}.png', dpi=300)
                 plt.show()
     logging.info(f"Checked amp-freq reconstruction for {fname}.hdf successfully.")
 
