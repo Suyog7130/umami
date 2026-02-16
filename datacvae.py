@@ -91,6 +91,8 @@ WFKW_SHAPE = 6
 OUTPUT_SHAPE = INPUT_SHAPE
 
 
+NOW = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+
 def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
              m2delta=None, criterion=True, plot=False, splitTT=True,
              splitq=False, ntraining=0.7, nvald=0.1, ntest=0.2, qlim=10,
@@ -945,21 +947,57 @@ def _phase_from_frequency(freq, dt, theta0=0.0):
     from scipy.integrate import cumulative_trapezoid
     # Integrate frequency using trapezoidal rule
     theta_integral = cumulative_trapezoid(freq, dx=dt, initial=0.0)
+    print(f'freq shape: {freq.shape}, theta_integral shape: {theta_integral.shape}')
     # Multiply by 2π and add initial phase
     return theta0 + 2 * np.pi * theta_integral
+
+def _compute_best_phase_alignment(h_orig, h_recon):
+    """
+    Compute the best phase alignment between the original and reconstructed waveforms.
+    This is done by finding the phase shift that maximizes the cross-correlation
+    between the two waveforms. The aligned waveform is then given by:
+
+    :math:
+        h_{recon} = h_{recon} \cdot e^{i \Delta\phi}
+        \Delta\phi = \\argmax_{ \Sum_t h_{orig}(t) \cdot h_{recon}^{*}(t) }
+    """
+    # Compute the cross-correlation between h_orig and h_recon
+    correlation = np.correlate(h_orig, h_recon, mode='full')
+    # Find the index of the maximum correlation
+    max_index = np.argmax(correlation)
+    # Calculate the corresponding phase shift
+    phase_shift = 2 * np.pi * (max_index - len(h_orig) + 1) / len(h_orig)
+    # Apply the phase shift to the reconstructed waveform
+    h_recon_aligned = h_recon * np.exp(1j * phase_shift)
+    return h_recon_aligned
+
+def _phase_from_freq_intervals(freq, dt, theta0=0.0):
+    """
+    freq: length N-1, interpreted as interval frequency between samples.
+    returns theta: length N
+    """
+    dtheta = 2 * np.pi * freq * dt              # length N-1
+    theta = np.empty(freq.size + 1, dtype=np.float64)
+    theta[0] = theta0
+    theta[1:] = theta0 + np.cumsum(dtheta)      # length N
+    return theta
 
 def _polarizations_from_ampfreq(amp, freq):
     """
     Convert amplitude and frequency to hplus and hcross polarizations.
-    Phase array will have one element less than the amp and freq arrays 
-    since it is obtained by integrating the freq array.
+    Phase array will have one element less than the amp, since the freq array
+    is derived from the phase array by differentiation originally!
+    Well, this certainly seems to be a mess now and it would definitely be
+    better that I directly work with the phase and amplitude instead of the frequency.
     """
-    phase = _phase_from_frequency(freq, dt=1.0/SAMPLE_RATE)
-    print(f'amp shape: {amp.shape}, phase shape: {phase.shape}')
-    amp = amp[1:] # to have equal sized arrays
-    print(f'amp shape after slicing: {amp.shape}')
-    hplus = amp * np.cos(phase)
-    hcross = amp * np.sin(phase)
+    print(f'amp shape: {amp.shape}, freq shape: {freq.shape}')
+    # phase = _phase_from_frequency(freq, dt=1.0/SAMPLE_RATE)
+    theta = _phase_from_freq_intervals(freq, dt=1.0/SAMPLE_RATE)
+    print(f'amp shape: {amp.shape}, freq shape: {freq.shape}, phase shape: {theta.shape}')
+    # amp = amp[1:] # to have equal sized arrays
+    # print(f'amp shape after slicing: {amp.shape}')
+    hplus = amp * np.cos(theta)
+    hcross = amp * np.sin(theta)
     return hplus, hcross
 
 def check_ampfreq(fname, noshow=False):
@@ -997,6 +1035,8 @@ def check_ampfreq(fname, noshow=False):
             
             # Reconstruct the waveform from the amp and freq
             recon_hp, recon_hc = _polarizations_from_ampfreq(amp, freq)
+
+            recon_hp, recon_hc = _compute_best_phase_alignment(hp, recon_hp), _compute_best_phase_alignment(hc, recon_hc)
             
             # Convert all waveforms to float64 numpy arrays for consistency in mismatch calculation
             recon_hp = np.asarray(recon_hp, dtype=np.float64)
@@ -1029,8 +1069,8 @@ def check_ampfreq(fname, noshow=False):
             psd_resampled = pycbc.types.FrequencySeries(psd_interp, delta_f=hp.delta_f, dtype=psd.dtype)
 
             # Calculate the mismatch using pycbc function
-            match_hp, i = pycbc.filter.match(hp, recon_hp, psd=psd_resampled, low_frequency_cutoff=f_lower)
-            match_hc, j = pycbc.filter.match(hc, recon_hc, psd=psd_resampled, low_frequency_cutoff=f_lower)
+            match_hp, i = pycbc.filter.optimized_match(hp, recon_hp, psd=psd_resampled, low_frequency_cutoff=f_lower)
+            match_hc, j = pycbc.filter.optimized_match(hc, recon_hc, psd=psd_resampled, low_frequency_cutoff=f_lower)
             mismatchs[0].append(1 - match_hp)
             mismatchs[1].append(1 - match_hc)
             print(f"Mismatch for sample {key}: {1 - match_hp}, {1 - match_hc}")
@@ -1045,7 +1085,7 @@ def check_ampfreq(fname, noshow=False):
     print(f"Mean mismatch for hc: {mean_mismatch_hc}, std: {std_mismatch_hc}")
 
     # Save these mismatch values to a text file
-    with open('checkampfreq-'+fname+'_mismatch.txt', 'w') as f:
+    with open('checkampfreq-'+fname+f'_mismatch-{NOW}.txt', 'w') as f:
         f.write(f"Mean mismatch for hp: {mean_mismatch_hp}, std: {std_mismatch_hp}\n")
         f.write(f"Mean mismatch for hc: {mean_mismatch_hc}, std: {std_mismatch_hc}\n")
         for i, (mismatch_hp, mismatch_hc) in enumerate(zip(mismatchs[0], mismatchs[1])):
@@ -1081,6 +1121,57 @@ def check_ampfreq(fname, noshow=False):
                 # plt.savefig(f'checkampfreq-{fname}_{key}.png', dpi=300)
                 plt.show()
     logging.info(f"Checked amp-freq reconstruction for {fname}.hdf successfully.")
+
+
+# -- NOT IMPLEMENTED YET -- #
+def check_ampfreq_via_wavegen(noshow=False):
+    """
+    This is a more direct check of the amp-freq reconstruction, where we
+    directly generate a waveform using `pycbc.waveform.get_td_waveform`, 
+    convert it to amp-freq and then back to hp-hc and check the mismatch between the 
+    original and reconstructed waveforms.
+    """
+    # Generate a random waveform
+    m1, m2 = np.random.uniform(5, 100, size=2)
+    chi1z, chi2z = np.random.uniform(-0.99, 0.99, size=2)
+    hp, hc = pycbc.waveform.get_td_waveform(approximant='SEOBNRv4',
+                                            mass1=m1,
+                                            mass2=m2,
+                                            chi1z=chi1z,
+                                            chi2z=chi2z,
+                                            f_lower=f_lower,
+                                            delta_t=1/(DURATION*SAMPLE_RATE))
+    hp = hp.trim_zeros()
+    hc = hc.trim_zeros()
+
+    # Convert to amp-freq and back to hp-hc
+    amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
+    phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
+    freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
+    recon_hp, recon_hc = _polarizations_from_ampfreq(amp.data, freq.data)
+    print(f'Original hp shape: {hp.shape}, recon_hp shape: {recon_hp.shape}')
+
+    # Convert the reconstructed waveforms to `pycbc` TimeSeries objects for mismatch calculation
+    recon_hp = pycbc.types.TimeSeries(recon_hp, delta_t=hp.delta_t)
+    recon_hc = pycbc.types.TimeSeries(recon_hc, delta_t=hc.delta_t)
+    hp = pycbc.types.TimeSeries(hp, delta_t=hp.delta_t)
+    hc = pycbc.types.TimeSeries(hc, delta_t=hc.delta_t)
+
+    psd = pycbc.psd.aLIGOZeroDetHighPower(len(hp), delta_f=1/(len(hp)*hp.delta_t), low_freq_cutoff=f_lower)
+    hp_fs = hp.to_frequencyseries(delta_f=hp.delta_f)
+    hc_fs = hc.to_frequencyseries(delta_f=hc.delta_f)
+    recon_hp_fs = recon_hp.to_frequencyseries(delta_f=recon_hp.delta_f)
+    recon_hc_fs = recon_hc.to_frequencyseries(delta_f=recon_hc.delta_f)
+    freqs = hp_fs.sample_frequencies
+    psd_interp = np.interp(freqs, psd.sample_frequencies, psd.data)
+    psd_resampled = pycbc.types.FrequencySeries(psd_interp, delta_f=hp.delta_f, dtype=psd.dtype)
+
+    # Calculate the mismatch using pycbc function
+    match_hp, i = pycbc.filter.match(hp, recon_hp, psd=psd_resampled, low_frequency_cutoff=f_lower)
+    match_hc, j = pycbc.filter.match(hc, recon_hc, psd=psd_resampled, low_frequency_cutoff=f_lower)
+    mismatch_hp = 1 - match_hp
+    mismatch_hc = 1 - match_hc
+    print(f"Mismatch for hp: {mismatch_hp}, Mismatch for hc: {mismatch_hc}")
 
 
 
@@ -2323,3 +2414,4 @@ if __name__=="__main__":
     if args.checkampfreq:
         fname = 'SEOBNRv4-train-100-fcutoff-uniform-aligned'
         check_ampfreq(fname, noshow=args.noshow)
+        # check_ampfreq_via_wavegen(noshow=args.noshow)
