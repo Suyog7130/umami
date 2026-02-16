@@ -1,0 +1,24 @@
+name: phd
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - numpy
+  - scipy
+  - matplotlib
+  - pandas
+  - scikit-learn
+  - jupyterlab
+  - seaborn
+  - statsmodels
+  - astropy
+  - torch
+  - torchvision
+  - torchaudio
+  - pytorch-lightning
+  - pycbc  # -- install after torch to ensure compatibility
+  - pip:
+    - pdfkit
+    - wkhtmltopdf
+    - tqdm
