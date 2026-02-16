@@ -2444,5 +2444,9 @@ if __name__=="__main__":
 
     if args.checkampfreq:
         fname = 'SEOBNRv4-train-100-fcutoff-uniform-aligned'
+        # NOTE: The values I saved for phase, used the default params
+        # for the `phase_from_polarizations` func, which made
+        # the starting phase zero by default. Thus, my saved
+        # HDF data files do not contain the correct phase values.
         # check_ampfreq(fname, noshow=args.noshow, usephase=True)
         check_ampfreq_via_wavegen(noshow=args.noshow, usephase=True)
