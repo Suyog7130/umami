@@ -1004,7 +1004,7 @@ def _polarizations_from_ampfreq(amp, freq, theta0=0.0):
     hcross = amp * np.sin(theta)
     return hplus, hcross
 
-def check_ampfreq(fname, noshow=False):
+def check_ampfreq(fname, noshow=False, usephase=False):
     """
     Calculate the mismatch using noise-weighted inner product between the
     reconstructed waveform obtained from the `amp` and `freq` 
@@ -1018,7 +1018,7 @@ def check_ampfreq(fname, noshow=False):
     datadir = '../data/'
     mismatchs = [[],[]] # for hp and hc respectively
     with h5py.File(datadir+fname+'.hdf', 'r') as hf:
-        for key in hf.keys():
+        for i, key in enumerate(hf.keys()):
             grp = hf[key]
             print(dict(grp.attrs))
             hp = np.array(grp['hp'])
@@ -1038,8 +1038,13 @@ def check_ampfreq(fname, noshow=False):
             print(f'PSD length: {len(psd)}, PSD delta_f: {psd.delta_f}')
             
             # Reconstruct the waveform from the amp and freq
+            # TODO: Use `arctan2(hcross[0], hplus[0])` as the initial phase for the reconstruction, since this is more accurate than using the original phase saved in the HDF5 file, which is derived from the original waveform and thus may have some numerical errors.
             print(f'Reference phase: {phase[0]}')
-            recon_hp, recon_hc = _polarizations_from_ampfreq(amp, freq, theta0=phase[0])
+            if usephase:
+                recon_hp = amp * np.cos(phase)
+                recon_hc = amp * np.sin(phase)
+            else:
+                recon_hp, recon_hc = _polarizations_from_ampfreq(amp, freq, theta0=phase[0])
 
             # recon_hp, recon_hc = _compute_best_phase_alignment(hp, recon_hp), _compute_best_phase_alignment(hc, recon_hc)
             
@@ -1082,35 +1087,8 @@ def check_ampfreq(fname, noshow=False):
             mismatchs[1].append(1 - match_hc)
             print(f"Mismatch for sample {key}: {1 - match_hp}, {1 - match_hc}")
 
-    # Calculate the mean and std of the mismatchs
-    mismatchs = np.array(mismatchs)
-    mean_mismatch_hp = np.mean(mismatchs[0])
-    std_mismatch_hp = np.std(mismatchs[0])
-    mean_mismatch_hc = np.mean(mismatchs[1])
-    std_mismatch_hc = np.std(mismatchs[1])
-    print(f"Mean mismatch for hp: {mean_mismatch_hp}, std: {std_mismatch_hp}")
-    print(f"Mean mismatch for hc: {mean_mismatch_hc}, std: {std_mismatch_hc}")
-
-    # Save these mismatch values to a text file
-    with open('checkampfreq-'+fname+f'_mismatch-{NOW}.txt', 'w') as f:
-        f.write(f"Mean mismatch for hp: {mean_mismatch_hp}, std: {std_mismatch_hp}\n")
-        f.write(f"Mean mismatch for hc: {mean_mismatch_hc}, std: {std_mismatch_hc}\n")
-        for i, (mismatch_hp, mismatch_hc) in enumerate(zip(mismatchs[0], mismatchs[1])):
-            f.write(f"Sample {i}: Mismatch for hp: {mismatch_hp}, Mismatch for hc: {mismatch_hc}\n")
-
-    # Plot the recombined and original waveforms for a few samples to visually check the reconstruction
-    if not noshow:
-        with h5py.File(datadir+fname+'.hdf', 'r') as hf:
-            for key in hf.keys(): #np.random.choice(list(hf.keys()), 25):
-                grp = hf[key]
-                hp = np.array(grp['hp'])
-                hc = np.array(grp['hc'])
-                amp = np.array(grp['amp'])
-                phase = np.array(grp['phase'])
-                freq = np.array(grp['freq'])
-
-                recon_hp, recon_hc = _polarizations_from_ampfreq(amp, freq, theta0=phase[0])
-
+            # Plot the original and reconstructed waveforms for a few samples to visually check the reconstruction quality.
+            if not noshow and i < 5:
                 fig, axes = plt.subplots(2, 1, figsize=(10,5))
                 axes[0].plot(range(len(hp)), hp, label='Original hp')
                 axes[0].plot(range(len(recon_hp)), recon_hp, label='Recombined hp', linestyle='dashed')
@@ -1127,6 +1105,22 @@ def check_ampfreq(fname, noshow=False):
                 plt.tight_layout()
                 plt.savefig(f'checkampfreq-{fname}_{key}.png', dpi=300)
                 plt.show()
+
+    # Calculate the mean and std of the mismatchs
+    mismatchs = np.array(mismatchs)
+    mean_mismatch_hp = np.mean(mismatchs[0])
+    std_mismatch_hp = np.std(mismatchs[0])
+    mean_mismatch_hc = np.mean(mismatchs[1])
+    std_mismatch_hc = np.std(mismatchs[1])
+    print(f"Mean mismatch for hp: {mean_mismatch_hp}, std: {std_mismatch_hp}")
+    print(f"Mean mismatch for hc: {mean_mismatch_hc}, std: {std_mismatch_hc}")
+
+    # Save these mismatch values to a text file
+    with open('checkampfreq-'+fname+f'_mismatch-{NOW}.txt', 'w') as f:
+        f.write(f"Mean mismatch for hp: {mean_mismatch_hp}, std: {std_mismatch_hp}\n")
+        f.write(f"Mean mismatch for hc: {mean_mismatch_hc}, std: {std_mismatch_hc}\n")
+        for i, (mismatch_hp, mismatch_hc) in enumerate(zip(mismatchs[0], mismatchs[1])):
+            f.write(f"Sample {i}: Mismatch for hp: {mismatch_hp}, Mismatch for hc: {mismatch_hc}\n")
     logging.info(f"Checked amp-freq reconstruction for {fname}.hdf successfully.")
 
 
@@ -2420,5 +2414,5 @@ if __name__=="__main__":
 
     if args.checkampfreq:
         fname = 'SEOBNRv4-train-100-fcutoff-uniform-aligned'
-        check_ampfreq(fname, noshow=args.noshow)
+        check_ampfreq(fname, noshow=args.noshow, usephase=True)
         # check_ampfreq_via_wavegen(noshow=args.noshow)
