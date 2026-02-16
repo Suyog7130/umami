@@ -923,6 +923,86 @@ def check_hdf(fname, noshow=False):
     return hf
 
 
+def check_ampfreq(fname, noshow=False):
+    """
+    Calculate the mismatch using noise-weighted inner product between the
+    reconstructed waveform obtained from the `amp` and `freq` 
+    and the original waveform saved in the HDF5 file. Ideally,
+    this difference should be near-zero, about 1e-14 ish.
+    Use the `aLIGOZeroDetHighPower` PSD for the noise-weighting.
+
+    This basically simply checks if the conversion from `hp` and `hc` to `amp` and `freq`
+    and back is consistent and does not lead to any significant loss of information.
+    """
+    mismatchs = [[],[]] # for hp and hc respectively
+    with h5py.File(fname, 'r') as hf:
+        for key in hf.keys():
+            grp = hf[key]
+            print(dict(grp.attrs))
+            hp = np.array(grp['hp'])
+            hc = np.array(grp['hc'])
+            amp = np.array(grp['amp'])
+            phase = np.array(grp['phase'])
+            freq = np.array(grp['freq'])
+
+            # Reconstruct the waveform from the amp and freq
+            # Use the `aLIGOZeroDetHighPower` PSD for the noise-weighting.
+            psd = pycbc.psd.aLIGOZeroDetHighPower(len(hp), delta_f=1/len(hp), f_lower=f_lower)
+            recon_hp, recon_hc = pycbc.waveform.utils.polarizations_from_amplitude_phase(amp, phase)
+
+            # Calculate the mismatch using pycbc function
+            match_hp = pycbc.filter.match(hp, recon_hp, psd=psd)
+            match_hc = pycbc.filter.match(hc, recon_hc, psd=psd)
+            mismatchs[0].append(1 - match_hp)
+            mismatchs[1].append(1 - match_hc)
+            print(f"Mismatch for sample {key}: {1 - match_hp}, {1 - match_hc}")
+
+    # Calculate the mean and std of the mismatchs
+    mismatchs = np.array(mismatchs)
+    mean_mismatch_hp = np.mean(mismatchs[0])
+    std_mismatch_hp = np.std(mismatchs[0])
+    mean_mismatch_hc = np.mean(mismatchs[1])
+    std_mismatch_hc = np.std(mismatchs[1])
+    print(f"Mean mismatch for hp: {mean_mismatch_hp}, std: {std_mismatch_hp}")
+    print(f"Mean mismatch for hc: {mean_mismatch_hc}, std: {std_mismatch_hc}")
+
+    # Save these results to a text file
+    with open(fname+'_mismatch.txt', 'w') as f:
+        f.write(f"Mean mismatch for hp: {mean_mismatch_hp}, std: {std_mismatch_hp}\n")
+        f.write(f"Mean mismatch for hc: {mean_mismatch_hc}, std: {std_mismatch_hc}\n")
+
+    # Plot the recombined and original waveforms for a few samples to visually check the reconstruction
+    if not noshow:
+        with h5py.File(fname, 'r') as hf:
+            for key in hf.keys():
+                grp = hf[key]
+                hp = np.array(grp['hp'])
+                hc = np.array(grp['hc'])
+                amp = np.array(grp['amp'])
+                phase = np.array(grp['phase'])
+                freq = np.array(grp['freq'])
+
+                recon_hp, recon_hc = pycbc.waveform.utils.polarizations_from_amplitude_phase(amp, phase)
+
+                fig, axes = plt.subplots(2, 1, figsize=(10,5))
+                axes[0].plot(range(len(hp)), hp, label='Original hp')
+                axes[0].plot(range(len(recon_hp)), recon_hp, label='Recombined hp', linestyle='dashed')
+                axes[0].set_xlabel('Time (s)')
+                axes[0].set_ylabel('Strain')
+                axes[0].legend()
+
+                axes[1].plot(range(len(hc)), hc, label='Original hc')
+                axes[1].plot(range(len(recon_hc)), recon_hc, label='Recombined hc', linestyle='dashed')
+                axes[1].set_xlabel('Time (s)')
+                axes[1].set_ylabel('Strain')
+                axes[1].legend()
+
+                plt.tight_layout()
+                plt.savefig(f'checkampfreq_{fname}_{key}.png', dpi=300)
+                plt.show()
+    logging.info(f"Checked amp-freq reconstruction for {fname}.hdf successfully.")
+
+
 
 class CustomDataset(Dataset):
     """
@@ -2027,6 +2107,11 @@ if __name__=="__main__":
                         help='Save the data to HDF5 file.')
     parser.add_argument('--checkhdf', action='store_true', default=False,
                         help='Read the data from HDF5 file.')
+    parser.add_argument('--checkampfreq', action='store_true', default=False,
+                        help='Check the amplitude and frequency data' \
+                        'by calculating the noise-weighted inner product of the recombined strain' \
+                        'waveform with the original strain waveform. Ideally, the difference' \
+                        'should only be due to numerical errors and should be very small, about 1e-14 ish.')
     
     args = parser.parse_args()
 
@@ -2154,3 +2239,7 @@ if __name__=="__main__":
 
     if args.checkdatasets:
         check_datasets()
+
+    if args.checkampfreq:
+        fname = 'SEOBNRv4-train-100-fcutoff-uniform-aligned'
+        check_ampfreq(fname+'.hdf', noshow=args.noshow)
