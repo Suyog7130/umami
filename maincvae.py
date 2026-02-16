@@ -890,7 +890,6 @@ class Test:
             logging.info(f'Base time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
 
             # Compare ROM approximant genration times
-            waveform_kwargs['approximant'] = 'SEOBNRv4_ROM' # or 'SEOBNRv4ROM'
             start_time = time.time()
             for i in range(Nr):
                 waveform_kwargs['mass1'] = m1[i]
@@ -899,7 +898,7 @@ class Test:
                     waveform_kwargs['spin1z'] = spin1z[i]
                     waveform_kwargs['spin2z'] = spin2z[i]
                 waveform_kwargs.update({
-                    'approximant': self.approximant,
+                    'approximant': 'SEOBNRv4_ROM',
                     'delta_t': DELTA_T,
                     'f_lower': 20.0,  # fix this at 20 Hz
                 })
@@ -911,7 +910,6 @@ class Test:
             logging.info(f'ROM time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
 
             # Compare SEOBNRv4opt approximant genration times
-            waveform_kwargs['approximant'] = 'SEOBNRv4_opt'  # or 'SEOBNRv4Opt'
             start_time = time.time()
             for i in range(Nr):
                 waveform_kwargs['mass1'] = m1[i]
@@ -920,7 +918,7 @@ class Test:
                     waveform_kwargs['spin1z'] = spin1z[i]
                     waveform_kwargs['spin2z'] = spin2z[i]
                 waveform_kwargs.update({
-                    'approximant': self.approximant,
+                    'approximant': 'SEOBNRv4_opt',
                     'delta_t': DELTA_T,
                     'f_lower': 20.0,  # fix this at 20 Hz
                 })
