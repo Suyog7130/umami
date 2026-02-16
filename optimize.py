@@ -26,8 +26,10 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
-train_hdf = "data/train_data.h5"
-val_hdf = "data/val_data.h5"
+datadir = "../data/"
+train_hdf = datadir + 'SEBONRv4-train-100000-fcutoff-uniform-aligned.hdf'
+val_hdf = datadir + "SEBONRv4-val-100000-fcutoff-uniform-aligned.hdf"
+
 train_set = CustomDataset(train_hdf)
 val_set = CustomDataset(val_hdf)
 train_loader = CustomDataLoader(train_set, batch_size=64, shuffle=True)
