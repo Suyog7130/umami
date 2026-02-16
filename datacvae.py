@@ -1015,6 +1015,8 @@ def check_ampfreq(fname, noshow=False, usephase=False):
     This basically simply checks if the conversion from `hp` and `hc` to `amp` and `freq`
     and back is consistent and does not lead to any significant loss of information.
     """
+    if usephase:
+        logging.warning('Using the original phase saved in the HDF5 file for reconstruction.')
     datadir = '../data/'
     mismatchs = [[],[]] # for hp and hc respectively
     with h5py.File(datadir+fname+'.hdf', 'r') as hf:
@@ -1041,6 +1043,7 @@ def check_ampfreq(fname, noshow=False, usephase=False):
             # TODO: Use `arctan2(hcross[0], hplus[0])` as the initial phase for the reconstruction, since this is more accurate than using the original phase saved in the HDF5 file, which is derived from the original waveform and thus may have some numerical errors.
             print(f'Reference phase: {phase[0]}')
             if usephase:
+                logging.info('Using the original phase saved in the HDF5 file for reconstruction.')
                 recon_hp = amp * np.cos(phase)
                 recon_hc = amp * np.sin(phase)
             else:
