@@ -890,6 +890,7 @@ class Test:
             logging.info(f'Base time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
 
             # Compare ROM approximant genration times
+            waveform_kwargs['approximant'] = 'SEOBNRv4_ROM' # or 'SEOBNRv4ROM'
             start_time = time.time()
             for i in range(Nr):
                 waveform_kwargs['mass1'] = m1[i]
@@ -898,7 +899,7 @@ class Test:
                     waveform_kwargs['spin1z'] = spin1z[i]
                     waveform_kwargs['spin2z'] = spin2z[i]
                 waveform_kwargs.update({
-                    'approximant': 'SEOBNRv4_ROM',
+                    'approximant': self.approximant,
                     'delta_t': DELTA_T,
                     'f_lower': 20.0,  # fix this at 20 Hz
                 })
@@ -910,6 +911,7 @@ class Test:
             logging.info(f'ROM time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
 
             # Compare SEOBNRv4opt approximant genration times
+            waveform_kwargs['approximant'] = 'SEOBNRv4_opt'  # or 'SEOBNRv4Opt'
             start_time = time.time()
             for i in range(Nr):
                 waveform_kwargs['mass1'] = m1[i]
@@ -918,7 +920,7 @@ class Test:
                     waveform_kwargs['spin1z'] = spin1z[i]
                     waveform_kwargs['spin2z'] = spin2z[i]
                 waveform_kwargs.update({
-                    'approximant': 'SEOBNRv4_opt',
+                    'approximant': self.approximant,
                     'delta_t': DELTA_T,
                     'f_lower': 20.0,  # fix this at 20 Hz
                 })
@@ -1589,6 +1591,10 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
     return mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios
 
 
+# TODO: f_lower is different for diff waveforms, and that is one
+# of the main features of my code. So, I need to make sure that the f_lower 
+# used in the mismatch calculation is consistent with the one used 
+# in the waveform generation.
 def calc_polarization_mismatch(hp_orig, hp_recon):
     """
     Calculate the mismatch between the original and reconstructed hplus/hcross waveforms.
