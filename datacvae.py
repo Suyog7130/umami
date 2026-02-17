@@ -1026,7 +1026,7 @@ def check_ampfreq(fname, noshow=False, usephase=False):
             hp = np.array(grp['hp'])
             hc = np.array(grp['hc'])
             amp = np.array(grp['amp'])
-            phase = np.array(grp['phase'])
+            phase_hdf = np.array(grp['phase'])
             freq = np.array(grp['freq'])
             delta_t = grp.attrs.get('delta_t')
             f_lower = grp.attrs.get('f_lower')
@@ -1038,9 +1038,18 @@ def check_ampfreq(fname, noshow=False, usephase=False):
                                                   delta_f=1/(len(hp)*delta_t), 
                                                   low_freq_cutoff=f_lower)
             print(f'PSD length: {len(psd)}, PSD delta_f: {psd.delta_f}')
+
+            # Get the correct phase from the original polarization strains, since
+            # the assholic `pycbc` function set the start phase to zero, without
+            # any warnings.
+            logging.info('Calculating the phase from the original polarizations using `arctan2` for better accuracy.')
+            phase = np.unwrap(np.arctan2(hc, hp))
+            print(f'Original start phase value from HDF5: {phase_hdf[0]}, correct start phase: {phase[0]}')
             
             # Reconstruct the waveform from the amp and freq
-            # TODO: Use `arctan2(hcross[0], hplus[0])` as the initial phase for the reconstruction, since this is more accurate than using the original phase saved in the HDF5 file, which is derived from the original waveform and thus may have some numerical errors.
+            # TODO: Use `arctan2(hcross[0], hplus[0])` as the initial phase for the reconstruction, 
+            # since this is more accurate than using the original phase saved in the HDF5 file,
+            # which is derived from the original waveform and thus may have some numerical errors.
             print(f'Reference phase: {phase[0]}')
             if usephase:
                 logging.info('Using the original phase saved in the HDF5 file for reconstruction.')
@@ -1148,22 +1157,22 @@ def check_ampfreq_via_wavegen(noshow=False, usephase=False, f_lower=20.0):
     hc = hc.trim_zeros()
 
     # Convert to amp-freq and back to hphc
-# NOTE: The dumbass pycbc code `phase_from_polarization`
-# func by default set the starting phase to 0, without even
-# informing the user a warning that this was being done.
-# Correctly it brings the mismatch value to 1e-16 !
+    # NOTE: The dumbass pycbc code `phase_from_polarization`
+    # func by default set the starting phase to 0, without even
+    # informing the user a warning that this was being done.
+    # Correctly it brings the mismatch value to 1e-16 !
     amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
     phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc, remove_start_phase=False)
     freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
     # amp = np.sqrt(hp**2 + hc**2)
-    phase = np.unwrap(np.arctan2(hc, hp))
+    # phase = np.unwrap(np.arctan2(hc, hp))
     # freq = np.gradient(phase) / (2 * np.pi * hp.delta_t)
     if usephase:
         logging.info('Using the original phase for reconstruction.')
         recon_hp = amp * np.cos(phase)
         recon_hc = amp * np.sin(phase)
     else:
-        recon_hp, recon_hc = _polarizations_from_ampfreq(amp.data, freq.data)
+        recon_hp, recon_hc = _polarizations_from_ampfreq(amp.data, freq.data, theta0=phase[0])
     print(f'Original hp shape: {hp.shape}, recon_hp shape: {recon_hp.shape}')
 
     # Convert the reconstructed waveforms to `pycbc` TimeSeries objects for mismatch calculation
@@ -2309,12 +2318,21 @@ if __name__=="__main__":
                         help='Save the data to HDF5 file.')
     parser.add_argument('--checkhdf', action='store_true', default=False,
                         help='Read the data from HDF5 file.')
-    parser.add_argument('--checkampfreq', action='store_true', default=False,
+        
+    # Subparsers for checkampfreq
+    checkampfreq_parser = parser.add_subparsers(dest='checkampfreq').add_parser('checkampfreq', 
                         help='Check the amplitude and frequency data' \
                         'by calculating the noise-weighted inner product of the recombined strain' \
                         'waveform with the original strain waveform. Ideally, the difference' \
                         'should only be due to numerical errors and should be very small, about 1e-14 ish.')
-    
+    checkampfreq_parser.add_argument('--usephase', action='store_true', default=False,
+                        help='Use phase data instead of frequency data to check round-trip error.')
+    checkampfreq_parser.add_argument('--wavegen', action='store_true', default=False,
+                        help='Check the round-trip reconstruction error by calling in the `get_td_waveform`' \
+                            'function to get the original strain waveforms, converting them to amplitude and frequency' \
+                            'and then reconstructing the strain waveforms again to check the error.'   \
+                            'Instead of reading the waveforms data from the saved HDF5 datafile.')
+        
     args = parser.parse_args()
 
     if args.verbose:
@@ -2448,5 +2466,6 @@ if __name__=="__main__":
         # for the `phase_from_polarizations` func, which made
         # the starting phase zero by default. Thus, my saved
         # HDF data files do not contain the correct phase values.
-        # check_ampfreq(fname, noshow=args.noshow, usephase=True)
-        check_ampfreq_via_wavegen(noshow=args.noshow, usephase=True)
+        check_ampfreq(fname, noshow=args.noshow, usephase=args.usephase)
+        if args.wavegen:
+            check_ampfreq_via_wavegen(noshow=args.noshow, usephase=args.usephase)
