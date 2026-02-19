@@ -979,6 +979,11 @@ def _phase_from_freq_intervals(freq, dt, theta0=0.0):
     """
     freq: length N-1, interpreted as interval frequency between samples.
     returns theta: length N
+
+    NOTE: the returned phase has one extra element, while the output of my
+    neural network will have the size of the trucated frequency series, that
+    we obtain when we originally convert the polarization strains to amplitude
+    and frequency.
     """
     dtheta = 2 * np.pi * freq * dt              # length N-1
     theta = np.empty(freq.size + 1, dtype=np.float64)
@@ -1491,6 +1496,7 @@ class CustomDataset(Dataset):
                 logging.info(f"\nSample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. Regenerating!")
                 data = self._regenerate_sample(data)
 
+            hp, hc = np.array(data['hp']), np.array(data['hc'])
             amp, freq = np.array(data['amp']), np.array(data['freq'])
             phase = np.array(data['phase'])
             logging.debug(f'Phase shape: {phase.shape}')
@@ -1522,13 +1528,21 @@ class CustomDataset(Dataset):
             freq = (freq - np.mean(freq)) / np.std(freq)
             if self.returnattr:
                 attr = data.attrs if type(data) is not dict else data.get('attrs', {})
-                logging.debug(f"Attributes: {attr}")
-                # also return the loc of padding or truncation
-                return (np.vstack((amp, freq)).astype(np.float32), 
-                        np.array(labels).astype(np.float32), 
-                        np.array([amp_keys, freq_keys]).astype(np.float32), 
-                        np.array(phase).astype(np.float32),
-                        dict(attr))
+                if self.forwhat=='test':
+                    return (np.vstack((amp, freq)).astype(np.float32), 
+                            np.array(labels).astype(np.float32), 
+                            np.array([amp_keys, freq_keys]).astype(np.float32), 
+                            np.array(phase).astype(np.float32),
+                            np.vstack((hp, hc)).astype(np.float32),
+                            dict(attr))
+                else:
+                    logging.debug(f"Attributes: {attr}")
+                    # also return the loc of padding or truncation
+                    return (np.vstack((amp, freq)).astype(np.float32), 
+                            np.array(labels).astype(np.float32), 
+                            np.array([amp_keys, freq_keys]).astype(np.float32), 
+                            np.array(phase).astype(np.float32),
+                            dict(attr))
             return (np.vstack((amp, freq)).astype(np.float32), 
                     np.vstack((unnorm_amp, unnorm_freq)).astype(np.float32), 
                     np.array(labels).astype(np.float32), 
