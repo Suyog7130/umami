@@ -1853,7 +1853,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
         # Calculate mismatch for hplus and hcross
         mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon, delta_t=delta_t, f_lower=f_lower)
         mismatch_hcross[i] = calc_polarization_mismatch(hc_orig, hc_recon, delta_t=delta_t, f_lower=f_lower)
-        logging.debug(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
+        print(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
 
         # Calculate chirp mass
         m1, m2 = labels[i][0], labels[i][1]
