@@ -1634,7 +1634,7 @@ def calc_polarization_mismatch(hp_orig, hp_recon, resample_psd=True, delta_t=DEL
     hp_recon = np.asarray(hp_recon, dtype=np.float64)
     psd = psd.astype(np.float64)
     # assert len(hp_orig) == len(hp_recon), "Original and reconstructed waveforms must have the same length."
-    print(f'len(hp_orig), len(hp_recon), len(psd) = {len(hp_orig)}, {len(hp_recon)}, {len(psd)}')
+    logging.debug(f'len(hp_orig), len(hp_recon), len(psd) = {len(hp_orig)}, {len(hp_recon)}, {len(psd)}')
 
     hp_orig = TimeSeries(hp_orig, delta_t=delta_t)
     hp_recon = TimeSeries(hp_recon, delta_t=delta_t)
@@ -1691,11 +1691,13 @@ def _phase_from_freq_intervals(freq, dt, theta0=0.0):
     freq: length N-1, interpreted as interval frequency between samples.
     returns theta: length N
     """
-    print(f'freq shape: {freq.shape}, dt: {dt}, theta0: {theta0}')
+    logging.debug(f'freq shape: {freq.shape}, dt: {dt}, theta0: {theta0}')
     dtheta = 2 * np.pi * freq * dt              # length N-1
     theta = np.empty(freq.size+1, dtype=np.float64)
-    theta[0] = theta0
-    theta[1:] = theta0 + np.cumsum(dtheta)  # length N
+    # theta[0] = theta0
+    # theta[1:] = theta0 + np.cumsum(dtheta)  # length N
+    theta = np.cumsum(dtheta)  # length N-1
+    theta[0] = theta0  # Set the initial phase at the first sample
     return theta
 
 def polarizations_from_ampfreq(amp, freq, theta0=0.0):
@@ -1706,9 +1708,9 @@ def polarizations_from_ampfreq(amp, freq, theta0=0.0):
     Well, this certainly seems to be a mess now and it would definitely be
     better that I directly work with the phase and amplitude instead of the frequency.
     """
-    print(f'amp shape: {amp.shape}, freq shape: {freq.shape}')
+    logging.debug(f'amp shape: {amp.shape}, freq shape: {freq.shape}')
     theta = _phase_from_freq_intervals(freq, dt=1.0/SAMPLE_RATE, theta0=theta0)
-    print(f'amp shape: {amp.shape}, freq shape: {freq.shape}, phase shape: {theta.shape}')
+    logging.debug(f'amp shape: {amp.shape}, freq shape: {freq.shape}, phase shape: {theta.shape}')
 
     # NOTE: Unwantedly, I removed the first element from the 'amp' array in the 
     # `CustomDataset` when I calculated the amp-freq from hp-hc, to have the same
@@ -1717,10 +1719,10 @@ def polarizations_from_ampfreq(amp, freq, theta0=0.0):
     # the amplitude, since it is derived from the phase by differentiation. 
     # So, I need to make sure that the length of the 'amp' array is consistent with 
     # the length of the 'freq' array when I convert them back to hplus and hcross.
-    if len(amp) != len(theta):
-        # repeat the first element of the 'amp' array to make it the same length as the 'theta' array.
-        amp = np.insert(amp, 0, amp[0])
-        logging.debug(f'After inserting the first element, amp shape: {amp.shape}, theta shape: {theta.shape}')
+    # if len(amp) != len(theta):
+    #     # repeat the first element of the 'amp' array to make it the same length as the 'theta' array.
+    #     amp = np.insert(amp, 0, amp[0])
+    #     logging.debug(f'After inserting the first element, amp shape: {amp.shape}, theta shape: {theta.shape}')
     hplus = amp * np.cos(theta)
     hcross = amp * np.sin(theta)
     return hplus, hcross
@@ -1763,7 +1765,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
     keys = keys.cpu().numpy() if isinstance(keys, torch.Tensor) else keys
     phases = phases.cpu().numpy() if isinstance(phases, torch.Tensor) else phases
     strains = strains.cpu().numpy() if isinstance(strains, torch.Tensor) else strains
-    print(f"x shape: {x.shape}, reconst shape: {reconst.shape}, phases shape: {phases.shape}, strains shape: {strains.shape}")
+    logging.info(f"x shape: {x.shape}, reconst shape: {reconst.shape}, phases shape: {phases.shape}, strains shape: {strains.shape}")
 
     chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
     totalmasses = np.zeros((labels.shape[0], 1))  # Store total masses for each sample
@@ -1861,7 +1863,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
         # Calculate mismatch for hplus and hcross
         mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon, delta_t=delta_t, f_lower=f_lower)
         mismatch_hcross[i] = calc_polarization_mismatch(hc_orig, hc_recon, delta_t=delta_t, f_lower=f_lower)
-        print(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
+        logging.info(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
 
         # Calculate chirp mass
         m1, m2 = labels[i][0], labels[i][1]
