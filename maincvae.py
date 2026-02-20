@@ -207,7 +207,7 @@ def train(args):
     # Initialize Model
     # `num_classes` is the size of the labels.
     if args.fcutoff or args.aligned:
-        PRESET_ARRAY_SIZE = 8190
+        PRESET_ARRAY_SIZE = 8191
     model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2)).to(args.device)
     # Add a learning rate scheduler
     # Scheduler will adjust learning rate after every epoch
@@ -243,6 +243,15 @@ def train(args):
             netklloss.append(klloss.item())
         train_loss.append(loss.item())
 
+        # NOTE: Validation is performed after all training batches are done
+        # per epoch, so the validation loss can be lower than the training loss 
+        # for the last batch, since the model has already been updated by the 
+        # last training batch before validation. Training loss at the start of
+        # each epoch will be larger than the validation loss at the end of the 
+        # previous epoch, since the model is updated after validation and before 
+        # the next epoch starts. Thus, we have put the optimizer step after
+        # validation step, so that the training loss and validation loss are more
+        # comparable to each other.
         model.eval()
         with torch.no_grad():  # Disable gradient computation for validation
             # just reconstruct target and calculate diff
@@ -257,6 +266,11 @@ def train(args):
         optimizer.step()  # Do optimization step after validation
         scheduler.step()  # Update learning rate
         logging.debug(f"x shape: {x.shape}, labels shape: {labels.shape}, keys shape: {keys.shape}")
+
+        # Save model checkpoint at every epoch as backup
+        backup_model_path = f'../trained-models/model-backup-epoch{epoch}-{timestamp}'
+        torch.save(model.state_dict(), backup_model_path)
+        logging.info(f"Model backup saved at {backup_model_path}")
     
     savename = timestamp + '-' + str(args.epochs)
     if not os.path.isdir('../trained-models/'):

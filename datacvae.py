@@ -1397,6 +1397,8 @@ class CustomDataset(Dataset):
         keys = torch.from_numpy(keys).to(device=self.train_device, dtype=torch.float32)
         return (sample, label, keys)
     
+    # TODO: This function should not be necessary, if I have the correct length
+    # of waveforms are saved into a new HDF5 file.
     def _regenerate_sample(self, data, write_access=False):
         """
         Regenerate the sample with a lower fcutoff to ensure
@@ -1435,7 +1437,7 @@ class CustomDataset(Dataset):
 
         amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
         freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
-        phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
+        phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc, remove_start_phase=False)
 
         hp = np.array(hp, dtype=np.float32)
         hc = np.array(hc, dtype=np.float32)
@@ -1501,17 +1503,26 @@ class CustomDataset(Dataset):
             phase = np.array(data['phase'])
             logging.debug(f'Phase shape: {phase.shape}')
 
-            # freq array will be one less in length than amp
-            logging.debug(f'len(amp)={len(amp)}, len(freq)={len(freq)}')
-            if len(freq) < len(amp):
-                amp = amp[1:]
-            assert len(amp) == len(freq), "Amplitude and Frequency arrays must be of the same length."
+            # # freq array will be one less in length than amp
+            # logging.debug(f'len(amp)={len(amp)}, len(freq)={len(freq)}')
+            # if len(freq) < len(amp):
+            #     amp = amp[1:]
+            # assert len(amp) == len(freq), "Amplitude and Frequency arrays must be of the same length."
 
-            # check length for the phase
-            if len(phase) > len(freq):
-                phase = phase[1:]
-            # -- so these are now of length 8191!
-            assert len(phase) == len(freq) == len(amp)
+            # # check length for the phase
+            # if len(phase) > len(freq):
+            #     phase = phase[1:]
+            # # -- so these are now of length 8191!
+            # assert len(phase) == len(freq) == len(amp)
+
+            # -- By definition, freq array will be one element less,
+            # -- So, add a dummy value (repeated first element) to the 
+            # beginning of the freq array to make it of the same length 
+            # as amp and phase. Later on, this value will be removed when
+            # calculating the mismatch later on during testing.
+            freq = np.insert(freq, 0, freq[0])
+            assert len(amp) == len(freq) == len(phase), "Amplitude, Frequency, and Phase arrays must be of the same length after adjustment."
+            logging.debug(f'Adjusted len(amp)={len(amp)}, len(freq)={len(freq)}, len(phase)={len(phase)}')
 
             # Rescale the amp by 10^20
             logging.debug(f'Original Amp: {amp}')
