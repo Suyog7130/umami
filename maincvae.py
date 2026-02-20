@@ -1822,7 +1822,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
 
         # Rescale the reconstructed amplitude to match the original amplitude's maximum value, 
         # to avoid mismatch due to amplitude scaling differences.
-        recon_amp = recon_amp / 10**20
+        # recon_amp = recon_amp / 10**20
 
         # # check length of phase array
         # # NOTE: This happens because of the f-cutoff datacase!
@@ -1836,14 +1836,22 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
         # Combine original Amp/Freq to hplus/hcross
         # hp_orig = orig_amp * np.cos(phase)  # this is original phase
         # hc_orig = orig_amp * np.sin(phase)
-        hp_orig = strains[i][0]
-        hc_orig = strains[i][1]
+        hp_hdf = strains[i][0]
+        hc_hdf = strains[i][1]
         # print(max(hp_orig), max(hc_orig))
-        logging.debug(f"Original hplus shape: {hp_orig.shape}, hcross shape: {hc_orig.shape}")
+        logging.debug(f"Original hplus shape: {hp_hdf.shape}, hcross shape: {hc_hdf.shape}")
+
+        # -- NOTE: what we instead do now to remove the errors and
+        # -- and the possibility of retraining is to have the darn nice,
+        # -- same length amplitude and freq arrays for both the original
+        # -- and the model outputs, by using the shortened amplitude arrays
+        # -- and repeating the first element in them to make them the same
+        # -- length as the frequency arrays, and then use the `_phase_from_freq_intervals`.
+        phase_hdf = np.unwrap(np.arctan2(hp_hdf, hc_hdf))
+        hp_orig, hc_orig = polarizations_from_ampfreq(orig_amp, orig_freq, theta0=phase_hdf[0])
 
         # Calculate hplus/hcross for reconstructed data
-        phase_orig = np.unwrap(np.arctan2(hp_orig, hc_orig))
-        hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq, theta0=phase_orig[0])
+        hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq, theta0=phase_hdf[0])
         if num_saved_overplots is not None:
             if num_saved_overplots <= 10:
                 plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i],

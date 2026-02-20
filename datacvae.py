@@ -1510,6 +1510,7 @@ class CustomDataset(Dataset):
             # check length for the phase
             if len(phase) > len(freq):
                 phase = phase[1:]
+            # -- so these are now of length 8191!
             assert len(phase) == len(freq) == len(amp)
 
             # Rescale the amp by 10^20
