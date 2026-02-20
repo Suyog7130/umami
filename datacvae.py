@@ -1447,19 +1447,29 @@ class CustomDataset(Dataset):
 
         if write_access:
             data.attrs['f_lower'] = wfkwargs['f_lower']
-            data[-1]['truncated'] = extra['truncated']
-            data[-1]['truncated_len'] = extra['truncated_len']
-        if not write_access:
+            data.attrs['truncated'] = extra['truncated']
+            data.attrs['truncated_len'] = extra['truncated_len']
+        else:
             data = {}
-        data['hp'] = hp
-        data['hc'] = hc
-        data['amp'] = amp
-        data['phase'] = phase
-        data['freq'] = freq
-        data['attrs'] = wfkwargs
+        # Replace the content of the waveform with the new values
+        # Overwrite the datasets in the HDF5 group if write_access is True
+        if write_access:
+            for key, arr in zip(['hp', 'hc', 'amp', 'freq', 'phase'], [hp, hc, amp, freq, phase]):
+                if key in data:
+                    # Backup the old data before deletion
+                    data[f"{key}_backup"] = data[key][:]
+                    del data[key]
+                data.create_dataset(key, data=arr)
+            logging.info(f'Sample regenerated and updated in the HDF5 file successfully.')
+        else:
+            data['hp'] = hp
+            data['hc'] = hc
+            data['amp'] = amp
+            data['freq'] = freq
+            data['phase'] = phase
         return data
 
-    def read_strain_hdf(self, idx):
+    def read_strain_hdf(self, idx, write_access=False):
         """
         Read the strain data from the HDF5 file.
 
@@ -1480,7 +1490,11 @@ class CustomDataset(Dataset):
                 The keys as a 2D numpy array with shape (2, 2).
         """
         logging.debug(f'Reading strain data from HDF5 file {self.hdf_fname}.hdf for sample {idx}')
-        with h5py.File(self.hdf_fname+'.hdf', 'r') as hf:
+        if write_access:
+            open_mode = 'r+'
+        else:
+            open_mode = 'r'
+        with h5py.File(self.hdf_fname+'.hdf', open_mode) as hf:
             data = hf[f'sample{idx}']
             logging.debug(f'keys: {data.keys()}')
 
@@ -1496,7 +1510,7 @@ class CustomDataset(Dataset):
             # Regenerate sample if it is shorter duration, but is not padded!
             if len(data['amp']) < PRESET_ARRAY_SIZE and not data.attrs.get('padded', False):
                 logging.info(f"\nSample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. Regenerating!")
-                data = self._regenerate_sample(data)
+                data = self._regenerate_sample(data, write_access=write_access)
 
             hp, hc = np.array(data['hp']), np.array(data['hc'])
             amp, freq = np.array(data['amp']), np.array(data['freq'])
@@ -1618,7 +1632,7 @@ class CustomDataset(Dataset):
         if idx>self.nsamples:
             raise IndexError('Index out of range')
         if self.hdf_fname is not None:
-            return self.read_strain_hdf(idx)
+            return self.read_strain_hdf(idx, write_access=True)
         else:
             return self.make_strain(idx, custom_batch=custom_batch)
         

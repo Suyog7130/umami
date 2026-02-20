@@ -225,7 +225,7 @@ def train(args):
 
         # Train model for one Epoch
         for x, target, labels, keys in tqdm(training_loader, total=len(training_loader),
-                                    desc='batch'):
+                                    desc='Steps/Batchs'):
             """
             `x` is [freq, amp], `labels` is [m1,m2] etc. and
             `keys` is [[amp-mean,amp-var],[freq-mean,freq-var]]
