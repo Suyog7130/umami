@@ -164,9 +164,9 @@ def train(args):
         validhdf += '-f_cutoff'
     elif args.aligned:
         num_classes = 4  # m1, m2, spin1z, spin2z
-        trainhdf += '-100000-fcutoff-uniform-aligned'
+        trainhdf += '-100-fcutoff-uniform-aligned'
         # trainhdf += '-4e5-fcutoff-uniform-aligned'
-        validhdf += '-100000-fcutoff-uniform-aligned'
+        validhdf += '-100-fcutoff-uniform-aligned'
     
     if not os.path.isfile(trainhdf + '.hdf'):
         raise FileNotFoundError(f"Training data file not found: {trainhdf}.hdf")
@@ -222,6 +222,19 @@ def train(args):
     for epoch in tqdm(range(args.epochs), desc='Epoch'):
         model.train(True)
         # avg_loss = train_one_epoch(training_loader, epoch)
+
+        # -- Since, I want to rewrite the HDF file in the first epoch,
+        # -- after that is done, changes are only visible to the next
+        # -- epoch if the HDF file is properly closed after writing. 
+        # -- So, for epoch==1, I will first close the training_loader and
+        # -- validation_loader and then reopen them, so that the changes are 
+        # -- visible to the next epoch.
+        if epoch==1:
+            del training_loader
+            del validation_loader
+            torch.cuda.empty_cache()  # Clear GPU memory cache to free up memory
+            training_loader = CustomDataLoader(train_set, batch_size=args.batch_size, shuffle=True)
+            validation_loader = CustomDataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
 
         # Train model for one Epoch
         for x, target, labels, keys in tqdm(training_loader, total=len(training_loader),
