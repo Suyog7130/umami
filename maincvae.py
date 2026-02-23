@@ -229,7 +229,7 @@ def train(args):
         # -- So, for epoch==1, I will first close the training_loader and
         # -- validation_loader and then reopen them, so that the changes are 
         # -- visible to the next epoch.
-        if epoch==1:
+        if epoch==1 and 'regen' not in trainhdf:
             del training_loader
             del validation_loader
             torch.cuda.empty_cache()  # Clear GPU memory cache to free up memory
@@ -251,10 +251,21 @@ def train(args):
             # loss, reconloss, klloss = model.loss_function(x, x_recon, zvars)
             loss, reconloss, klloss = model.loss_function(target, x_recon, zvars)
             loss.backward()
+
             train_rloss.append(loss.item())
             netreconloss.append(reconloss.item())
             netklloss.append(klloss.item())
+
+            # -- perform optimization per batch/step
+            optimizer.step()
+
+        # -- update learning rate per epoch
+        scheduler.step()
+        logging.info(f"Epoch {epoch+1} completed. Learning rate adjusted to: {scheduler.get_last_lr()[0]:.2e}")
+        logging.debug(f"x shape: {x.shape}, labels shape: {labels.shape}, keys shape: {keys.shape}")
+
         train_loss.append(loss.item())
+        logging.info(f'Average training loss for epoch {epoch+1}: {loss.item():.4f}')
 
         # NOTE: Validation is performed after all training batches are done
         # per epoch, so the validation loss can be lower than the training loss 
@@ -276,10 +287,6 @@ def train(args):
             valid_loss.append(vloss.item())
         tqdm.write(f'Epoch {epoch+1} : train loss {loss.item()} & valid loss {vloss.item()}')
         
-        optimizer.step()  # Do optimization step after validation
-        scheduler.step()  # Update learning rate
-        logging.debug(f"x shape: {x.shape}, labels shape: {labels.shape}, keys shape: {keys.shape}")
-
         # Save model checkpoint at every epoch as backup
         backup_model_path = f'../trained-models/model-backup-epoch{epoch}-{timestamp}'
         torch.save(model.state_dict(), backup_model_path)
