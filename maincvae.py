@@ -164,9 +164,9 @@ def train(args):
         validhdf += '-f_cutoff'
     elif args.aligned:
         num_classes = 4  # m1, m2, spin1z, spin2z
-        trainhdf += '-100-fcutoff-uniform-aligned'
+        trainhdf += '-100000-fcutoff-uniform-aligned-regen'
         # trainhdf += '-4e5-fcutoff-uniform-aligned'
-        validhdf += '-100-fcutoff-uniform-aligned'
+        validhdf += '-100000-fcutoff-uniform-aligned-regen'
     
     if not os.path.isfile(trainhdf + '.hdf'):
         raise FileNotFoundError(f"Training data file not found: {trainhdf}.hdf")
@@ -238,7 +238,7 @@ def train(args):
 
         # Train model for one Epoch
         for x, target, labels, keys in tqdm(training_loader, total=len(training_loader),
-                                    desc='Steps/Batchs'):
+                                            desc='Steps/Batchs'):
             """
             `x` is [freq, amp], `labels` is [m1,m2] etc. and
             `keys` is [[amp-mean,amp-var],[freq-mean,freq-var]]
@@ -400,7 +400,7 @@ class Test:
         """
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
         num_classes = 4 if self.aligned else 2
         model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
                     key_shape=(2,2)).to(args.device)
@@ -1970,7 +1970,7 @@ if __name__ == "__main__":
                         help='whether to compare time complexity with standard waveform generation?')
     parser.add_argument('--generate', action='store_true', default=False,
                             help='whether to generate samples from trained model?')
-    parser.add_argument('--model', action='store', default='../trained-models/model-20250526_070915-1',
+    parser.add_argument('--model', action='store', default=None,
                         help='path to already trained model.')
     
     parser.add_argument('--today', action='store', default=None,

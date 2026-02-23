@@ -1275,6 +1275,7 @@ class CustomDataset(Dataset):
         self.nokeys = nokeys
         self.hdf_fname = hdf_fname
         self.returnattr = kwargs.get('returnattr', False)
+        self.unnorm_target = kwargs.get('unnorm_target', False)
 
         self.forwhat = forwhat
         if hdf_fname is None:
@@ -1575,10 +1576,17 @@ class CustomDataset(Dataset):
                             np.array([amp_keys, freq_keys]).astype(np.float32), 
                             np.array(phase).astype(np.float32),
                             dict(attr))
+            if self.unnorm_target:
+                return (np.vstack((amp, freq)).astype(np.float32), 
+                        np.vstack((unnorm_amp, unnorm_freq)).astype(np.float32), 
+                        np.array(labels).astype(np.float32), 
+                        np.array([amp_keys, freq_keys]).astype(np.float32))
+            logging.debug("Returning normalized amp and freq as both input and target since `unnorm_target` is False.")
             return (np.vstack((amp, freq)).astype(np.float32), 
-                    np.vstack((unnorm_amp, unnorm_freq)).astype(np.float32), 
+                    np.vstack((amp, freq)).astype(np.float32), # -- target are normed amp & freq.
                     np.array(labels).astype(np.float32), 
                     np.array([amp_keys, freq_keys]).astype(np.float32))
+            
         
     def collate_fn(self, batch):
         """ 
@@ -1638,6 +1646,9 @@ class CustomDataset(Dataset):
         if idx>self.nsamples:
             raise IndexError('Index out of range')
         if self.hdf_fname is not None:
+            if "regen" in self.hdf_fname:
+                logging.warning("No need to have write-access, since waveforms in HDF file are already regenerated.")
+                return self.read_strain_hdf(idx, write_access=False)
             return self.read_strain_hdf(idx, write_access=True)
         else:
             return self.make_strain(idx, custom_batch=custom_batch)
