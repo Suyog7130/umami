@@ -626,6 +626,8 @@ class CVAE(nn.Module):
         """
         z1_mean, z1_log_var, z2_mean, z2_log_var, \
             z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
+        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
+            z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         # TODO: What is the `reduction` thing doing here?

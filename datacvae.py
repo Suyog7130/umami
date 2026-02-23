@@ -906,7 +906,8 @@ def check_hdf(fname, noshow=False):
     Read the data from the HDF5 file.
     """
     with h5py.File(fname, 'r') as hf:
-        for key in hf.keys():
+        keys = list(hf.keys())[:10]
+        for key in keys:
             # print(key)
             grp = hf[key]
             print(dict(grp.attrs))
@@ -921,6 +922,7 @@ def check_hdf(fname, noshow=False):
                 if not noshow or len(ts) < 8190:
                     plt.plot(range(len(ts)), np.array(ts), label=name)
                     plt.legend()
+                    plt.savefig(f'checkhdf-{key}_{name}_plot.png', dpi=300)
                     plt.show()
     return hf
 
@@ -1647,7 +1649,7 @@ class CustomDataset(Dataset):
             raise IndexError('Index out of range')
         if self.hdf_fname is not None:
             if "regen" in self.hdf_fname:
-                logging.warning("No need to have write-access, since waveforms in HDF file are already regenerated.")
+                logging.debug("No need to have write-access, since waveforms in HDF file are already regenerated.")
                 return self.read_strain_hdf(idx, write_access=False)
             return self.read_strain_hdf(idx, write_access=True)
         else:
