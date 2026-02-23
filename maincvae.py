@@ -1575,6 +1575,10 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
         
         orig_amp, orig_freq = orig_data[0], orig_data[1]
         recon_amp, recon_freq = recon_data[0], recon_data[1]
+
+        # -- Remove first dummy element from frequency array!
+        orig_freq = orig_freq[1:]
+        recon_freq = recon_freq[1:]
         
         # Obtain the keys for normalization
         key = keys[i].reshape([2,2])
@@ -1728,10 +1732,10 @@ def _phase_from_freq_intervals(freq, dt, theta0=0.0):
     logging.debug(f'freq shape: {freq.shape}, dt: {dt}, theta0: {theta0}')
     dtheta = 2 * np.pi * freq * dt              # length N-1
     theta = np.empty(freq.size+1, dtype=np.float64)
-    # theta[0] = theta0
-    # theta[1:] = theta0 + np.cumsum(dtheta)  # length N
-    theta = np.cumsum(dtheta)  # length N-1
-    theta[0] = theta0  # Set the initial phase at the first sample
+    theta[0] = theta0
+    theta[1:] = theta0 + np.cumsum(dtheta)  # length N
+    # theta = np.cumsum(dtheta)  # length N-1
+    # theta[0] = theta0  # Set the initial phase at the first sample
     return theta
 
 def polarizations_from_ampfreq(amp, freq, theta0=0.0):
@@ -1838,6 +1842,10 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
 
         orig_amp, orig_freq = orig_data[0], orig_data[1]
         recon_amp, recon_freq = recon_data[0], recon_data[1]
+
+        # -- remove first dummy element from frequency array!
+        orig_freq = orig_freq[1:]
+        recon_freq = recon_freq[1:]
         
         # Obtain the keys for normalization
         key = keys[i].reshape([2,2])
