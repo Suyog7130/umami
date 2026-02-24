@@ -1595,7 +1595,7 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
         # Calculate mismatch
         mismatch_amp[i] = calculate_mismatch(orig_amp, recon_amp)
         mismatch_freq[i] = calculate_mismatch(orig_freq, recon_freq)
-        logging.debug(f"Mismatch for Amplitude: {mismatch_amp[i]}, Frequency: {mismatch_freq[i]}")
+        logging.info(f"Mismatch for Amplitude: {mismatch_amp[i]}, Frequency: {mismatch_freq[i]}")
 
         # Calculate chirp mass
         m1, m2 = labels[i][0], labels[i][1]
@@ -1820,7 +1820,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
             chi_eff = (m1 * chi1 + m2 * chi2) / (m1 + m2)
             chieffs[i] = chi_eff
 
-    # iterate over all the samples in one batch
+    # iterate over all the waveforms in one batch
     for i in range(x.shape[0]):
         logging.debug(f"Processing sample {i}")
         if reshape2orig:
@@ -1903,8 +1903,8 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
                 num_saved_overplots += 1
 
         # Calculate mismatch for hplus and hcross
-        mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon, delta_t=delta_t, f_lower=f_lower)
-        mismatch_hcross[i] = calc_polarization_mismatch(hc_orig, hc_recon, delta_t=delta_t, f_lower=f_lower)
+        mismatch_hplus[i] = calc_polarization_mismatch(hp_hdf, hp_recon, delta_t=delta_t, f_lower=f_lower)
+        mismatch_hcross[i] = calc_polarization_mismatch(hc_hdf, hc_recon, delta_t=delta_t, f_lower=f_lower)
         logging.info(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
 
         # Calculate chirp mass
