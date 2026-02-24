@@ -8,8 +8,11 @@ from torch.distributions import Normal, kl_divergence
 
 import matplotlib.pyplot as plt
 
-
+import numpy as np
 from datetime import datetime
+
+
+from utils import polarizations_from_ampfreq, calc_polarization_mismatch
 
 
 class XEncoder(nn.Module):
@@ -651,6 +654,95 @@ class CVAE(nn.Module):
         kl_loss = kl_loss_z1 + kl_loss_z2 + kl_loss_z1p + kl_loss_z2p + ll1 + ll2
         total_loss = recon_loss + beta * kl_loss
         return (total_loss, recon_loss, kl_loss)
+
+    def mismatch_loss_func(self, x, x_recon, zvars, strains, keys, attr):
+        """
+        Computes the mismatch loss between the reconstructed output and the keys.
+
+        Parameters:
+        -----------
+        x : torch.Tensor
+            Original input data.
+        x_recon : torch.Tensor
+            Reconstructed input data.
+        zvars : list of torch.Tensor
+            List of latent variable means and log variances.
+        keys : torch.Tensor
+            Normalization keys for the input amplitude and frequency data.
+
+        Returns:
+        --------
+        total_loss : torch.Tensor
+            Total loss combining reconstruction, latent losses, and mismatch loss.
+        """
+        z1_mean, z1_log_var, z2_mean, z2_log_var, \
+            z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
+        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
+            z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
+
+        # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
+        # TODO: What is the `reduction` thing doing here?
+        # NOTE: This is good to have since we also wnat to have the
+        # output amplitude and frequency series to have proper inspiral
+        # stage reconstructions. The mismatch loss on the other hand, will
+        # calculate the mismatch between the reconstructed and the original waveforms
+        # thereby making sure that the phase evolution and merger time freq
+        # changes are correctly captured by the model.
+        recon_loss = F.mse_loss(x_recon, x, reduction='mean')
+
+        # KL divergence for each latent space
+        kl_loss_z1 = self.latent_loss(z1_mean, z1_log_var)
+        kl_loss_z2 = self.latent_loss(z2_mean, z2_log_var)
+        kl_loss_z1p = self.latent_loss(z1p_mean, z1p_log_var)
+        kl_loss_z2p = self.latent_loss(z2p_mean, z2p_log_var)
+        # Print KL divergence losses for debugging
+        logging.info(f"KL Loss z1: {kl_loss_z1.item()}, KL Loss z2: {kl_loss_z2.item()}, "
+            f"KL Loss z1p: {kl_loss_z1p.item()}, KL Loss z2p: {kl_loss_z2p.item()}")
+
+        # Latent loss between encoders
+        ll1 = self.latent_loss_between_encoders(z1_mean, z1_log_var, z2_mean, z2_log_var)
+        ll2 = self.latent_loss_between_encoders(z1p_mean, z1p_log_var, z2p_mean, z2p_log_var)
+
+        # Total loss
+        beta = 0.1   # Weighting factor for KL divergence
+        kl_loss = kl_loss_z1 + kl_loss_z2 + kl_loss_z1p + kl_loss_z2p + ll1 + ll2
+
+        # -- Calculate the total mismatch loss for the batch
+        mmloss = 0.0
+        for i in range(x.size(0)):
+            delta_t = attr['delta_t'][i]
+            f_lower = attr['f_lower'][i]
+            # -- Get the reconstructed and original waveforms for the i-th sample
+            x_recon_i = x_recon[i].cpu().detach().numpy()
+            x_i = x[i].cpu().detach().numpy()
+            amp_recon, freq_recon = x_recon_i[0], x_recon_i[1]
+            amp_orig, freq_orig = x_i[0], x_i[1]
+            # -- denormalize amp and freq using the keys
+            key = keys[i].reshape([2,2])
+            amp_mean, amp_std = key[0][0], key[0][1]
+            freq_mean, freq_std = key[1][0], key[1][1]
+            amp_recon = (amp_recon * amp_std) + amp_mean
+            freq_recon = (freq_recon * freq_std) + freq_mean
+            amp_orig = (amp_orig * amp_std) + amp_mean
+            freq_orig = (freq_orig * freq_std) + freq_mean
+            # -- remove first dummy element from the frequency series
+            freq_recon = freq_recon[1:]
+            freq_orig = freq_orig[1:]
+            logging.debug(f'Shapes: amp_recon={amp_recon.shape}, freq_recon={freq_recon.shape}, amp_orig={amp_orig.shape}, freq_orig={freq_orig.shape}')
+            # -- calculate start phase / reference phase
+            hp_hdf = strains[i][0].cpu().detach().numpy()
+            hc_hdf = strains[i][1].cpu().detach().numpy()
+            phase_hdf = np.unwrap(np.arctan2(hc_hdf, hp_hdf))
+            # -- Calculate the mismatch loss for the i-th sample
+            hp_recon, hc_recon = polarizations_from_ampfreq(amp_recon, freq_recon, theta0=phase_hdf[0])
+            hp_orig, hc_orig = polarizations_from_ampfreq(amp_orig, freq_orig, theta0=phase_hdf[0])
+            mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t, f_lower)
+            mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t, f_lower)
+            logging.debug(f'Mismatch losses for sample {i}: mmloss_hp_i={mmloss_hp_i}, mmloss_hc_i={mmloss_hc_i}')
+            mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
+        logging.info(f'Total mismatch loss for the batch: {mmloss}')
+        total_loss = recon_loss + beta * kl_loss + mmloss
+        return (total_loss, recon_loss, kl_loss, mmloss)
     
 
 
@@ -658,13 +750,13 @@ class CVAE(nn.Module):
 def train(model, data_loader, optimizer, num_epochs=10):
     model.train()
     for epoch in range(num_epochs):
-        for x, labels, keys in data_loader:
+        for x, target, labels, keys, strains, attr in data_loader:
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
-            loss = model.loss_function(x, x_recon, zvars)
+            loss, reconloss, klloss, mmloss = model.mismatch_loss_func(x, x_recon, zvars, keys, strains=strains, attr=attr)
             loss.backward()
             optimizer.step()
-        logging.debug(f'Epoch {epoch + 1}, Loss: {loss.item()}')
+        logging.debug(f'Epoch {epoch + 1}, Loss: {loss.item()}, Recon Loss: {reconloss.item()}, KL Loss: {klloss.item()}, Mismatch Loss: {mmloss.item()}')
 
 # Assuming `data_loader` is defined and provides batches of (data, labels)
 # train(cvae, data_loader, optimizer)

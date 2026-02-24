@@ -1561,33 +1561,44 @@ class CustomDataset(Dataset):
             unnorm_amp, unnorm_freq = amp.copy(), freq.copy()
             amp = (amp - np.mean(amp)) / np.std(amp)
             freq = (freq - np.mean(freq)) / np.std(freq)
+
+            returned = {'normed': np.vstack((amp, freq)).astype(np.float32),
+                        'unnormed': np.vstack((unnorm_amp, unnorm_freq)).astype(np.float32),
+                        'labels': np.array(labels).astype(np.float32),
+                        'keys': np.array([amp_keys, freq_keys]).astype(np.float32), 
+                        'phase': np.array(phase).astype(np.float32),
+                        'strains': np.vstack((hp, hc)).astype(np.float32),
+                        'attr': dict(data.attrs) if type(data) is not dict else data.get('attrs', {})
+                        }
             if self.returnattr:
-                attr = data.attrs if type(data) is not dict else data.get('attrs', {})
                 if self.forwhat=='test':
-                    return (np.vstack((amp, freq)).astype(np.float32), 
-                            np.array(labels).astype(np.float32), 
-                            np.array([amp_keys, freq_keys]).astype(np.float32), 
-                            np.array(phase).astype(np.float32),
-                            np.vstack((hp, hc)).astype(np.float32),
-                            dict(attr))
+                    return (returned['normed'], 
+                            returned['labels'], 
+                            returned['keys'], 
+                            returned['phase'],
+                            returned['strains'],
+                            returned['attr'])
                 else:
-                    logging.debug(f"Attributes: {attr}")
+                    logging.debug(f"Attributes: {returned['attr']}")
                     # also return the loc of padding or truncation
-                    return (np.vstack((amp, freq)).astype(np.float32), 
-                            np.array(labels).astype(np.float32), 
-                            np.array([amp_keys, freq_keys]).astype(np.float32), 
-                            np.array(phase).astype(np.float32),
-                            dict(attr))
+                    return (returned['normed'], 
+                            returned['labels'], 
+                            returned['keys'], 
+                            returned['phase'],
+                            returned['attr'])
             if self.unnorm_target:
-                return (np.vstack((amp, freq)).astype(np.float32), 
-                        np.vstack((unnorm_amp, unnorm_freq)).astype(np.float32), 
-                        np.array(labels).astype(np.float32), 
-                        np.array([amp_keys, freq_keys]).astype(np.float32))
+                return (returned['normed'], 
+                        returned['unnormed'], 
+                        returned['labels'], 
+                        returned['keys'],
+                        returned['strains'])
             logging.debug("Returning normalized amp and freq as both input and target since `unnorm_target` is False.")
-            return (np.vstack((amp, freq)).astype(np.float32), 
-                    np.vstack((amp, freq)).astype(np.float32), # -- target are normed amp & freq.
-                    np.array(labels).astype(np.float32), 
-                    np.array([amp_keys, freq_keys]).astype(np.float32))
+            return (returned['normed'], 
+                    returned['normed'], # -- target are normed amp & freq.
+                    returned['labels'], 
+                    returned['keys'],
+                    returned['strains'],
+                    returned['attr'])
             
         
     def collate_fn(self, batch):
