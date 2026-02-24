@@ -368,7 +368,7 @@ def get_strain (m1, m2, approximant='IMRPhenomD', convert=False,
     hp_orig = hp
     hp = (hp - np.mean(hp)) / np.std(hp)
     hc = (hc - np.mean(hc)) / np.std(hc)
-    strains = np.vstack((hp,hc)).astype(np.float32)
+    strains = np.vstack((hp,hc)).astype(np.float64)
 
     # Plot normalized and original data side-by-side
     if plot:
@@ -442,8 +442,8 @@ def get_strain_convert(hp, hc, nokeys=False, plotfreqamp=False,
         plt.show()
 
     # Ensure freq and amp are numeric arrays
-    amp = np.array(amp.data, dtype=np.float32)
-    freq = np.array(freq.data, dtype=np.float32)
+    amp = np.array(amp.data, dtype=np.float64)
+    freq = np.array(freq.data, dtype=np.float64)
     logging.debug(f'shape of freq: {freq.shape}')
 
     # Rescale the amp by 10^20
@@ -468,7 +468,7 @@ def get_strain_convert(hp, hc, nokeys=False, plotfreqamp=False,
         freq = freq[diff:]
 
     # Stack freq and amp into strains
-    strains = np.vstack((amp, freq)).astype(np.float32)
+    strains = np.vstack((amp, freq)).astype(np.float64)
     logging.debug(strains.shape)
     logging.debug(amp.shape)
     logging.debug(freq.shape)
@@ -536,7 +536,7 @@ def get_fd_strain(m1, m2, approximant='IMRPhenomD', plot=False):
         plt.plot(sptilde.sample_frequencies, sptilde, '-')
         plt.show()
 
-    strains = np.vstack((sptilde, sctilde)).astype(np.float32)
+    strains = np.vstack((sptilde, sctilde)).astype(np.float64)
     spkeys = [np.mean(sptilde), np.var(sptilde)]
     sckeys = [np.mean(sctilde), np.var(sctilde)]
     return (strains, np.array([m1,m2]), np.array([spkeys, sckeys]))
@@ -632,11 +632,11 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
                             \n So truncating array from the left!')
         freq = freq[diff:]
 
-    hp = np.array(hp, dtype=np.float32)
-    hc = np.array(hc, dtype=np.float32)
-    amp = np.array(amp.data, dtype=np.float32)
-    phase = np.array(phase.data, dtype=np.float32)
-    freq = np.array(freq.data, dtype=np.float32)
+    hp = np.array(hp, dtype=np.float64)
+    hc = np.array(hc, dtype=np.float64)
+    amp = np.array(amp.data, dtype=np.float64)
+    phase = np.array(phase.data, dtype=np.float64)
+    freq = np.array(freq.data, dtype=np.float64)
 
     # # TODO: Check why rescaling the amp leads to HDF save error.
     # # Rescale the amp by 10^20
@@ -780,11 +780,11 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
     freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
 
-    hp = np.array(hp, dtype=np.float32)
-    hc = np.array(hc, dtype=np.float32)
-    amp = np.array(amp.data, dtype=np.float32)
-    phase = np.array(phase.data, dtype=np.float32)
-    freq = np.array(freq.data, dtype=np.float32)
+    hp = np.array(hp, dtype=np.float64)
+    hc = np.array(hc, dtype=np.float64)
+    amp = np.array(amp.data, dtype=np.float64)
+    phase = np.array(phase.data, dtype=np.float64)
+    freq = np.array(freq.data, dtype=np.float64)
 
     # append the extra info to the end of the data
     extra['truncated'] = extra.get('truncated', False)
@@ -1394,10 +1394,10 @@ class CustomDataset(Dataset):
         # strains, labels, keys = get_fd_strain(m1, m2, plot=True)
         logging.debug(f"Strains shape: {strains.shape}")
         logging.debug(f"Type of strains: {type(strains)}, Type of strains[0]: {type(strains[0])}, Type of strains[0][0]: {type(strains[0][0])}")
-        # use `torch.float32` dtype b'cuz mps only supports that!
-        sample = torch.from_numpy(strains).to(device=self.train_device, dtype=torch.float32)
-        label = torch.from_numpy(labels).to(device=self.train_device, dtype=torch.float32)
-        keys = torch.from_numpy(keys).to(device=self.train_device, dtype=torch.float32)
+        # use `torch.float64` dtype b'cuz mps only supports that!
+        sample = torch.from_numpy(strains).to(device=self.train_device, dtype=torch.float64)
+        label = torch.from_numpy(labels).to(device=self.train_device, dtype=torch.float64)
+        keys = torch.from_numpy(keys).to(device=self.train_device, dtype=torch.float64)
         return (sample, label, keys)
     
     # TODO: This function should not be necessary, if I have the correct length
@@ -1442,11 +1442,11 @@ class CustomDataset(Dataset):
         freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
         phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc, remove_start_phase=False)
 
-        hp = np.array(hp, dtype=np.float32)
-        hc = np.array(hc, dtype=np.float32)
-        amp = np.array(amp.data, dtype=np.float32)
-        phase = np.array(phase.data, dtype=np.float32)
-        freq = np.array(freq.data, dtype=np.float32)
+        hp = np.array(hp, dtype=np.float64)
+        hc = np.array(hc, dtype=np.float64)
+        amp = np.array(amp.data, dtype=np.float64)
+        phase = np.array(phase.data, dtype=np.float64)
+        freq = np.array(freq.data, dtype=np.float64)
 
         if write_access:
             data.attrs['f_lower'] = wfkwargs['f_lower']
@@ -1562,12 +1562,12 @@ class CustomDataset(Dataset):
             amp = (amp - np.mean(amp)) / np.std(amp)
             freq = (freq - np.mean(freq)) / np.std(freq)
 
-            out_normed = np.vstack((amp, freq)).astype(np.float32)
-            out_unnormed = np.vstack((unnorm_amp, unnorm_freq)).astype(np.float32)
-            out_labels = np.array(labels).astype(np.float32)
-            out_keys = np.array([amp_keys, freq_keys]).astype(np.float32)
-            out_phase = np.array(phase).astype(np.float32)
-            out_strains = np.vstack((hp, hc)).astype(np.float32)
+            out_normed = np.vstack((amp, freq)).astype(np.float64)
+            out_unnormed = np.vstack((unnorm_amp, unnorm_freq)).astype(np.float64)
+            out_labels = np.array(labels).astype(np.float64)
+            out_keys = np.array([amp_keys, freq_keys]).astype(np.float64)
+            out_phase = np.array(phase).astype(np.float64)
+            out_strains = np.vstack((hp, hc)).astype(np.float64)
             out_attr = data.attrs if type(data) is not dict else data.get('attrs', {})
             out_attr = dict(out_attr)  # Convert HDF5 attributes to a regular dictionary for easier handling
                         
@@ -1642,12 +1642,12 @@ class CustomDataset(Dataset):
 
             # Append tags to their respective lists
             for i, tag in enumerate(tags):
-                tag = torch.tensor(tag, device=self.train_device, dtype=torch.float32)
+                tag = torch.tensor(tag, device=self.train_device, dtype=torch.float64)
                 tag_batches[i].append(tag)
 
         # Convert lists of tags to tensors
         for i in range(len(tag_batches)):
-            tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=torch.float32)
+            tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=torch.float64)
 
         # Ensure all tensors are of the same shape
         if self.forwhat=='test' or self.returnattr:

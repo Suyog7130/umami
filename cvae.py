@@ -793,12 +793,12 @@ if __name__=='__main__':
     x, labels, keys = next(iter(data_loader))
     print(x.shape, labels.shape, keys.shape)
     cvae.train()
-    # cvae(x.to(dtype=torch.float32), labels.to(dtype=torch.float32), keys.to(dtype=torch.float32)),
-    #print( CVAE(input_shape=(2, 8191), num_classes=2, key_shape=(2,2))(x=x.to(dtype=torch.float32), labels=labels.to(dtype=torch.float32), keys=keys.to(dtype=torch.float32)),)
-    # CVAE(input_shape=(2, 8191), num_classes=2, key_shape=(2,2)).to(device)(x=x.to(dtype=torch.float32), labels=labels.to(dtype=torch.float32), keys=keys.to(dtype=torch.float32))
+    # cvae(x.to(dtype=torch.float64), labels.to(dtype=torch.float64), keys.to(dtype=torch.float64)),
+    #print( CVAE(input_shape=(2, 8191), num_classes=2, key_shape=(2,2))(x=x.to(dtype=torch.float64), labels=labels.to(dtype=torch.float64), keys=keys.to(dtype=torch.float64)),)
+    # CVAE(input_shape=(2, 8191), num_classes=2, key_shape=(2,2)).to(device)(x=x.to(dtype=torch.float64), labels=labels.to(dtype=torch.float64), keys=keys.to(dtype=torch.float64))
     print(type(cvae))
-    print(type(cvae(x=x.to(dtype=torch.float32), labels=labels.to(dtype=torch.float32), keys=keys.to(dtype=torch.float32))))
-    modelgraph = draw_graph(cvae, input_data=(x.to(dtype=torch.float32), labels.to(dtype=torch.float32), keys.to(dtype=torch.float32)),
+    print(type(cvae(x=x.to(dtype=torch.float64), labels=labels.to(dtype=torch.float64), keys=keys.to(dtype=torch.float64))))
+    modelgraph = draw_graph(cvae, input_data=(x.to(dtype=torch.float64), labels.to(dtype=torch.float64), keys.to(dtype=torch.float64)),
                         )
     modelgraph.visual_graph.render('cvae_model-'+timestamp, format='png', cleanup=True)
 

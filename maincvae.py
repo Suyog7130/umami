@@ -818,7 +818,7 @@ class Test:
                 labels = np.vstack((m1, m2, spin1z, spin2z)).T
             else:
                 labels = np.vstack((m1, m2)).T
-            labels = torch.tensor(labels, dtype=torch.float32).to(device)
+            labels = torch.tensor(labels, dtype=torch.float64).to(device)
             logging.info(f'Choosing to test sample size {labels.shape}')
 
             # Measure time taken by model to generate samples
@@ -889,7 +889,7 @@ class Test:
                 labels = np.vstack((m1, m2, spin1z, spin2z)).T
             else:
                 labels = np.vstack((m1, m2)).T
-            labels = torch.tensor(labels, dtype=torch.float32).to(device)
+            labels = torch.tensor(labels, dtype=torch.float64).to(device)
             logging.info(f'Choosing to test sample size {labels.shape}')
 
             massratios = q
@@ -1147,7 +1147,7 @@ class Test:
 
         if labels is not None:
             if not isinstance(labels, torch.Tensor):
-                labels = torch.tensor(labels, dtype=torch.float32)
+                labels = torch.tensor(labels, dtype=torch.float64)
 
             labels = labels.to(device)
             num_samples = labels.shape[0]
@@ -1166,11 +1166,11 @@ class Test:
                 if self.aligned:
                     random_labels = torch.tensor(np.random.uniform(
                         [5, 5, -0.9, -0.9], [75, 75, 0.9, 0.9], size=(num_samples, 4)),
-                        dtype=torch.float32).to(device)
+                        dtype=torch.float64).to(device)
                 else:
                     random_labels = torch.tensor(np.random.uniform(
                         [5, 5], [75, 75], size=(num_samples, 2)),
-                        dtype=torch.float32).to(device)
+                        dtype=torch.float64).to(device)
                 generated = model.decode(z1, z1p, random_labels)
         
         if nomismatch:
