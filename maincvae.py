@@ -211,6 +211,9 @@ def train(args):
     if args.fcutoff or args.aligned:
         PRESET_ARRAY_SIZE = 8191
     model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2)).to(args.device)
+    # -- convert model to double precision
+    model.to(torch.float64)
+
     # Add a learning rate scheduler
     # Scheduler will adjust learning rate after every epoch
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
