@@ -1562,43 +1562,44 @@ class CustomDataset(Dataset):
             amp = (amp - np.mean(amp)) / np.std(amp)
             freq = (freq - np.mean(freq)) / np.std(freq)
 
-            returned = {'normed': np.vstack((amp, freq)).astype(np.float32),
-                        'unnormed': np.vstack((unnorm_amp, unnorm_freq)).astype(np.float32),
-                        'labels': np.array(labels).astype(np.float32),
-                        'keys': np.array([amp_keys, freq_keys]).astype(np.float32), 
-                        'phase': np.array(phase).astype(np.float32),
-                        'strains': np.vstack((hp, hc)).astype(np.float32),
-                        'attr': dict(data.attrs) if type(data) is not dict else data.get('attrs', {})
-                        }
+            out_normed = np.vstack((amp, freq)).astype(np.float32)
+            out_unnormed = np.vstack((unnorm_amp, unnorm_freq)).astype(np.float32)
+            out_labels = np.array(labels).astype(np.float32)
+            out_keys = np.array([amp_keys, freq_keys]).astype(np.float32)
+            out_phase = np.array(phase).astype(np.float32)
+            out_strains = np.vstack((hp, hc)).astype(np.float32)
+            out_attr = data.attrs if type(data) is not dict else data.get('attrs', {})
+            out_attr = dict(out_attr)  # Convert HDF5 attributes to a regular dictionary for easier handling
+                        
             if self.returnattr:
                 if self.forwhat=='test':
-                    return (returned['normed'], 
-                            returned['labels'], 
-                            returned['keys'], 
-                            returned['phase'],
-                            returned['strains'],
-                            returned['attr'])
+                    return (out_normed,
+                            out_labels,
+                            out_keys,
+                            out_phase,
+                            out_strains,
+                            out_attr)
                 else:
-                    logging.debug(f"Attributes: {returned['attr']}")
+                    logging.debug(f"Attributes: {out_attr}")
                     # also return the loc of padding or truncation
-                    return (returned['normed'], 
-                            returned['labels'], 
-                            returned['keys'], 
-                            returned['phase'],
-                            returned['attr'])
+                    return (out_normed, 
+                            out_normed, # -- target are normed amp & freq.
+                            out_labels, 
+                            out_keys,
+                            out_strains,
+                            out_attr)
             if self.unnorm_target:
-                return (returned['normed'], 
-                        returned['unnormed'], 
-                        returned['labels'], 
-                        returned['keys'],
-                        returned['strains'])
+                return (out_normed, 
+                        out_unnormed, 
+                        out_labels, 
+                        out_keys,
+                        out_strains)
             logging.debug("Returning normalized amp and freq as both input and target since `unnorm_target` is False.")
-            return (returned['normed'], 
-                    returned['normed'], # -- target are normed amp & freq.
-                    returned['labels'], 
-                    returned['keys'],
-                    returned['strains'],
-                    returned['attr'])
+            return (out_normed, 
+                    out_normed, # -- target are normed amp & freq.
+                    out_labels, 
+                    out_keys,
+                    out_strains)
             
         
     def collate_fn(self, batch):
@@ -1617,7 +1618,7 @@ class CustomDataset(Dataset):
         logging.debug(f'Batch size: {len(batch)}')
 
         # Determine the maximum number of tags in the batch
-        if self.forwhat=='test':
+        if self.forwhat=='test' or self.returnattr:
             max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the feature dict
         else:
             max_tags = max(len(sample) for sample in batch)
@@ -1629,7 +1630,7 @@ class CustomDataset(Dataset):
         for sample in batch:
 
             # Append the feature dict to the batch dict
-            if self.forwhat=='test':
+            if self.forwhat=='test' or self.returnattr:
                 *tags, feat_dict = sample
                 logging.debug(f'Number of tags: {len(tags)}')
                 for key, value in feat_dict.items():
@@ -1649,7 +1650,7 @@ class CustomDataset(Dataset):
             tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=torch.float32)
 
         # Ensure all tensors are of the same shape
-        if self.forwhat=='test':
+        if self.forwhat=='test' or self.returnattr:
             return (*tag_batches, feat_dict_batch)
         return tag_batches
 

@@ -184,10 +184,10 @@ def train(args):
         raise RuntimeError(f"Could not open {trainhdf}.hdf. The file may be corrupted.")
 
     logging.info(f'Reading training data from {trainhdf}.hdf')
-    train_set = CustomDataset(forwhat='train', approximant=args.approximant,
+    train_set = CustomDataset(forwhat='train', approximant=args.approximant, returnattr=True,
                             convert=args.convert, hdf_fname=trainhdf, train_device=args.device)
     logging.info(f'Reading validation data from {validhdf}.hdf')
-    valid_set = CustomDataset(forwhat='valid', approximant=args.approximant,
+    valid_set = CustomDataset(forwhat='valid', approximant=args.approximant, returnattr=True,
                             convert=args.convert, hdf_fname=validhdf, train_device=args.device)
     # logging.info(f"Train set size: {len(train_set)}")
     # logging.info(f"Validation set size: {len(valid_set)}")
@@ -252,7 +252,7 @@ def train(args):
             
             # TODO: have it such that the training target are unnormalized waveforms!
             # loss, reconloss, klloss = model.loss_function(x, x_recon, zvars)
-            loss, reconloss, klloss, mmloss = model.mismatch_loss_func(target, x_recon, zvars, keys, strains, attr)
+            loss, reconloss, klloss, mmloss = model.mismatch_loss_func(target, x_recon, zvars, strains=strains, keys=keys, attr=attr)
             loss.backward()
 
             train_rloss.append(loss.item())
@@ -286,7 +286,7 @@ def train(args):
             for vx, target, vlabels, vkeys, vstrains, vattr in tqdm(validation_loader, desc='val-batch'):
                 vx, target, vlabels, vkeys = vx.to(args.device), target.to(args.device), vlabels.to(args.device), vkeys.to(args.device)
                 vx_recon, vzvars = model(vx, vlabels, vkeys)
-                vloss, _reconloss, _klloss, _mmloss = model.mismatch_loss_func(target, vx_recon, vzvars, vkeys, vstrains, vattr)
+                vloss, _reconloss, _klloss, _mmloss = model.mismatch_loss_func(target, vx_recon, vzvars, strains=vstrains, keys=vkeys, attr=vattr)
                 valid_rloss.append(vloss.item())
             valid_loss.append(vloss.item())
         tqdm.write(f'Epoch {epoch+1} : train loss {loss.item()} & valid loss {vloss.item()}')

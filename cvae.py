@@ -718,7 +718,7 @@ class CVAE(nn.Module):
             amp_recon, freq_recon = x_recon_i[0], x_recon_i[1]
             amp_orig, freq_orig = x_i[0], x_i[1]
             # -- denormalize amp and freq using the keys
-            key = keys[i].reshape([2,2])
+            key = keys[i].reshape([2,2]).cpu().detach().numpy()
             amp_mean, amp_std = key[0][0], key[0][1]
             freq_mean, freq_std = key[1][0], key[1][1]
             amp_recon = (amp_recon * amp_std) + amp_mean
@@ -736,8 +736,8 @@ class CVAE(nn.Module):
             # -- Calculate the mismatch loss for the i-th sample
             hp_recon, hc_recon = polarizations_from_ampfreq(amp_recon, freq_recon, theta0=phase_hdf[0])
             hp_orig, hc_orig = polarizations_from_ampfreq(amp_orig, freq_orig, theta0=phase_hdf[0])
-            mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t, f_lower)
-            mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t, f_lower)
+            mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t=delta_t, f_lower=f_lower)
+            mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=delta_t, f_lower=f_lower)
             logging.debug(f'Mismatch losses for sample {i}: mmloss_hp_i={mmloss_hp_i}, mmloss_hc_i={mmloss_hc_i}')
             mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
         logging.info(f'Total mismatch loss for the batch: {mmloss}')
