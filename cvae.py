@@ -707,39 +707,75 @@ class CVAE(nn.Module):
         beta = 0.1   # Weighting factor for KL divergence
         kl_loss = kl_loss_z1 + kl_loss_z2 + kl_loss_z1p + kl_loss_z2p + ll1 + ll2
 
-        # -- Calculate the total mismatch loss for the batch
+
+        # # -- Calculate the total mismatch loss for the batch
+        # mmloss = 0.0
+        # for i in range(x.size(0)):
+        #     delta_t = attr['delta_t'][i]
+        #     f_lower = attr['f_lower'][i]
+        #     # -- Get the reconstructed and original waveforms for the i-th sample
+        #     x_recon_i = x_recon[i].cpu().detach().numpy()
+        #     x_i = x[i].cpu().detach().numpy()
+        #     amp_recon, freq_recon = x_recon_i[0], x_recon_i[1]
+        #     amp_orig, freq_orig = x_i[0], x_i[1]
+        #     # -- denormalize amp and freq using the keys
+        #     key = keys[i].reshape([2,2]).cpu().detach().numpy()
+        #     amp_mean, amp_std = key[0][0], key[0][1]
+        #     freq_mean, freq_std = key[1][0], key[1][1]
+        #     amp_recon = (amp_recon * amp_std) + amp_mean
+        #     freq_recon = (freq_recon * freq_std) + freq_mean
+        #     amp_orig = (amp_orig * amp_std) + amp_mean
+        #     freq_orig = (freq_orig * freq_std) + freq_mean
+        #     # -- remove first dummy element from the frequency series
+        #     freq_recon = freq_recon[1:]
+        #     freq_orig = freq_orig[1:]
+        #     logging.debug(f'Shapes: amp_recon={amp_recon.shape}, freq_recon={freq_recon.shape}, amp_orig={amp_orig.shape}, freq_orig={freq_orig.shape}')
+        #     # -- calculate start phase / reference phase
+        #     hp_hdf = strains[i][0].cpu().detach().numpy()
+        #     hc_hdf = strains[i][1].cpu().detach().numpy()
+        #     phase_hdf = np.unwrap(np.arctan2(hc_hdf, hp_hdf))
+        #     # -- Calculate the mismatch loss for the i-th sample
+        #     hp_recon, hc_recon = polarizations_from_ampfreq(amp_recon, freq_recon, theta0=phase_hdf[0])
+        #     hp_orig, hc_orig = polarizations_from_ampfreq(amp_orig, freq_orig, theta0=phase_hdf[0])
+        #     mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t=delta_t, f_lower=f_lower)
+        #     mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=delta_t, f_lower=f_lower)
+        #     logging.debug(f'Mismatch losses for sample {i}: mmloss_hp_i={mmloss_hp_i}, mmloss_hc_i={mmloss_hc_i}')
+        #     mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
+
+        # -- Calculate the total mismatch loss for the batch (vectorized)
+        amp_recon = x_recon[:, 0].cpu().detach().numpy()
+        freq_recon = x_recon[:, 1].cpu().detach().numpy()
+        amp_orig = x[:, 0].cpu().detach().numpy()
+        freq_orig = x[:, 1].cpu().detach().numpy()
+        
+        # -- Denormalize using keys (vectorized)
+        keys_reshaped = keys.reshape(-1, 2, 2).cpu().detach().numpy()
+        amp_mean, amp_std = keys_reshaped[:, 0, 0], keys_reshaped[:, 0, 1]
+        freq_mean, freq_std = keys_reshaped[:, 1, 0], keys_reshaped[:, 1, 1]
+        
+        amp_recon = (amp_recon * amp_std[:, np.newaxis]) + amp_mean[:, np.newaxis]
+        freq_recon = (freq_recon * freq_std[:, np.newaxis]) + freq_mean[:, np.newaxis]
+        amp_orig = (amp_orig * amp_std[:, np.newaxis]) + amp_mean[:, np.newaxis]
+        freq_orig = (freq_orig * freq_std[:, np.newaxis]) + freq_mean[:, np.newaxis]
+        
+        # -- Remove first dummy element from frequency series
+        freq_recon = freq_recon[:, 1:]
+        freq_orig = freq_orig[:, 1:]
+        
+        # -- Calculate phase (vectorized)
+        hp_hdf = strains[:, 0].cpu().detach().numpy()
+        hc_hdf = strains[:, 1].cpu().detach().numpy()
+        phase_hdf = np.unwrap(np.arctan2(hc_hdf, hp_hdf), axis=1)
+        
+        # -- Calculate mismatch loss (vectorized)
         mmloss = 0.0
         for i in range(x.size(0)):
-            delta_t = attr['delta_t'][i]
-            f_lower = attr['f_lower'][i]
-            # -- Get the reconstructed and original waveforms for the i-th sample
-            x_recon_i = x_recon[i].cpu().detach().numpy()
-            x_i = x[i].cpu().detach().numpy()
-            amp_recon, freq_recon = x_recon_i[0], x_recon_i[1]
-            amp_orig, freq_orig = x_i[0], x_i[1]
-            # -- denormalize amp and freq using the keys
-            key = keys[i].reshape([2,2]).cpu().detach().numpy()
-            amp_mean, amp_std = key[0][0], key[0][1]
-            freq_mean, freq_std = key[1][0], key[1][1]
-            amp_recon = (amp_recon * amp_std) + amp_mean
-            freq_recon = (freq_recon * freq_std) + freq_mean
-            amp_orig = (amp_orig * amp_std) + amp_mean
-            freq_orig = (freq_orig * freq_std) + freq_mean
-            # -- remove first dummy element from the frequency series
-            freq_recon = freq_recon[1:]
-            freq_orig = freq_orig[1:]
-            logging.debug(f'Shapes: amp_recon={amp_recon.shape}, freq_recon={freq_recon.shape}, amp_orig={amp_orig.shape}, freq_orig={freq_orig.shape}')
-            # -- calculate start phase / reference phase
-            hp_hdf = strains[i][0].cpu().detach().numpy()
-            hc_hdf = strains[i][1].cpu().detach().numpy()
-            phase_hdf = np.unwrap(np.arctan2(hc_hdf, hp_hdf))
-            # -- Calculate the mismatch loss for the i-th sample
-            hp_recon, hc_recon = polarizations_from_ampfreq(amp_recon, freq_recon, theta0=phase_hdf[0])
-            hp_orig, hc_orig = polarizations_from_ampfreq(amp_orig, freq_orig, theta0=phase_hdf[0])
-            mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t=delta_t, f_lower=f_lower)
-            mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=delta_t, f_lower=f_lower)
-            logging.debug(f'Mismatch losses for sample {i}: mmloss_hp_i={mmloss_hp_i}, mmloss_hc_i={mmloss_hc_i}')
+            hp_recon, hc_recon = polarizations_from_ampfreq(amp_recon[i], freq_recon[i], theta0=phase_hdf[i, 0])
+            hp_orig, hc_orig = polarizations_from_ampfreq(amp_orig[i], freq_orig[i], theta0=phase_hdf[i, 0])
+            mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
+            mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
             mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
+        
         logging.info(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + beta * kl_loss + mmloss
         return (total_loss, recon_loss, kl_loss, mmloss)

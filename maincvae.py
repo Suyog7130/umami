@@ -302,7 +302,7 @@ def train(args):
     savename = timestamp + '-' + str(args.epochs)
     if not os.path.isdir('../trained-models/'):
         os.makedirs('../trained-models/')
-    model_path = f'../trained-models/model-{savename}'
+    model_path = f'../trained-models/model-mmloss-{savename}'
     if not args.nosave:
         if not os.path.isdir(savedir):
             os.makedirs(savedir)
