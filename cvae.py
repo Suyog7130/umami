@@ -779,6 +779,67 @@ class CVAE(nn.Module):
         logging.info(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + beta * kl_loss + mmloss
         return (total_loss, recon_loss, kl_loss, mmloss)
+
+
+class CAE(CVAE):
+    """
+    Conditional Autoencoder (CAE) implementation that inherits from CVAE.
+    This model is a simplified version of the CVAE, the latent space is not 
+    regularized to follow a Gaussian distribution using the reparametrization
+    trick. The CAE loss function still includes the KL divergence term to
+    facilitate waveform generation beyond the discrete training set, but the 
+    forward pass only takes in the mean of the latent space distribution given
+    as an output of the encoder, and not the reparametrized latent variable. 
+    This means that the model is now deterministic and not limited by the noise
+    floor due to the reparametrization trick, but it can still generate waveforms that
+    are not in the training set due to the KL divergence loss term, which we are
+    minimizing in the loss function. Validation is also performed at the end of
+    each epoch, which generalizes the model beyond the training set and ensures that 
+    the model is not just memorizing the training data.
+    The weightage for the KL divergence will only be 10%.
+
+    Attributes:
+    -----------
+    Inherits all attributes from CVAE.
+
+    Methods:
+    --------
+    forward(x, labels, keys):
+        Overrides the forward method to remove the reparameterization step.
+    """
+    def forward(self, x, labels, keys):
+        """
+        Overrides the forward method to remove the reparameterization step.
+        The latent space representations are directly taken as the mean outputs
+        from the encoders without sampling, making the model deterministic.
+        However, we still calculate the KL divergence loss in the loss function to encourage
+        the latent space to follow a Gaussian distribution, which allows for generalization
+        beyond the training set. The weightage for the KL divergence will only be 10%.
+        """
+        logging.debug(keys.shape)
+        logging.debug(f'labels.shape={labels.shape}')
+        # print(keys)
+        z1_mean, z1_log_var = self.encode_label_for_x(labels)
+        z2_mean, z2_log_var = self.encode_x(x, labels)
+        check_for_nan_inf(z1_mean, 'z1_mean')
+        check_for_nan_inf(z2_mean, 'z2_mean')
+        check_for_nan_inf(z1_log_var, 'z1_log_var')
+        check_for_nan_inf(z2_log_var, 'z2_log_var')
+        # print("z1_mean:", z1_mean)
+        # print("z1_log_var:", z1_log_var)
+        # print("z2_mean:", z2_mean)
+        # print("z2_log_var:", z2_log_var)
+        z1p_mean, z1p_log_var = self.encode_label_for_key(labels)
+        z2p_mean, z2p_log_var = self.encode_key(keys, labels)
+        check_for_nan_inf(z1p_mean, 'z1p_mean')
+        check_for_nan_inf(z2p_mean, 'z2p_mean')
+        check_for_nan_inf(z1p_log_var, 'z1p_log_var')
+        check_for_nan_inf(z2p_log_var, 'z2p_log_var')
+        x_recon = self.decode(z2_mean, z2p_mean, labels)
+        logging.debug(f'Encoded input: z2_mean={z2_mean}, z2p_mean={z2p_mean}')
+        zvars = [z1_mean, z1_log_var, z2_mean, z2_log_var, \
+                 z1p_mean, z1p_log_var, z2p_mean, z2p_log_var]
+        return (x_recon, zvars)
     
 
 

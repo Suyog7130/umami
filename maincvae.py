@@ -67,7 +67,7 @@ from plotutils import putils
 
 from datacvae import CustomDataset, CustomDataLoader
 from datacvae import PRESET_ARRAY_SIZE, SAMPLE_RATE, DELTA_T, f_lower, sample_len
-from cvae import CVAE
+from cvae import CVAE, CAE
 
 from utils import polarizations_from_ampfreq, calc_polarization_mismatch
 
@@ -210,7 +210,11 @@ def train(args):
     # `num_classes` is the size of the labels.
     if args.fcutoff or args.aligned:
         PRESET_ARRAY_SIZE = 8191
-    model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2)).to(args.device)
+    if args.modeltype=='cae':
+        model = CAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2))
+    else:
+        model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2))
+    model.to(device)
     # -- convert model to double precision
     model.to(torch.float64)
 
@@ -373,6 +377,7 @@ class Test:
             self.testhdf += '-f_cutoff'
         self.batch_size = args.batch_size
         self.device = args.device
+        self.modeltype = args.modeltype
 
         if not args.time_complexity and not args.time_compare:
             self.test_loader = self.setdataloader()
@@ -418,10 +423,12 @@ class Test:
         # Load the trained model
         preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
         num_classes = 4 if self.aligned else 2
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                    key_shape=(2,2)).to(args.device)
-        model.load_state_dict(torch.load(self.model_path, map_location=device))
-        model.to(device)
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2))
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2))
+        model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+        model.to(self.device)
         model.to(torch.float64)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
@@ -1868,6 +1875,8 @@ if __name__ == "__main__":
                             help='whether to generate samples from trained model?')
     parser.add_argument('--model', action='store', default=None,
                         help='path to already trained model.')
+    parser.add_argument('--modeltype', action='store', default='cvae',
+                        help='type of model to use, e.g., cvae or cae (default=%(default)s)')
     
     parser.add_argument('--today', action='store', default=None,
                         help='Date of the model we are currently using, in YYYYMMDD. \
