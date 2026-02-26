@@ -422,6 +422,7 @@ class Test:
                     key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
         model.to(device)
+        model.to(torch.float64)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 

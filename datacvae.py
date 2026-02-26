@@ -1510,16 +1510,17 @@ class CustomDataset(Dataset):
                 labels.append(spin2z)
             # logging.debug(f'Labels: {labels}')
 
-            # Regenerate sample if it is shorter duration, but is not padded!
-            # NOTE: Once this is checked, since I also write the data into the
-            # HDF file, the next epoch onwards, this check will not be necessary, 
-            # since the data will already have been regenerated. However, if the
-            # HDF file is not closed properly after writing, the changes may not be saved, 
-            # so this check will still be necessary for the next epoch, until the file is
-            # properly closed and the changes are saved.
-            if len(data['amp']) < PRESET_ARRAY_SIZE and not data.attrs.get('padded', False):
-                logging.info(f"\nSample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. Regenerating!")
-                data = self._regenerate_sample(data, write_access=write_access)
+            if not "regen" in self.hdf_fname:
+                # Regenerate sample if it is shorter duration, but is not padded!
+                # NOTE: Once this is checked, since I also write the data into the
+                # HDF file, the next epoch onwards, this check will not be necessary, 
+                # since the data will already have been regenerated. However, if the
+                # HDF file is not closed properly after writing, the changes may not be saved, 
+                # so this check will still be necessary for the next epoch, until the file is
+                # properly closed and the changes are saved.
+                if len(data['amp']) < PRESET_ARRAY_SIZE and not data.attrs.get('padded', False):
+                    logging.info(f"\nSample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. Regenerating!")
+                    data = self._regenerate_sample(data, write_access=write_access)
 
             hp, hc = np.array(data['hp']), np.array(data['hc'])
             amp, freq = np.array(data['amp']), np.array(data['freq'])
@@ -1600,7 +1601,6 @@ class CustomDataset(Dataset):
                     out_labels, 
                     out_keys,
                     out_strains)
-            
         
     def collate_fn(self, batch):
         """ 
@@ -1653,7 +1653,6 @@ class CustomDataset(Dataset):
         if self.forwhat=='test' or self.returnattr:
             return (*tag_batches, feat_dict_batch)
         return tag_batches
-
 
     def __getitem__(self, idx, custom_batch=None):
         # logging.debug(idx)
