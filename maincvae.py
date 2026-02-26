@@ -791,23 +791,29 @@ class Test:
         plt.close()
         print("All UQ tests completed.")
 
-    def test_timecomplexity(self, num=100):
+    def test_timecomplexity(self, num=1e6):
         """
         Test the time complexity of the model for generating a 1-10e4 ish number of samples.
         This is useful for understanding the efficiency of the model in real-time
         applications.
         """
         # Nruns = [1, 10, 50, 100, 500, 1e3, 5e3, 1e4]
-        Nruns = np.logspace(0, 5, num=num, dtype=int)
+        # Nruns = np.logspace(0, 5, num=num, dtype=int)
         # Nruns = [int(n) for n in [1, 10, 50, 100, 500, 1e3, 5e3, 1e4, 5e4]]
+        Nruns = np.arange(1,num+1)
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                    key_shape=(2,2)).to(args.device)
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2)).to(args.device)
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
         model.to(device)
+        model.to(torch.float64)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
@@ -1929,8 +1935,8 @@ if __name__ == "__main__":
         if args.test_uq:
             Test(args).test_uq()
         elif args.time_complexity:
-            for n in [100, 500, 1000]:
-                Test(args).test_timecomplexity(n)
+            # for n in [100, 500, 1000]:
+            Test(args).test_timecomplexity()
         elif args.time_compare:
             if args.fname is not None:
                 Test(args).plot_time_complexity_compare(fname=args.fname)
