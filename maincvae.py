@@ -211,7 +211,8 @@ def train(args):
     if args.fcutoff or args.aligned:
         PRESET_ARRAY_SIZE = 8191
     if args.modeltype=='cae':
-        model = CAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2))
+        model = CAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2),
+                    latent_dim_x=32, latent_dim_key=2)
     else:
         model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2))
     model.to(device)
@@ -221,7 +222,13 @@ def train(args):
     # Add a learning rate scheduler
     # Scheduler will adjust learning rate after every epoch
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 
+                mode='min', 
+                factor=0.5, 
+                patience=2, 
+                threshold=1e-7)
     logging.info('Model Initialized')
 
     logging.info(f'Starting Training with: {args}')
@@ -306,7 +313,8 @@ def train(args):
     savename = timestamp + '-' + str(args.epochs)
     if not os.path.isdir('../trained-models/'):
         os.makedirs('../trained-models/')
-    model_path = f'../trained-models/model-mmloss-{savename}'
+    model_path = f'../trained-models/model-mmloss-'
+    model_path += savename
     if not args.nosave:
         if not os.path.isdir(savedir):
             os.makedirs(savedir)
