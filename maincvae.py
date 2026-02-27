@@ -424,8 +424,10 @@ class Test:
         preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
         num_classes = 4 if self.aligned else 2
         if self.modeltype=='cae':
+            logging.info(f'Using model type: CAE with num_classes={num_classes} and preset_array_size={preset_array_size}')
             model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2))
         else:
+            logging.info(f'Using model type: CVAE with num_classes={num_classes} and preset_array_size={preset_array_size}')
             model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2))
         model.load_state_dict(torch.load(self.model_path, map_location=self.device))
         model.to(self.device)
