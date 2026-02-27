@@ -462,9 +462,12 @@ class Test:
                 # Use the label-conditioned encoders and decoder to generate data
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
-                z1 = model.reparameterize(z1_mean, z1_log_var)
-                z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                reconst = model.decode(z1, z1p, labels)
+                if self.modeltype=='cae':
+                    reconst = model.decode(z1_mean, z1p_mean, labels)
+                else:
+                    z1 = model.reparameterize(z1_mean, z1_log_var)
+                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    reconst = model.decode(z1, z1p, labels)
             logging.debug(f"x shape: {x.shape}, reconst shape: {reconst.shape}, keys shape: {keys.shape}")
             if not self.aligned:
                 logging.info('Test for current batch completed. Removing zero padding if any.')
@@ -702,11 +705,16 @@ class Test:
         Nruns = 1000
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2)).to(args.device)
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
                     key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(torch.float64)
         model.to(device)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
@@ -737,9 +745,12 @@ class Test:
                 # Use the label-conditioned encoders and decoder to generate data
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
-                z1 = model.reparameterize(z1_mean, z1_log_var)
-                z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                reconst = model.decode(z1, z1p, labels)
+                if self.modeltype=='cae':
+                    reconst = model.decode(z1_mean, z1p_mean, labels)
+                else:
+                    z1 = model.reparameterize(z1_mean, z1_log_var)
+                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    reconst = model.decode(z1, z1p, labels)
                 
                 if not self.aligned:
                     logging.info('Test for current batch completed. Removing zero padding if any.')
@@ -798,7 +809,7 @@ class Test:
         plt.close()
         print("All UQ tests completed.")
 
-    def test_timecomplexity(self, num=1e6):
+    def test_timecomplexity(self, num=int(1e6)):
         """
         Test the time complexity of the model for generating a 1-10e4 ish number of samples.
         This is useful for understanding the efficiency of the model in real-time
@@ -844,13 +855,20 @@ class Test:
                 # Use the label-conditioned encoders and decoder to generate data
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
-                z1 = model.reparameterize(z1_mean, z1_log_var)
-                z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                reconst = model.decode(z1, z1p, labels)
+                if self.modeltype=='cae':
+                    reconst = model.decode(z1_mean, z1p_mean, labels)
+                else:
+                    z1 = model.reparameterize(z1_mean, z1_log_var)
+                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    reconst = model.decode(z1, z1p, labels)
             end_time = time.time()
             elapsed_time = end_time - start_time
             times.append(elapsed_time)
             logging.info(f'Time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
+
+        # Save the time complexity results to a CSV file
+        df_time = pd.DataFrame({'num_samples': Nruns, 'time_seconds': times})
+        df_time.to_csv(self.savedir + 'timecomplexity_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv', index=False)
 
         # Plot the time taken v/s number of samples plots
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
@@ -869,6 +887,7 @@ class Test:
         plt.savefig(figname+'.png', dpi=300, transparent=True)
         plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
+        logging.info("Time complexity test completed and plot saved.")
 
 
     def test_timecomplexity_compare(self, iters=100):
@@ -885,9 +904,14 @@ class Test:
         logging.info(f"Testing with model: {self.model_path}")
         preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2)).to(args.device)
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
                     key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(torch.float64)
         model.to(device)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
@@ -1153,11 +1177,16 @@ class Test:
         """
         logging.info(f"Generating new samples with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                    key_shape=(2,2)).to(args.device)
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2))
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                    key_shape=(2,2))
         model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(torch.float64)
         model.to(device)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
@@ -1172,9 +1201,12 @@ class Test:
             with torch.no_grad():
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
-                z1 = model.reparameterize(z1_mean, z1_log_var)
-                z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                generated = model.decode(z1, z1p, labels)
+                if self.modeltype=='cae':
+                    generated = model.decode(z1_mean, z1p_mean, labels)
+                else:
+                    z1 = model.reparameterize(z1_mean, z1_log_var)
+                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    generated = model.decode(z1, z1p, labels)
         else:
             logging.info(f'Generating {num_samples} samples by sampling from latent space.')
             with torch.no_grad():
