@@ -332,6 +332,7 @@ class CVAE(nn.Module):
         Computes the total loss, including reconstruction and KL divergence.
     """
     def __init__(self, input_shape, num_classes, key_shape, \
+                 labels_mean, labels_std,
                  latent_dim_x=8, latent_dim_key=3):
         super(CVAE, self).__init__()
         self.latent_dim_x = latent_dim_x  # Dimension of the latent space
@@ -339,6 +340,9 @@ class CVAE(nn.Module):
         self.input_shape = input_shape  # shape of strain array
         self.num_classes = num_classes  # shape of labels
         self.key_shape = key_shape      # shape of mean/var array
+
+        self.register_buffer('labels_mean', torch.tensor(labels_mean))
+        self.register_buffer('labels_std', torch.tensor(labels_std))
 
         # E2 in Fig 11 of the paper
         # self.x_encoder = nn.Sequential(
@@ -446,15 +450,22 @@ class CVAE(nn.Module):
         # logging.debug(z2p_mean, z2p_log_var)
         return z2p_mean, z2p_log_var
 
-    def normalize_labels(self, labels):
+    def normalize_labels(self, labels, batchwise=True):
         """
         Normalize labels as: (label - mean) / std, where mean and std are calculated
         batch wise. The labels won't necessarily lie between [0,1]
+        Uses the global mean and std calculated from the training data to ensure consistency 
+        between training and inference.
+
+        Arguments:
+            labels (Tensor): The labels to be normalized.
+            batchwise (bool): Whether to calculate mean and std for each batch or use global mean and std.
         """
-        mean = labels.mean(dim=0, keepdim=True)
-        std = labels.std(dim=0, keepdim=True) + 1e-8  # Add small value to avoid division by zero
-        normalized_labels = (labels - mean) / std
-        return normalized_labels
+        if batchwise:
+            batch_mean = labels.mean(dim=0, keepdim=True)
+            batch_std = labels.std(dim=0, keepdim=True) + 1e-8  # Add small value to avoid division by zero
+            return (labels - batch_mean) / batch_std
+        return (labels - self.labels_mean) / self.labels_std
     
     def encode_label_for_x(self, labels):
         # Outputs `z1` from Fig 11 of the paper.
