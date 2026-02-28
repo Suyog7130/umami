@@ -171,6 +171,10 @@ def train(args):
         trainhdf += '-100000-fcutoff-uniform-aligned-regen'
         # trainhdf += '-4e5-fcutoff-uniform-aligned'
         validhdf += '-100000-fcutoff-uniform-aligned-regen'
+    elif args.dummy:
+        # -- use validation set for training, for quick code check!
+        trainhdf = args.datadir+args.approximant+'-val-100000-fcutoff-uniform-aligned-regen'
+        validhdf += '-100000-fcutoff-uniform-aligned-regen'
     
     if not os.path.isfile(trainhdf + '.hdf'):
         raise FileNotFoundError(f"Training data file not found: {trainhdf}.hdf")
@@ -208,13 +212,16 @@ def train(args):
     logging.info(f'Number of Training batches: {ntbatches}')  # this doesn't return the batchsize!
     logging.info(f'Number of Validationg batches: {nvbatches}')
 
+    # -- get mean and std of labels for normalization
+    
+
     # Initialize Model
     # `num_classes` is the size of the labels.
     if args.fcutoff or args.aligned:
         PRESET_ARRAY_SIZE = 8191
     if args.modeltype=='cae':
         model = CAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2),
-                    latent_dim_x=32, latent_dim_key=2)
+                    latent_dim_x=32, latent_dim_key=2, labels_mean=params_mean, labels_std=params_std)
     else:
         model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2))
     model.to(device)
@@ -1957,6 +1964,8 @@ if __name__ == "__main__":
                             help='Do not show output Plot !')
     parser.add_argument('--nosave', action='store_true', default=False,
                             help='Do not save output files and plots!')
+    parser.add_argument('--dummy', action='store_true', default=False,
+                            help='Whether to use dummy data for testing the code. (default=%(default)s')
 
     parser.add_argument('--verbose', '-v', action='store_true', help="Print update messages.")
     parser.add_argument('--debug', action='store_true', help="Show debug messages.")

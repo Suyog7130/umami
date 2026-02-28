@@ -1221,6 +1221,32 @@ def check_ampfreq_via_wavegen(noshow=False, usephase=False, f_lower=20.0):
     logging.info(f"Checked amp-freq reconstruction via direct waveform generation successfully.")
 
 
+# -- Save param values in CSV by reading pre-saved HDF files for training set
+def save_params_from_hdf(hdf_fname, txt_fname='params'):
+    """
+    Read the parameters from the HDF5 file and save them to a text file in a readable format.
+    These output parameters files will be used to calculate the mean and std of the parameters 
+    in the training set, which will be used for normalization and also for calculating the 
+    error metrics for the test set.
+    """
+    if '.hdf' not in hdf_fname:
+        hdf_fname += '.hdf'
+    if '.csv' not in txt_fname:
+        txt_fname += '.csv'
+    os.makedirs(os.path.dirname(txt_fname), exist_ok=True)
+    with h5py.File(hdf_fname, 'r') as hf, open(txt_fname, 'w') as f:
+        logging.info(f'Reading parameters from {hdf_fname} and saving to {txt_fname}')
+        f.write("key,mass1,mass2,chi1z,chi2z\n")
+        for key in hf.keys():
+            grp = hf[key]
+            m1 = grp.attrs['mass1']
+            m2 = grp.attrs['mass2']
+            chi1 = grp.attrs['spin1z']
+            chi2 = grp.attrs['spin2z']
+            f.write(f"{key},{m1},{m2},{chi1},{chi2}\n")
+            logging.info(f'Wrote: {key},{m1},{m2},{chi1},{chi2}')
+    logging.info(f"Saved parameters to {txt_fname} successfully.")
+
 
 class CustomDataset(Dataset):
     """
@@ -2374,6 +2400,9 @@ if __name__=="__main__":
                         help='Convert the strain to phase and amplitude')
     parser.add_argument('--fname', type=str, default='',
                         help='Filename suffix for saving data to HDF5 file.')
+
+    parser.add_argument('--save-params-from-hdf', action='store_true', default=False,
+                        help='Save the parameters from the HDF5 file to a text file for reference.')
     
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
                         help='Increase verbosity of the output.')
@@ -2539,3 +2568,14 @@ if __name__=="__main__":
         check_ampfreq(fname, noshow=args.noshow, usephase=args.usephase)
         if args.wavegen:
             check_ampfreq_via_wavegen(noshow=args.noshow, usephase=args.usephase)
+
+    if args.save_params_from_hdf:
+        if type(args.approximant) is list:
+            args.approximant = args.approximant[0]
+        if args.fname == '':
+            fname = args.approximant + '-train-100000-fcutoff-uniform-aligned-regen'
+        else:
+            fname = args.fname
+        hdf_fname = '../data/' + fname
+        txt_fname = '../data/' + 'params-' + fname
+        save_params_from_hdf(hdf_fname, txt_fname=txt_fname)
