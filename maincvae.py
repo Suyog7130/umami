@@ -323,6 +323,7 @@ def train(args):
     if not os.path.isdir('../trained-models/'):
         os.makedirs('../trained-models/')
     model_path = f'../trained-models/model-mmloss-'
+    model_path += args.modeltype + '-nokll' if noklloss else ''
     model_path += savename
     if not args.nosave:
         if not os.path.isdir(savedir):
@@ -855,12 +856,12 @@ class Test:
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
-        # -- Open CSV file to save results on the go
-        csv = open(self.savedir + 'timecomplexity_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv', 
-                    mode='w', newline='')
-        writer = csv.writer(csv)
-        writer.writerow(['num_samples', 'time_seconds'])  # Write header
-        logging.info(f"CSV file opened for writing time complexity results: {csv.name}")
+        # -- Open CSV file to save results on the go    
+        import csv
+        csv_fname = self.savedir + 'timecomplexity_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv'
+        csvfile = open(csv_fname, mode='w', newline='')
+        csvfile.write('num_samples,time_seconds\n')  # Write header row
+        logging.info(f"CSV file opened for writing time complexity results: {csv_fname}")
 
         times = []
         for Nr in Nruns:
@@ -894,11 +895,11 @@ class Test:
             logging.info(f'Time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
             # -- Write the result to CSV file each time, so that if the process is interrupted, 
             # we still have the results up to that point.
-            writer.writerow([Nr, elapsed_time])
+            csvfile.write(f'{Nr},{elapsed_time}\n')
 
         # Close the CSV file after writing all results
-        csv.close()
-        logging.info(f"Time complexity results saved to CSV file: {csv.name}")
+        csvfile.close()
+        logging.info(f"Time complexity results saved to CSV file: {csvfile.name}")
 
         # # Save the time complexity results to a CSV file
         # df_time = pd.DataFrame({'num_samples': Nruns, 'time_seconds': times})
