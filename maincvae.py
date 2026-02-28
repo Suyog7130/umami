@@ -141,6 +141,8 @@ def train(args):
     savedir = f'../results/{today}/'
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
+    noklloss = True if args.modeltype=='cae' else False
+
     # epoch = 0
     # best_vloss = 1_000_000.
     # model.n_resblocks = args.n_resblocks
@@ -266,12 +268,16 @@ def train(args):
             
             # TODO: have it such that the training target are unnormalized waveforms!
             # loss, reconloss, klloss = model.loss_function(x, x_recon, zvars)
-            loss, reconloss, klloss, mmloss = model.mismatch_loss_func(target, x_recon, zvars, strains=strains, keys=keys, attr=attr)
+            if noklloss:
+                loss, reconloss, mmloss = model.mismatch_nokl_loss_func(target, x_recon, zvars, strains=strains, keys=keys, attr=attr)
+            else:
+                loss, reconloss, klloss, mmloss = model.mismatch_loss_func(target, x_recon, zvars, strains=strains, keys=keys, attr=attr)
             loss.backward()
 
             train_rloss.append(loss.item())
             netreconloss.append(reconloss.item())
-            netklloss.append(klloss.item())
+            if not noklloss:
+                netklloss.append(klloss.item())
             netmmloss.append(mmloss.item())
 
             # -- perform optimization per batch/step
@@ -300,7 +306,10 @@ def train(args):
             for vx, target, vlabels, vkeys, vstrains, vattr in tqdm(validation_loader, desc='val-batch'):
                 vx, target, vlabels, vkeys = vx.to(args.device), target.to(args.device), vlabels.to(args.device), vkeys.to(args.device)
                 vx_recon, vzvars = model(vx, vlabels, vkeys)
-                vloss, _reconloss, _klloss, _mmloss = model.mismatch_loss_func(target, vx_recon, vzvars, strains=vstrains, keys=vkeys, attr=vattr)
+                if noklloss:
+                    vloss, vreconloss, vmmloss = model.mismatch_nokl_loss_func(target, vx_recon, vzvars, strains=vstrains.to(args.device), keys=vkeys.to(args.device), attr=vattr)
+                else:
+                    vloss, vreconloss, vklloss, vmmloss = model.mismatch_loss_func(target, vx_recon, vzvars, strains=vstrains.to(args.device), keys=vkeys.to(args.device), attr=vattr)
                 valid_rloss.append(vloss.item())
             valid_loss.append(vloss.item())
         tqdm.write(f'Epoch {epoch+1} : train loss {loss.item()} & valid loss {vloss.item()}')
@@ -329,7 +338,7 @@ def train(args):
         np.savetxt(savedir + f'valid-rloss-{timestamp}.txt', valid_rloss)
         dfnet = pd.DataFrame({
             'netreconloss': netreconloss,
-            'netklloss': netklloss,
+            'netklloss': netklloss if not noklloss else [0]*len(netreconloss),
             'netmmloss': netmmloss})
         dfnet.to_csv(savedir + f'net-loss-{timestamp}.csv', index=False)
 
@@ -342,7 +351,8 @@ def train(args):
     axes[1].plot(np.arange(args.epochs*ntbatches), train_rloss, label='train running loss')
     axes[1].plot(np.arange(args.epochs*nvbatches), valid_rloss, label='valid running loss')
     axes[1].plot(np.arange(args.epochs*ntbatches), netreconloss, label='reconstruction loss')
-    axes[1].plot(np.arange(args.epochs*ntbatches), netklloss, label='latent loss')
+    if not noklloss:
+        axes[1].plot(np.arange(args.epochs*ntbatches), netklloss, label='latent loss')
     axes[1].plot(np.arange(args.epochs*ntbatches), netmmloss, label='mismatch loss')
     axes[1].set_xlabel('Batch', fontsize=12)
     axes[1].set_yscale('log')  # Set y-axis to logarithmic scale

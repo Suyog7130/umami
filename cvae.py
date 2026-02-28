@@ -445,16 +445,28 @@ class CVAE(nn.Module):
         z2p_mean, z2p_log_var = h.chunk(2, dim=1)
         # logging.debug(z2p_mean, z2p_log_var)
         return z2p_mean, z2p_log_var
+
+    def normalize_labels(self, labels):
+        """
+        Normalize labels as: (label - mean) / std, where mean and std are calculated
+        batch wise. The labels won't necessarily lie between [0,1]
+        """
+        mean = labels.mean(dim=0, keepdim=True)
+        std = labels.std(dim=0, keepdim=True) + 1e-8  # Add small value to avoid division by zero
+        normalized_labels = (labels - mean) / std
+        return normalized_labels
     
     def encode_label_for_x(self, labels):
         # Outputs `z1` from Fig 11 of the paper.
         # print(labels)
+        labels = self.normalize_labels(labels)
         h = self.label_cond_for_x(labels)
         z1_mean, z1_log_var = h.chunk(2, dim=1)
         return z1_mean, z1_log_var
     
     def encode_label_for_key(self, labels):
         # Outputs `z1prime` from Fig 11 of the paper.
+        labels = self.normalize_labels(labels)
         h = self.label_cond_for_key(labels)
         z1p_mean, z1p_log_var = h.chunk(2, dim=1)
         # logging.debug(z1p_mean, z1p_log_var)
@@ -489,6 +501,7 @@ class CVAE(nn.Module):
         assert z2.size(0) == z2p.size(0) == labels.size(0) # Batch sizes must match
 
         # Pass the concatenated tensor through the decoder
+        labels = self.normalize_labels(labels)
         x_recon = self.decoder(z2, z2p, labels)
         
         # Reshape the output to match the input shape
@@ -779,6 +792,79 @@ class CVAE(nn.Module):
         logging.info(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + beta * kl_loss + mmloss
         return (total_loss, recon_loss, kl_loss, mmloss)
+
+    def mismatch_nokl_loss_func(self, x, x_recon, zvars, strains, keys, attr):
+        """
+        Computes the mismatch loss between the reconstructed output and the keys.
+
+        Parameters:
+        -----------
+        x : torch.Tensor
+            Original input data.
+        x_recon : torch.Tensor
+            Reconstructed input data.
+        zvars : list of torch.Tensor
+            List of latent variable means and log variances.
+        keys : torch.Tensor
+            Normalization keys for the input amplitude and frequency data.
+
+        Returns:
+        --------
+        total_loss : torch.Tensor
+            Total loss combining reconstruction, latent losses, and mismatch loss.
+        """
+        z1_mean, z1_log_var, z2_mean, z2_log_var, \
+            z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
+        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
+            z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
+
+        # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
+        # TODO: What is the `reduction` thing doing here?
+        # NOTE: This is good to have since we also wnat to have the
+        # output amplitude and frequency series to have proper inspiral
+        # stage reconstructions. The mismatch loss on the other hand, will
+        # calculate the mismatch between the reconstructed and the original waveforms
+        # thereby making sure that the phase evolution and merger time freq
+        # changes are correctly captured by the model.
+        recon_loss = F.mse_loss(x_recon, x, reduction='mean')
+
+        # -- Calculate the total mismatch loss for the batch (vectorized)
+        amp_recon = x_recon[:, 0].cpu().detach().numpy()
+        freq_recon = x_recon[:, 1].cpu().detach().numpy()
+        amp_orig = x[:, 0].cpu().detach().numpy()
+        freq_orig = x[:, 1].cpu().detach().numpy()
+        
+        # -- Denormalize using keys (vectorized)
+        keys_reshaped = keys.reshape(-1, 2, 2).cpu().detach().numpy()
+        amp_mean, amp_std = keys_reshaped[:, 0, 0], keys_reshaped[:, 0, 1]
+        freq_mean, freq_std = keys_reshaped[:, 1, 0], keys_reshaped[:, 1, 1]
+        
+        amp_recon = (amp_recon * amp_std[:, np.newaxis]) + amp_mean[:, np.newaxis]
+        freq_recon = (freq_recon * freq_std[:, np.newaxis]) + freq_mean[:, np.newaxis]
+        amp_orig = (amp_orig * amp_std[:, np.newaxis]) + amp_mean[:, np.newaxis]
+        freq_orig = (freq_orig * freq_std[:, np.newaxis]) + freq_mean[:, np.newaxis]
+        
+        # -- Remove first dummy element from frequency series
+        freq_recon = freq_recon[:, 1:]
+        freq_orig = freq_orig[:, 1:]
+        
+        # -- Calculate phase (vectorized)
+        hp_hdf = strains[:, 0].cpu().detach().numpy()
+        hc_hdf = strains[:, 1].cpu().detach().numpy()
+        phase_hdf = np.unwrap(np.arctan2(hc_hdf, hp_hdf), axis=1)
+        
+        # -- Calculate mismatch loss (vectorized)
+        mmloss = 0.0
+        for i in range(x.size(0)):
+            hp_recon, hc_recon = polarizations_from_ampfreq(amp_recon[i], freq_recon[i], theta0=phase_hdf[i, 0])
+            hp_orig, hc_orig = polarizations_from_ampfreq(amp_orig[i], freq_orig[i], theta0=phase_hdf[i, 0])
+            mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
+            mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
+            mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
+        
+        logging.info(f'Total mismatch loss for the batch: {mmloss}')
+        total_loss = recon_loss + mmloss
+        return (total_loss, recon_loss, mmloss)
 
 
 class CAE(CVAE):
