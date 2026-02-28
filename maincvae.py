@@ -855,6 +855,13 @@ class Test:
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
+        # -- Open CSV file to save results on the go
+        csv = open(self.savedir + 'timecomplexity_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv', 
+                    mode='w', newline='')
+        writer = csv.writer(csv)
+        writer.writerow(['num_samples', 'time_seconds'])  # Write header
+        logging.info(f"CSV file opened for writing time complexity results: {csv.name}")
+
         times = []
         for Nr in Nruns:
             # Generate random labels within the training range
@@ -885,10 +892,17 @@ class Test:
             elapsed_time = end_time - start_time
             times.append(elapsed_time)
             logging.info(f'Time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
+            # -- Write the result to CSV file each time, so that if the process is interrupted, 
+            # we still have the results up to that point.
+            writer.writerow([Nr, elapsed_time])
 
-        # Save the time complexity results to a CSV file
-        df_time = pd.DataFrame({'num_samples': Nruns, 'time_seconds': times})
-        df_time.to_csv(self.savedir + 'timecomplexity_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv', index=False)
+        # Close the CSV file after writing all results
+        csv.close()
+        logging.info(f"Time complexity results saved to CSV file: {csv.name}")
+
+        # # Save the time complexity results to a CSV file
+        # df_time = pd.DataFrame({'num_samples': Nruns, 'time_seconds': times})
+        # df_time.to_csv(self.savedir + 'timecomplexity_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv', index=False)
 
         # Plot the time taken v/s number of samples plots
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
