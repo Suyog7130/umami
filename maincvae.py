@@ -284,7 +284,7 @@ def train(args):
             optimizer.step()
 
         # -- update learning rate per epoch
-        scheduler.step()
+        scheduler.step(loss)
         logging.info(f"Epoch {epoch+1} completed. Learning rate adjusted to: {scheduler.get_last_lr()[0]:.2e}")
         logging.debug(f"x shape: {x.shape}, labels shape: {labels.shape}, keys shape: {keys.shape}")
 
