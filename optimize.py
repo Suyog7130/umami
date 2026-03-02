@@ -4,6 +4,7 @@ hyper-parameters and number of layers etc.
 """
 
 import os
+import pandas as pd
 import datetime
 import logging
 import joblib
@@ -26,14 +27,39 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
-datadir = "../data/"
-train_hdf = datadir + 'SEBONRv4-train-100000-fcutoff-uniform-aligned.hdf'
-val_hdf = datadir + "SEBONRv4-val-100000-fcutoff-uniform-aligned.hdf"
+BATCH_SIZE = 64
+PRESET_ARRAY_SIZE = 8191
+APPROXIMANT = 'SEOBNRv4'
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    DEVICE = torch.device("mps")
+else:
+    DEVICE = torch.device("cpu")
 
-train_set = CustomDataset(train_hdf)
-val_set = CustomDataset(val_hdf)
-train_loader = CustomDataLoader(train_set, batch_size=64, shuffle=True)
-val_loader = CustomDataLoader(val_set, batch_size=64, shuffle=False)
+datadir = "../data/"
+train_hdf = datadir + 'SEBONRv4-train-100000-fcutoff-uniform-aligned-regen.hdf'
+val_hdf = datadir + "SEBONRv4-val-100000-fcutoff-uniform-aligned-regen.hdf"
+
+logging.info(f'Reading training data from {train_hdf}.hdf')
+train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=False,
+                        hdf_fname=train_hdf, train_device=DEVICE)
+logging.info(f'Reading validation data from {val_hdf}.hdf')
+valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=True,
+                        hdf_fname=val_hdf, train_device=DEVICE)
+train_loader = CustomDataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
+val_loader = CustomDataLoader(valid_set, batch_size=BATCH_SIZE, shuffle=False)
+
+
+# -- get mean and std of labels for normalization
+params_fname = '../data/params-' + APPROXIMANT + '-train-100000-fcutoff-uniform-aligned-regen'
+params_df = pd.read_csv(params_fname+'.csv', index_col=0, sep=',')
+params_mean = params_df.mean().values
+params_std = params_df.std().values
+logging.info(f"Labels mean: {params_mean}")
+logging.info(f"Labels std: {params_std}")
+params_mean = torch.tensor(params_mean, dtype=torch.float64).to(DEVICE)
+params_std = torch.tensor(params_std, dtype=torch.float64).to(DEVICE)
 
 
 def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
@@ -47,10 +73,18 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
         frac_data: Fraction of training data to use for quick training (default 0.1).
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.to(torch.float64)
     model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)    
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 
+                mode='min', 
+                factor=0.5, 
+                patience=2, 
+                threshold=1e-7)
     num_train_batches = int(len(train_loader) * frac_data)
 
+    # Train for a few epochs
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
@@ -66,7 +100,9 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
             train_loss += loss.item()
         avg_train_loss = train_loss / num_train_batches
         logging.info(f"Epoch {epoch+1}, Train Loss: {avg_train_loss:.4f}")
-    
+        scheduler.step(avg_train_loss)
+
+    # Evaluate on validation set
     model.eval()
     val_loss = 0.0
     with torch.no_grad():
@@ -103,10 +139,10 @@ def objective(trial):
     """
     logging.info("Starting new trial")
     # Suggest hyperparameters
-    latent_dim = trial.suggest_int("latent_dim", 10, 100)
+    latent_dim = trial.suggest_int("latent_dim", 8, 100)
     dropout_p = trial.suggest_float("dropout_p", 0.1, 0.5)
-    use_batchnorm = trial.suggest_categorical("use_batchnorm", [True, False])
-    activation = trial.suggest_categorical("activation", ["relu", "leaky_relu", "elu"])
+    # use_batchnorm = trial.suggest_categorical("use_batchnorm", [True, False])
+    activation = trial.suggest_categorical("activation", ["relu", "silu", "gelu"])
     n_cnn_enc = trial.suggest_int("n_cnn_enc", 2, 5)
     n_cnn_dec = trial.suggest_int("n_cnn_dec", 2, 5)
     n_fc_pre = trial.suggest_int("n_fc_pre", 1, 3)
@@ -123,11 +159,11 @@ def objective(trial):
 
     # Build model with suggested hyperparameters
     model = TwoC2E1D(
-        input_dim=8191,  
+        input_dim=(2, PRESET_ARRAY_SIZE),  
         condition_dim=4,  
-        latent_dim=latent_dim,
+        encoder_latent_dims=[latent_dim, latent_dim],  # Latent dimensions for each encoder
         dropout_p=dropout_p,
-        use_batchnorm=use_batchnorm,
+        use_batchnorm=False,  # Never use batchnorm
         activation=activation,
         n_cnn_enc=n_cnn_enc,
         n_cnn_dec=n_cnn_dec,

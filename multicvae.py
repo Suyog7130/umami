@@ -349,6 +349,12 @@ class BaseCVAE(nn.Module):
         # Build encoders/decoders
         enc_kwargs = dict(**kwargs)
         dec_kwargs = dict(**kwargs)
+        
+        # Allow per-encoder latent dimensions
+        encoder_latent_dims = kwargs.get('encoder_latent_dims', None)
+        if encoder_latent_dims is None:
+            encoder_latent_dims = [kwargs.get('latent_dim')] * self.n_encoders
+        
         enc_kwargs.update(dict(
             has_cnn=self.encoder_has_cnn,
             has_pre_fc=self.encoder_has_fc,
@@ -357,6 +363,9 @@ class BaseCVAE(nn.Module):
             n_layers_cnn=self.n_layers_cnn_encoder,
             n_layers_fc=self.n_layers_fc_encoder,
         ))
+        
+        # Store for later use
+        self.encoder_latent_dims = encoder_latent_dims
         dec_kwargs.update(dict(
             has_cnn=self.decoder_has_cnn,
             has_pre_fc=self.decoder_has_fc,
@@ -451,12 +460,12 @@ def build_model_from_code(code: str, **kwargs) -> BaseCVAE:
     )
 
 
-class TwoC2E1D(BaseCVAE):
+class BaseTwoC2E1D(BaseCVAE):
     """Concrete: 2 Conditioners, 2 Encoders, 1 Decoder (keeps original spirit).
     If you also want 2 Conditioners, call build_model_from_code("2C2E1D", ...).
     """
     def __init__(self, **kwargs):
-        super(TwoC2E1D, self).__init__(n_conditioners=2, n_encoders=2, n_decoders=1, **kwargs)
+        super(BaseTwoC2E1D, self).__init__(n_conditioners=2, n_encoders=2, n_decoders=1, **kwargs)
 
     def __call__(self, x, labels, keys):
         """
@@ -494,6 +503,7 @@ class TwoC2E1D(BaseCVAE):
                   for both encoders and conditioners: 
                     (z1_mean, z1_logvar, z1p_mean, z1p_logvar, z2_mean, z2_logvar, z2p_mean, z2p_logvar).
         """
+        labels = self.normalize_labels(labels)
         z1 = self.encode(x, labels, encoder_idx=0, conditioner_idx=0)
         z1_mean, z1_logvar = z1.chunk(2, dim=1)
         z1p = self.condition(labels, idx=0)
@@ -555,6 +565,45 @@ class TwoC2E1D(BaseCVAE):
         kl_loss = kl_loss_enc1 + kl_loss_cond1 + kl_loss_enc2 + kl_loss_cond2 + kll1 + kll2
         total_loss = recon_loss + beta * kl_loss
         return (total_loss, recon_loss, kl_loss)
+    
+
+class TwoC2E1D(BaseTwoC2E1D):
+    """
+    Customized 2C2E1D model with my own preprocessing
+    """
+    def __init__(self, labels_mean, labels_std, **kwargs):
+        super(TwoC2E1D, self).__init__(**kwargs)
+
+        self.register_buffer('labels_mean', torch.tensor(labels_mean))
+        self.register_buffer('labels_std', torch.tensor(labels_std))
+
+    def normalize_labels(self, labels, batchwise=False):
+        """
+        Normalize labels as: (label - mean) / std, where mean and std are calculated
+        batch wise. The labels won't necessarily lie between [0,1]
+        Uses the global mean and std calculated from the training data to ensure consistency 
+        between training and inference.
+
+        NOTE: Should never use batchwise normalization for the input parameter
+        labels, because the mean and std will be different for each batch and thus 
+        the model won't learn anything meaningful, although the training loss will
+        decrease. During inference, the model will try to predict outputs based on
+        the normalized labels specific 'to current batch in test set' and thus will,
+        fail miserably in predicting correct outputs. The outputs will mostly resemble
+        random noise-like curves, with slight twists at the merger stage.
+
+        Arguments:
+            labels (Tensor): The labels to be normalized.
+            batchwise (bool): Whether to calculate mean and std for each batch or use global mean and std.
+        """
+        if batchwise:
+            logging.warning("Batchwise normalization is not recommended for labels as it can lead " \
+            "to inconsistent training and inference. Consider using global mean and std for normalization.")
+            batch_mean = labels.mean(dim=0, keepdim=True)
+            batch_std = labels.std(dim=0, keepdim=True) + 1e-8  # Add small value to avoid division by zero
+            return (labels - batch_mean) / batch_std
+        return (labels - self.labels_mean) / self.labels_std
+    
 
 
 # -----------------------------
