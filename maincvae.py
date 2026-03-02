@@ -198,13 +198,15 @@ def train(args):
                             convert=args.convert, hdf_fname=validhdf, train_device=args.device)
     # logging.info(f"Train set size: {len(train_set)}")
     # logging.info(f"Validation set size: {len(valid_set)}")
-
+            
     # try:
     #     training_loader = CustomDataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     #     validation_loader = CustomDataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
     # except ValueError:
     #     training_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     #     validation_loader = DataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
+
+    # -- data loaders return [inputs, target, labels, keys] list!
     training_loader = CustomDataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     validation_loader = CustomDataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
     logging.info(training_loader.__dict__)
