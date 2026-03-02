@@ -171,7 +171,8 @@ def train(args):
         trainhdf += '-100000-fcutoff-uniform-aligned-regen'
         # trainhdf += '-4e5-fcutoff-uniform-aligned'
         validhdf += '-100000-fcutoff-uniform-aligned-regen'
-    elif args.dummy:
+
+    if args.dummy:
         # -- use validation set for training, for quick code check!
         trainhdf = args.datadir+args.approximant+'-val-100000-fcutoff-uniform-aligned-regen'
         validhdf += '-100000-fcutoff-uniform-aligned-regen'
@@ -213,12 +214,19 @@ def train(args):
     logging.info(f'Number of Validationg batches: {nvbatches}')
 
     # -- get mean and std of labels for normalization
-    
+    params_fname = '../data/params-' + args.approximant + '-train-100000-fcutoff-uniform-aligned-regen'
+    params_df = pd.read_csv(params_fname+'.csv', index_col=0, sep=',')
+    params_mean = params_df.mean().values
+    params_std = params_df.std().values
+    logging.info(f"Labels mean: {params_mean}")
+    logging.info(f"Labels std: {params_std}")
+    params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
+    params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
 
     # Initialize Model
     # `num_classes` is the size of the labels.
-    if args.fcutoff or args.aligned:
-        PRESET_ARRAY_SIZE = 8191
+    # if args.fcutoff or args.aligned:
+    PRESET_ARRAY_SIZE = 8191
     if args.modeltype=='cae':
         model = CAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2),
                     latent_dim_x=32, latent_dim_key=2, labels_mean=params_mean, labels_std=params_std)
@@ -244,6 +252,7 @@ def train(args):
     train_rloss, valid_rloss = [], []  # running loss every batch
     train_loss, valid_loss = [], [] 
     netreconloss, netklloss, netmmloss = [], [], []
+    netvreconloss, netvklloss, netvmmloss = [], [], []
     for epoch in tqdm(range(args.epochs), desc='Epoch'):
         model.train(True)
         # avg_loss = train_one_epoch(training_loader, epoch)
@@ -318,6 +327,10 @@ def train(args):
                 else:
                     vloss, vreconloss, vklloss, vmmloss = model.mismatch_loss_func(target, vx_recon, vzvars, strains=vstrains.to(args.device), keys=vkeys.to(args.device), attr=vattr)
                 valid_rloss.append(vloss.item())
+                netvreconloss.append(vreconloss.item())
+                if not noklloss:
+                    netvklloss.append(vklloss.item())
+                netvmmloss.append(vmmloss.item())
             valid_loss.append(vloss.item())
         tqdm.write(f'Epoch {epoch+1} : train loss {loss.item()} & valid loss {vloss.item()}')
         
@@ -330,7 +343,7 @@ def train(args):
     if not os.path.isdir('../trained-models/'):
         os.makedirs('../trained-models/')
     model_path = f'../trained-models/model-mmloss-'
-    model_path += args.modeltype + '-nokll' if noklloss else ''
+    model_path += args.modeltype + '-nokll-' if noklloss else ''
     model_path += savename
     if not args.nosave:
         if not os.path.isdir(savedir):
@@ -347,8 +360,12 @@ def train(args):
         dfnet = pd.DataFrame({
             'netreconloss': netreconloss,
             'netklloss': netklloss if not noklloss else [0]*len(netreconloss),
-            'netmmloss': netmmloss})
-        dfnet.to_csv(savedir + f'net-loss-{timestamp}.csv', index=False)
+            'netmmloss': netmmloss,
+            'netvreconloss': netvreconloss,
+            'netvklloss': netvklloss if not noklloss else [0]*len(netvreconloss),
+            'netvmmloss': netvmmloss})
+        savename = args.modeltype + '-nokll-' if noklloss else ''
+        dfnet.to_csv(savedir + f'net-loss-{savename}{timestamp}.csv', index=False)
 
     fig, axes = plt.subplots(2, 1, figsize=(5, 10))
     axes[0].plot(np.arange(args.epochs), train_loss, label='training loss')
@@ -362,6 +379,10 @@ def train(args):
     if not noklloss:
         axes[1].plot(np.arange(args.epochs*ntbatches), netklloss, label='latent loss')
     axes[1].plot(np.arange(args.epochs*ntbatches), netmmloss, label='mismatch loss')
+    axes[1].plot(np.arange(args.epochs*nvbatches), netvreconloss, label='valid reconstruction loss')
+    if not noklloss:
+        axes[1].plot(np.arange(args.epochs*nvbatches), netvklloss, label='valid latent loss')
+    axes[1].plot(np.arange(args.epochs*nvbatches), netvmmloss, label='valid mismatch loss')
     axes[1].set_xlabel('Batch', fontsize=12)
     axes[1].set_yscale('log')  # Set y-axis to logarithmic scale
     axes[1].set_ylabel('Loss', fontsize=12)
@@ -369,7 +390,7 @@ def train(args):
     # putils.beautifyPlot(axes)
     plt.tight_layout()
     if not args.nosave:
-        plt.savefig(savedir + f'epoch-loss-{timestamp}.png', dpi=300)
+        plt.savefig(savedir + f'epoch-loss-{savename}{timestamp}.png', dpi=300)
 
     # if device != 'cpu':
     #      vlabels = vlabels.to('cpu')
