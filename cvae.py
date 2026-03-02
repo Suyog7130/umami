@@ -450,12 +450,20 @@ class CVAE(nn.Module):
         # logging.debug(z2p_mean, z2p_log_var)
         return z2p_mean, z2p_log_var
 
-    def normalize_labels(self, labels, batchwise=True):
+    def normalize_labels(self, labels, batchwise=False):
         """
         Normalize labels as: (label - mean) / std, where mean and std are calculated
         batch wise. The labels won't necessarily lie between [0,1]
         Uses the global mean and std calculated from the training data to ensure consistency 
         between training and inference.
+
+        NOTE: Should never use batchwise normalization for the input parameter
+        labels, because the mean and std will be different for each batch and thus 
+        the model won't learn anything meaningful, although the training loss will
+        decrease. During inference, the model will try to predict outputs based on
+        the normalized labels specific 'to current batch in test set' and thus will,
+        fail miserably in predicting correct outputs. The outputs will mostly resemble
+        random noise-like curves, with slight twists at the merger stage.
 
         Arguments:
             labels (Tensor): The labels to be normalized.
