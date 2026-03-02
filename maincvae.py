@@ -228,9 +228,11 @@ def train(args):
     # if args.fcutoff or args.aligned:
     PRESET_ARRAY_SIZE = 8191
     if args.modeltype=='cae':
+        logging.info(f'Using model type: CAE with num_classes={num_classes} and preset_array_size={PRESET_ARRAY_SIZE}')
         model = CAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2),
                     latent_dim_x=32, latent_dim_key=2, labels_mean=params_mean, labels_std=params_std)
     else:
+        logging.info(f'Using model type: CVAE with num_classes={num_classes} and preset_array_size={PRESET_ARRAY_SIZE}')
         model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2))
     model.to(device)
     # -- convert model to double precision
@@ -467,12 +469,24 @@ class Test:
         TODO: Create a test dir in results in dir and a subfolder with timestamp !!
         """
         logging.info(f"Testing with model: {self.model_path}")
+
+        # -- get mean and std of labels for normalization
+        params_fname = '../data/params-' + args.approximant + '-train-100000-fcutoff-uniform-aligned-regen'
+        params_df = pd.read_csv(params_fname+'.csv', index_col=0, sep=',')
+        params_mean = params_df.mean().values
+        params_std = params_df.std().values
+        logging.info(f"Labels mean: {params_mean}")
+        logging.info(f"Labels std: {params_std}")
+        params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
+        params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
+
         # Load the trained model
         preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
         num_classes = 4 if self.aligned else 2
         if self.modeltype=='cae':
             logging.info(f'Using model type: CAE with num_classes={num_classes} and preset_array_size={preset_array_size}')
-            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2))
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2),
+                        latent_dim_x=32, latent_dim_key=2, labels_mean=params_mean, labels_std=params_std)
         else:
             logging.info(f'Using model type: CVAE with num_classes={num_classes} and preset_array_size={preset_array_size}')
             model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2))
@@ -504,7 +518,7 @@ class Test:
             iters += 1
             
             # Move labels to the appropriate device
-            labels = labels.to(device)
+            labels = labels.to(self.device)
 
             # Generate reconstructed data
             with torch.no_grad():

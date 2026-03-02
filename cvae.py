@@ -470,6 +470,8 @@ class CVAE(nn.Module):
             batchwise (bool): Whether to calculate mean and std for each batch or use global mean and std.
         """
         if batchwise:
+            logging.warning("Batchwise normalization is not recommended for labels as it can lead " \
+            "to inconsistent training and inference. Consider using global mean and std for normalization.")
             batch_mean = labels.mean(dim=0, keepdim=True)
             batch_std = labels.std(dim=0, keepdim=True) + 1e-8  # Add small value to avoid division by zero
             return (labels - batch_mean) / batch_std
