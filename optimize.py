@@ -20,12 +20,6 @@ from multicvae import TwoC2E1D
 
 today = datetime.date.today().strftime("%Y%m%d")
 now = datetime.datetime.now().strftime("%H%M%S")
-log_filename = f"optuna_multicvae_{today}-{now}.log"
-logging.basicConfig(
-    filename=log_filename,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
 
 BATCH_SIZE = 64
 PRESET_ARRAY_SIZE = 8191
@@ -38,8 +32,8 @@ else:
     DEVICE = torch.device("cpu")
 
 datadir = "../data/"
-train_hdf = datadir + 'SEBONRv4-train-100000-fcutoff-uniform-aligned-regen.hdf'
-val_hdf = datadir + "SEBONRv4-val-100000-fcutoff-uniform-aligned-regen.hdf"
+train_hdf = datadir + 'SEOBNRv4-train-100-fcutoff-uniform-aligned'
+val_hdf = datadir + "SEOBNRv4-test-100-fcutoff-uniform-aligned"
 
 logging.info(f'Reading training data from {train_hdf}.hdf')
 train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=False,
@@ -139,7 +133,8 @@ def objective(trial):
     """
     logging.info("Starting new trial")
     # Suggest hyperparameters
-    latent_dim = trial.suggest_int("latent_dim", 8, 100)
+    latent_dim_x = trial.suggest_int("latent_dim_x", 8, 100)
+    latent_dim_key = trial.suggest_int("latent_dim_key", 2, 4)
     dropout_p = trial.suggest_float("dropout_p", 0.1, 0.5)
     # use_batchnorm = trial.suggest_categorical("use_batchnorm", [True, False])
     activation = trial.suggest_categorical("activation", ["relu", "silu", "gelu"])
@@ -159,9 +154,12 @@ def objective(trial):
 
     # Build model with suggested hyperparameters
     model = TwoC2E1D(
+        labels_mean=params_mean,
+        labels_std=params_std,
         input_dim=(2, PRESET_ARRAY_SIZE),  
-        condition_dim=4,  
-        encoder_latent_dims=[latent_dim, latent_dim],  # Latent dimensions for each encoder
+        num_classes=4,  
+        encoder_latent_dims=[latent_dim_x, latent_dim_key],  # Latent dimensions for each encoder
+        cond_dim=[latent_dim_x, latent_dim_key],  # Conditioner output dims (can be same as latent dims)
         dropout_p=dropout_p,
         use_batchnorm=False,  # Never use batchnorm
         activation=activation,
@@ -185,6 +183,13 @@ def objective(trial):
 
 
 if __name__ == "__main__":
+
+    log_filename = f"optuna_multicvae_{today}-{now}.log"
+    logging.basicConfig(
+        filename=log_filename,
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+    )
 
     # Run Optuna study
     study = optuna.create_study(direction="minimize")

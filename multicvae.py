@@ -334,11 +334,14 @@ class BaseCVAE(nn.Module):
         self.conditioners = nn.ModuleList()
         if self.n_conditioners > 0:
             assert cond_dim is not None, "Provide cond_dim when using Conditioners"
-            for _ in range(self.n_conditioners):
+            if isinstance(cond_dim, int):
+                cond_dim = [cond_dim] * self.n_conditioners
+            assert len(cond_dim) == self.n_conditioners, "cond_dim length must match n_conditioners"
+            for i in range(self.n_conditioners):
                 self.conditioners.append(
                     Conditioner(
                         in_dim=num_classes,
-                        out_dim=cond_dim,
+                        out_dim=cond_dim[i],
                         sizes=conditioner_sizes,
                         activation=conditioner_activation,
                         use_batchnorm=conditioner_use_bn,
