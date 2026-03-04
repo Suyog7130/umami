@@ -429,6 +429,8 @@ class CVAE(nn.Module):
             Output of the forward method.
         """
         # print('__call__')
+        logging.debug(f'__call__ with x.shape={x.shape}, labels.shape={labels.shape}, keys.shape={keys.shape}')
+        labels = self.normalize_labels(labels)
         return self.forward(x, labels, keys)
 
     def encode_x(self, x, labels):
@@ -475,19 +477,18 @@ class CVAE(nn.Module):
             batch_mean = labels.mean(dim=0, keepdim=True)
             batch_std = labels.std(dim=0, keepdim=True) + 1e-8  # Add small value to avoid division by zero
             return (labels - batch_mean) / batch_std
+        logging.debug(f"Normalizing labels with global mean: {self.labels_mean}, global std: {self.labels_std}")
         return (labels - self.labels_mean) / self.labels_std
     
     def encode_label_for_x(self, labels):
         # Outputs `z1` from Fig 11 of the paper.
         # print(labels)
-        labels = self.normalize_labels(labels)
         h = self.label_cond_for_x(labels)
         z1_mean, z1_log_var = h.chunk(2, dim=1)
         return z1_mean, z1_log_var
     
     def encode_label_for_key(self, labels):
         # Outputs `z1prime` from Fig 11 of the paper.
-        labels = self.normalize_labels(labels)
         h = self.label_cond_for_key(labels)
         z1p_mean, z1p_log_var = h.chunk(2, dim=1)
         # logging.debug(z1p_mean, z1p_log_var)
@@ -522,7 +523,6 @@ class CVAE(nn.Module):
         assert z2.size(0) == z2p.size(0) == labels.size(0) # Batch sizes must match
 
         # Pass the concatenated tensor through the decoder
-        labels = self.normalize_labels(labels)
         x_recon = self.decoder(z2, z2p, labels)
         
         # Reshape the output to match the input shape
@@ -671,6 +671,7 @@ class CVAE(nn.Module):
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         # TODO: What is the `reduction` thing doing here?
         recon_loss = F.mse_loss(x_recon, x, reduction='mean')
+        logging.info(f"Reconstruction Loss: {recon_loss.item()}")
 
         # KL divergence for each latent space
         kl_loss_z1 = self.latent_loss(z1_mean, z1_log_var)
