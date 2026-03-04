@@ -198,11 +198,11 @@ class BaseCoder(nn.Module):
         if not (len(in_c) == len(out_c) == len(ksz) == len(dil) == len(pool) == n_layers):
             raise ValueError(f"CNN spec length mismatch: in_channels={in_c}, out_channels={out_c}, kernel_size={ksz}, dilation={dil}, pool_kernel_size={pool}, n_layers={n_layers}")
 
-            layers: List[nn.Module] = []
-            for i in range(n_layers):
-                is_last = (i == n_layers - 1) and use_last_activation
-                layers.append(self.conv_layer(in_c[i], out_c[i], ksz[i], dil[i], pool_size=pool[i], is_last=is_last))
-            return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
+        layers: List[nn.Module] = []
+        for i in range(n_layers):
+            is_last = (i == n_layers - 1) and use_last_activation
+            layers.append(self.conv_layer(in_c[i], out_c[i], ksz[i], dil[i], pool_size=pool[i], is_last=is_last))
+        return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
 
 
 # -----------------
