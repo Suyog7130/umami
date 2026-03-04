@@ -515,7 +515,6 @@ class BaseTwoC2E1D(BaseCVAE):
                   for both encoders and conditioners: 
                     (z1_mean, z1_logvar, z1p_mean, z1p_logvar, z2_mean, z2_logvar, z2p_mean, z2p_logvar).
         """
-        labels = self.normalize_labels(labels)
         z1 = self.encode(x, labels, encoder_idx=0)
         z1_mean, z1_logvar = z1.chunk(2, dim=1)
         z1p = self.condition(labels, idx=0)
@@ -588,6 +587,28 @@ class TwoC2E1D(BaseTwoC2E1D):
 
         self.register_buffer('labels_mean', torch.tensor(labels_mean))
         self.register_buffer('labels_std', torch.tensor(labels_std))
+
+    
+    def __call__(self, x, labels, keys):
+        """
+        Overrides the __call__ method to directly call the forward method.
+        
+        Args:
+            x (Tensor): Input data.
+            labels (Tensor): Conditional labels.
+            keys (Tensor): Key data.
+
+        Returns:
+            Output of the forward method.
+
+        NOTE: The call function will normalize labels before passing them
+        to the forward function, ensuring that the model receives normalized labels
+        during both training and inference. This normalization is crucial for the model
+        to learn effectively and make accurate predictions based on the labels.
+        """
+        # print('__call__')
+        labels = self.normalize_labels(labels)
+        return self.forward(x, labels, keys)
 
     def normalize_labels(self, labels, batchwise=False):
         """

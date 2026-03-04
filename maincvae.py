@@ -235,7 +235,8 @@ def train(args):
                     latent_dim_x=32, latent_dim_key=2, labels_mean=params_mean, labels_std=params_std)
     else:
         logging.info(f'Using model type: CVAE with num_classes={num_classes} and preset_array_size={PRESET_ARRAY_SIZE}')
-        model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2))
+        model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2),
+                    labels_mean=params_mean, labels_std=params_std, latent_dim_x=32, latent_dim_key=2)
     model.to(device)
     # -- convert model to double precision
     model.to(torch.float64)
@@ -290,8 +291,11 @@ def train(args):
             # loss, reconloss, klloss = model.loss_function(x, x_recon, zvars)
             if noklloss:
                 loss, reconloss, mmloss = model.mismatch_nokl_loss_func(target, x_recon, zvars, strains=strains, keys=keys, attr=attr)
-            else:
+            elif args.usemmloss:
                 loss, reconloss, klloss, mmloss = model.mismatch_loss_func(target, x_recon, zvars, strains=strains, keys=keys, attr=attr)
+            else:
+                loss, reconloss, klloss = model.loss_function(target, x_recon, zvars)
+                mmloss = torch.tensor(0.0)  # Placeholder for mismatch loss when not used
             loss.backward()
 
             train_rloss.append(loss.item())
@@ -328,8 +332,11 @@ def train(args):
                 vx_recon, vzvars = model(vx, vlabels, vkeys)
                 if noklloss:
                     vloss, vreconloss, vmmloss = model.mismatch_nokl_loss_func(target, vx_recon, vzvars, strains=vstrains.to(args.device), keys=vkeys.to(args.device), attr=vattr)
-                else:
+                elif args.usemmloss:
                     vloss, vreconloss, vklloss, vmmloss = model.mismatch_loss_func(target, vx_recon, vzvars, strains=vstrains.to(args.device), keys=vkeys.to(args.device), attr=vattr)
+                else:
+                    vloss, vreconloss, vklloss = model.loss_function(target, vx_recon, vzvars)
+                    vmmloss = torch.tensor(0.0)  # Placeholder for mismatch loss when not used
                 valid_rloss.append(vloss.item())
                 netvreconloss.append(vreconloss.item())
                 if not noklloss:
@@ -1988,6 +1995,8 @@ if __name__ == "__main__":
                         help='path to already trained model.')
     parser.add_argument('--modeltype', action='store', default='cvae',
                         help='type of model to use, e.g., cvae or cae (default=%(default)s)')
+    parser.add_argument('--usemmloss', action='store_true', default=False,
+                        help='whether to use mismatch loss during training (default=%(default)s)')
     
     parser.add_argument('--today', action='store', default=None,
                         help='Date of the model we are currently using, in YYYYMMDD. \
