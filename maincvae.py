@@ -140,6 +140,8 @@ def train(args):
         os.makedirs(f'../results/{today}/')
     savedir = f'../results/{today}/'
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    os.makedirs(savedir, exist_ok=True)
+    os.makedirs('../trained-models', exist_ok=True)
 
     noklloss = True if args.modeltype=='cae' else False
 
