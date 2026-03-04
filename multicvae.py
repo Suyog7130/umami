@@ -166,22 +166,36 @@ class BaseCoder(nn.Module):
             pool_kernel_size: Optional[Sequence[Optional[int]]] = None,
             n_layers: Optional[int] = None,
             use_last_activation: bool = False) -> nn.Sequential:
-        layers: List[nn.Module] = []
-        in_c  = list(in_channels)
-        out_c = list(out_channels)
-        ksz   = list(kernel_size)
-        dil   = list(dilation)
-        if pool_kernel_size is None or len(pool_kernel_size) == 0:
-            pool = [None] * len(in_c)
-        else:
-            pool = list(pool_kernel_size)
-        assert len(in_c) == len(out_c) == len(ksz) == len(dil) == len(pool), "CNN spec length mismatch"
-        if n_layers is None:
-            n_layers = len(in_c)
-        for i in range(n_layers):
-            is_last = (i == n_layers - 1) and use_last_activation
-            layers.append(self.conv_layer(in_c[i], out_c[i], ksz[i], dil[i], pool_size=pool[i], is_last=is_last))
-        return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
+            # Defensive: auto-expand single values to lists of n_layers length
+            def expand(val, n):
+                if isinstance(val, (list, tuple)):
+                    return list(val)
+                return [val] * n
+
+            # Determine n_layers
+            n_layers = n_layers or max(
+                len(in_channels) if isinstance(in_channels, (list, tuple)) else 1,
+                len(out_channels) if isinstance(out_channels, (list, tuple)) else 1,
+                len(kernel_size) if isinstance(kernel_size, (list, tuple)) else 1,
+                len(dilation) if isinstance(dilation, (list, tuple)) else 1,
+                len(pool_kernel_size) if pool_kernel_size and isinstance(pool_kernel_size, (list, tuple)) else 0
+            )
+
+            in_c  = expand(in_channels, n_layers)
+            out_c = expand(out_channels, n_layers)
+            ksz   = expand(kernel_size, n_layers)
+            dil   = expand(dilation, n_layers)
+            pool  = expand(pool_kernel_size if pool_kernel_size is not None else None, n_layers)
+
+            # Validate lengths
+            if not (len(in_c) == len(out_c) == len(ksz) == len(dil) == len(pool) == n_layers):
+                raise ValueError(f"CNN spec length mismatch: in_channels={in_c}, out_channels={out_c}, kernel_size={ksz}, dilation={dil}, pool_kernel_size={pool}, n_layers={n_layers}")
+
+            layers: List[nn.Module] = []
+            for i in range(n_layers):
+                is_last = (i == n_layers - 1) and use_last_activation
+                layers.append(self.conv_layer(in_c[i], out_c[i], ksz[i], dil[i], pool_size=pool[i], is_last=is_last))
+            return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
 
 
 # -----------------

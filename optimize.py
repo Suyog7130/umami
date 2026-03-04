@@ -157,11 +157,12 @@ def objective(trial):
     # post_fc_sizes = post_fc_hidden
     n_fc_post = len(post_fc_hidden) + 1  # +1 for the final layer to latent space
 
-    cnn_in_channels = trial.suggest_categorical("cnn_in_channels", [(1, 16), (1, 32), (1, 64)])
-    cnn_out_channels = trial.suggest_categorical("cnn_out_channels", [(16, 32), (32, 64), (64, 128)])
-    cnn_kernel_size = trial.suggest_categorical("cnn_kernel_size", [(3, 3), (5, 3), (3, 5)])
-    cnn_dilation = trial.suggest_categorical("cnn_dilation", [(1, 1), (2, 1), (1, 2)])
-    cnn_pool_kernel_size = trial.suggest_categorical("cnn_pool_kernel_size", [(2, 2), (2, 1), (1, 2)])
+    first_in_channel = trial.suggest_categorical("cnn_first_in_channel", [1, 2])
+    cnn_out_channels = list(trial.suggest_categorical("cnn_out_channels", [(16, 32), (32, 64), (64, 128)]))
+    cnn_in_channels = [first_in_channel] + cnn_out_channels[:-1]
+    cnn_kernel_size = list(trial.suggest_categorical("cnn_kernel_size", [(3, 3), (5, 3), (3, 5)]))
+    cnn_dilation = list(trial.suggest_categorical("cnn_dilation", [(1, 1), (2, 1), (1, 2)]))
+    cnn_pool_kernel_size = list(trial.suggest_categorical("cnn_pool_kernel_size", [(2, 2), (2, 1), (1, 2)]))
 
     # Build model with suggested hyperparameters
     model = TwoC2E1D(
