@@ -67,8 +67,8 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
         frac_data: Fraction of training data to use for quick training (default 0.1).
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.to(torch.float64)
-    model.to(device)
+    model = model.to(torch.float64)
+    model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)    
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, 
