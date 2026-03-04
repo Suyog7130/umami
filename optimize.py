@@ -132,11 +132,13 @@ def objective(trial):
     Using a fixed number of trials, the validation loss is minimized.
     """
     logging.info("Starting new trial")
+
     # Suggest hyperparameters
+    input_dim = 2 * PRESET_ARRAY_SIZE  # Assuming input is a flattened array of shape (2, PRESET_ARRAY_SIZE)
+    num_classes = 4  # Set according to your dataset
     latent_dim_x = trial.suggest_int("latent_dim_x", 8, 100)
     latent_dim_key = trial.suggest_int("latent_dim_key", 2, 4)
     dropout_p = trial.suggest_float("dropout_p", 0.1, 0.5)
-    # use_batchnorm = trial.suggest_categorical("use_batchnorm", [True, False])
     activation = trial.suggest_categorical("activation", ["relu", "silu", "gelu"])
     n_cnn_enc = trial.suggest_int("n_cnn_enc", 2, 5)
     n_cnn_dec = trial.suggest_int("n_cnn_dec", 2, 5)
@@ -144,29 +146,36 @@ def objective(trial):
     n_fc_post = trial.suggest_int("n_fc_post", 1, 3)
     base_cnn_channels = trial.suggest_int("base_cnn_channels", 16, 64)
 
-    pre_fc_sizes = trial.suggest_categorical("pre_fc_sizes", [[128], [256, 128], [512, 256, 128]])
-    post_fc_sizes = trial.suggest_categorical("post_fc_sizes", [[128], [256, 128], [512, 256, 128]])
-    cnn_in_channels = trial.suggest_categorical("cnn_in_channels", [[1, 16], [1, 32], [1, 64]])
-    cnn_out_channels = trial.suggest_categorical("cnn_out_channels", [[16, 32], [32, 64], [64, 128]])
-    cnn_kernel_size = trial.suggest_categorical("cnn_kernel_size", [[3, 3], [5, 3], [3, 5]])
-    cnn_dilation = trial.suggest_categorical("cnn_dilation", [[1, 1], [2, 1], [1, 2]])
-    cnn_pool_kernel_size = trial.suggest_categorical("cnn_pool_kernel_size", [[2, 2], [2, 1], [1, 2]])
+    # Suggest only hidden layers, then build full sizes list
+    pre_fc_hidden = trial.suggest_categorical("pre_fc_hidden", [(256,), (512, 256)])
+    # pre_fc_sizes = (input_dim + num_classes,) + pre_fc_hidden + (latent_dim_x * 2,)
+    pre_fc_sizes = pre_fc_hidden
+
+    post_fc_hidden = trial.suggest_categorical("post_fc_hidden", [(128,), (256, 128), (512, 256, 128)])
+    # post_fc_sizes = (pre_fc_hidden[-1] + num_classes,) + post_fc_hidden + (latent_dim_x * 2,)
+    post_fc_sizes = post_fc_hidden
+
+    cnn_in_channels = trial.suggest_categorical("cnn_in_channels", [(1, 16), (1, 32), (1, 64)])
+    cnn_out_channels = trial.suggest_categorical("cnn_out_channels", [(16, 32), (32, 64), (64, 128)])
+    cnn_kernel_size = trial.suggest_categorical("cnn_kernel_size", [(3, 3), (5, 3), (3, 5)])
+    cnn_dilation = trial.suggest_categorical("cnn_dilation", [(1, 1), (2, 1), (1, 2)])
+    cnn_pool_kernel_size = trial.suggest_categorical("cnn_pool_kernel_size", [(2, 2), (2, 1), (1, 2)])
 
     # Build model with suggested hyperparameters
     model = TwoC2E1D(
         labels_mean=params_mean,
         labels_std=params_std,
-        input_dim=(2, PRESET_ARRAY_SIZE),  
-        num_classes=4,  
-        encoder_latent_dims=[latent_dim_x, latent_dim_key],  # Latent dimensions for each encoder
-        cond_dim=[latent_dim_x, latent_dim_key],  # Conditioner output dims (can be same as latent dims)
+        input_shape=(2, PRESET_ARRAY_SIZE),
+        num_classes=num_classes,
+        encoder_latent_dims=[latent_dim_x, latent_dim_key],
+        cond_dim=[latent_dim_x, latent_dim_key],
         dropout_p=dropout_p,
-        use_batchnorm=False,  # Never use batchnorm
+        use_batchnorm=False,
         activation=activation,
-        n_cnn_enc=n_cnn_enc,
-        n_cnn_dec=n_cnn_dec,
-        n_fc_pre=n_fc_pre,
-        n_fc_post=n_fc_post,
+        n_layers_cnn_encoder=n_cnn_enc,
+        n_layers_cnn_decoder=n_cnn_dec,
+        n_layers_pre_fc=n_fc_pre,
+        n_layers_post_fc=n_fc_post,
         base_cnn_channels=base_cnn_channels,
         pre_fc_sizes=pre_fc_sizes,
         post_fc_sizes=post_fc_sizes,

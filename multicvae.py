@@ -135,22 +135,22 @@ class BaseCoder(nn.Module):
         return nn.Sequential(*seq)
 
     # ----- stage builders (backwards-friendly) -----
-    def fc(self, in_features: Sequence[int], out_features: Sequence[int], *,
+    def fc(self, in_features: Sequence[int] = None, out_features: Sequence[int] = None, *,
            n_layers: Optional[int] = None,
            sizes: Optional[Sequence[int]] = None,
            use_last_activation: bool = False) -> nn.Sequential:
         """Builds an MLP. You may specify either (in_features, out_features)
         or a single `sizes=[in, h1, ..., out]`. The original API is preserved.
         """
-        logging.info(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
+        print(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
         layers: List[nn.Module] = []
-        if sizes is not None and in_features is None and len(sizes) > 0:
+        if sizes is not None and len(sizes) > 0:
             in_f, out_f = _pair_from_sizes(sizes)
         else:
             in_f, out_f = list(in_features), list(out_features)
         if n_layers is None:
             n_layers = len(in_f)
-        logging.info(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
+        print(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
         assert n_layers == len(in_f) == len(out_f), "FC spec length mismatch"
         for i in range(n_layers):
             is_last = (i == n_layers - 1) and use_last_activation
