@@ -117,7 +117,7 @@ class BaseCoder(nn.Module):
         seq.append(self._last_act if is_last else self._act)
         if self.use_dropout and not is_last:
             seq.append(self._drop)
-        return nn.Sequential(*seq)
+        return nn.Sequential(*seq).to(torch.float64)  # ensure double precision for all layers
 
     def conv_layer(self, in_channels: int, out_channels: int,
                    kernel_size: int, dilation: int,
@@ -132,7 +132,7 @@ class BaseCoder(nn.Module):
         seq.append(nn.MaxPool1d(kernel_size=pool_size))
         if self.use_dropout and not is_last:
             seq.append(self._drop)
-        return nn.Sequential(*seq)
+        return nn.Sequential(*seq).to(torch.float64)  # ensure double precision for all layers
 
     # ----- stage builders (backwards-friendly) -----
     def fc(self, in_features: Sequence[int] = None, out_features: Sequence[int] = None, *,
@@ -155,7 +155,7 @@ class BaseCoder(nn.Module):
         for i in range(n_layers):
             is_last = (i == n_layers - 1) and use_last_activation
             layers.append(self.linear_layer(in_f[i], out_f[i], is_last=is_last))
-        return nn.Sequential(*layers)
+        return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
 
     def cnn(self,
             in_channels: Sequence[int],
@@ -181,7 +181,7 @@ class BaseCoder(nn.Module):
         for i in range(n_layers):
             is_last = (i == n_layers - 1) and use_last_activation
             layers.append(self.conv_layer(in_c[i], out_c[i], ksz[i], dil[i], pool_size=pool[i], is_last=is_last))
-        return nn.Sequential(*layers)
+        return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
 
 
 # -----------------
@@ -389,6 +389,10 @@ class BaseCVAE(nn.Module):
 
         self.encoders = nn.ModuleList([BaseEncoder(**enc_kwargs) for _ in range(self.n_encoders)])
         self.decoders = nn.ModuleList([BaseDecoder(**dec_kwargs) for _ in range(self.n_decoders)])
+        # -- make all layers to double precision
+        for m in self.modules():
+            if isinstance(m, (nn.Linear, nn.Conv1d, nn.Conv2d)):
+                m.double()
 
     # ---- helpers to access C/E/D ----
     def condition(self, y: torch.Tensor, idx: int = 0) -> Optional[torch.Tensor]:

@@ -148,12 +148,14 @@ def objective(trial):
 
     # Suggest only hidden layers, then build full sizes list
     pre_fc_hidden = trial.suggest_categorical("pre_fc_hidden", [(256,), (512, 256)])
-    # pre_fc_sizes = (input_dim + num_classes,) + pre_fc_hidden + (latent_dim_x * 2,)
-    pre_fc_sizes = pre_fc_hidden
+    pre_fc_sizes = (input_dim + num_classes,) + pre_fc_hidden + (latent_dim_x * 2,)
+    # pre_fc_sizes = pre_fc_hidden
+    n_fc_pre = len(pre_fc_hidden) + 1  # +1 for the final layer to latent space
 
     post_fc_hidden = trial.suggest_categorical("post_fc_hidden", [(128,), (256, 128), (512, 256, 128)])
-    # post_fc_sizes = (pre_fc_hidden[-1] + num_classes,) + post_fc_hidden + (latent_dim_x * 2,)
-    post_fc_sizes = post_fc_hidden
+    post_fc_sizes = (pre_fc_hidden[-1] + num_classes,) + post_fc_hidden + (latent_dim_x * 2,)
+    # post_fc_sizes = post_fc_hidden
+    n_fc_post = len(post_fc_hidden) + 1  # +1 for the final layer to latent space
 
     cnn_in_channels = trial.suggest_categorical("cnn_in_channels", [(1, 16), (1, 32), (1, 64)])
     cnn_out_channels = trial.suggest_categorical("cnn_out_channels", [(16, 32), (32, 64), (64, 128)])
