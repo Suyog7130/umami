@@ -142,14 +142,15 @@ class BaseCoder(nn.Module):
         """Builds an MLP. You may specify either (in_features, out_features)
         or a single `sizes=[in, h1, ..., out]`. The original API is preserved.
         """
+        logging.info(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
         layers: List[nn.Module] = []
-        if sizes is not None and len(sizes) > 0:
+        if sizes is not None and in_features is None and len(sizes) > 0:
             in_f, out_f = _pair_from_sizes(sizes)
         else:
             in_f, out_f = list(in_features), list(out_features)
         if n_layers is None:
             n_layers = len(in_f)
-        print(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
+        logging.info(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
         assert n_layers == len(in_f) == len(out_f), "FC spec length mismatch"
         for i in range(n_layers):
             is_last = (i == n_layers - 1) and use_last_activation
@@ -197,6 +198,13 @@ class BaseEncoder(BaseCoder):
             x = torch.cat([x.view(x.size(0), -1), y_cat], dim=1)
         else:
             x = x.view(x.size(0), -1)
+
+        # # Each encoder will have pre-FC -> CNN -> post-FC,
+        # # such that the first input is the actual input `x`,
+        # # with shape "input_dim", which is already transferred.
+        # # The first layer of the encoder, either pre-FC or CNN,
+        # # will have the `in_features` equal to this input_dim.
+        # self.pre_fc_in_features = self.input_shape if self.has_pre_fc else None
 
         if self.has_pre_fc and (self.pre_fc_sizes or self.pre_fc_in_features):
             x = self.fc(self.pre_fc_in_features, self.pre_fc_out_features,
