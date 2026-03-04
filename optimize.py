@@ -148,14 +148,26 @@ def objective(trial):
 
     # Suggest only hidden layers, then build full sizes list
     pre_fc_hidden = trial.suggest_categorical("pre_fc_hidden", [(256,), (512, 256)])
-    pre_fc_sizes = (input_dim,) + pre_fc_hidden + (latent_dim_x * 2,)
-    # pre_fc_sizes = pre_fc_hidden
-    n_fc_pre = len(pre_fc_hidden) + 1  # +1 for the final layer to latent space
+    # Build pre_fc_sizes and check compatibility
+    pre_fc_sizes_raw = [input_dim] + list(pre_fc_hidden) + [latent_dim_x * 2]
+    # Check for consecutive sizes compatibility
+    pre_fc_sizes = tuple(pre_fc_sizes_raw)
+    n_fc_pre = len(pre_fc_sizes) - 1
+    for i in range(n_fc_pre):
+        if pre_fc_sizes[i] is None or pre_fc_sizes[i+1] is None:
+            import warnings
+            warnings.warn(f"pre_fc_sizes contains None at position {i}: {pre_fc_sizes}")
+        # You could add more checks here for compatibility if needed
 
     post_fc_hidden = trial.suggest_categorical("post_fc_hidden", [(128,), (256, 128), (512, 256, 128)])
-    post_fc_sizes = (pre_fc_hidden[-1] + num_classes,) + post_fc_hidden + (latent_dim_x * 2,)
-    # post_fc_sizes = post_fc_hidden
-    n_fc_post = len(post_fc_hidden) + 1  # +1 for the final layer to latent space
+    post_fc_sizes_raw = [pre_fc_hidden[-1] + num_classes] + list(post_fc_hidden) + [latent_dim_x * 2]
+    post_fc_sizes = tuple(post_fc_sizes_raw)
+    n_fc_post = len(post_fc_sizes) - 1
+    for i in range(n_fc_post):
+        if post_fc_sizes[i] is None or post_fc_sizes[i+1] is None:
+            import warnings
+            warnings.warn(f"post_fc_sizes contains None at position {i}: {post_fc_sizes}")
+        # You could add more checks here for compatibility if needed
 
     first_in_channel = trial.suggest_categorical("cnn_first_in_channel", [1, 2])
     cnn_out_channels = list(trial.suggest_categorical("cnn_out_channels", [(16, 32), (32, 64), (64, 128)]))
