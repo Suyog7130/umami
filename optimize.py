@@ -33,7 +33,7 @@ else:
 
 datadir = "../data/"
 train_hdf = datadir + 'SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen'
-val_hdf = datadir + "SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen"
+val_hdf = datadir + "SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen"
 
 logging.info(f'Reading training data from {train_hdf}.hdf')
 train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=False,
@@ -82,7 +82,7 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
-        for batch_idx, (x, target, labels, keys) in enumerate(train_loader):
+        for batch_idx, (x, target, labels, keys, strains) in enumerate(train_loader):
             if batch_idx >= num_train_batches:
                 break
             x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
@@ -100,7 +100,7 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
     model.eval()
     val_loss = 0.0
     with torch.no_grad():
-        for x, target, labels, keys in val_loader:
+        for x, target, labels, keys, strains in val_loader:
             x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
             x_recon, zvars = model(x, labels, keys)
             loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)

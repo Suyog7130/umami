@@ -149,6 +149,7 @@ class BaseCoder(nn.Module):
             in_f, out_f = list(in_features), list(out_features)
         if n_layers is None:
             n_layers = len(in_f)
+        print(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
         assert n_layers == len(in_f) == len(out_f), "FC spec length mismatch"
         for i in range(n_layers):
             is_last = (i == n_layers - 1) and use_last_activation
@@ -507,11 +508,11 @@ class BaseTwoC2E1D(BaseCVAE):
                     (z1_mean, z1_logvar, z1p_mean, z1p_logvar, z2_mean, z2_logvar, z2p_mean, z2p_logvar).
         """
         labels = self.normalize_labels(labels)
-        z1 = self.encode(x, labels, encoder_idx=0, conditioner_idx=0)
+        z1 = self.encode(x, labels, encoder_idx=0)
         z1_mean, z1_logvar = z1.chunk(2, dim=1)
         z1p = self.condition(labels, idx=0)
         z1p_mean, z1p_logvar = z1p.chunk(2, dim=1)
-        z2 = self.encode(keys, labels, encoder_idx=1, conditioner_idx=1)
+        z2 = self.encode(keys, labels, encoder_idx=1)
         z2_mean, z2_logvar = z2.chunk(2, dim=1)
         z2p = self.condition(labels, idx=1)
         z2p_mean, z2p_logvar = z2p.chunk(2, dim=1)
