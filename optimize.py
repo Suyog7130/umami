@@ -148,7 +148,7 @@ def objective(trial):
 
     # Suggest only hidden layers, then build full sizes list
     pre_fc_hidden = trial.suggest_categorical("pre_fc_hidden", [(256,), (512, 256)])
-    pre_fc_sizes = (input_dim + num_classes,) + pre_fc_hidden + (latent_dim_x * 2,)
+    pre_fc_sizes = (input_dim,) + pre_fc_hidden + (latent_dim_x * 2,)
     # pre_fc_sizes = pre_fc_hidden
     n_fc_pre = len(pre_fc_hidden) + 1  # +1 for the final layer to latent space
 
