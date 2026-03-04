@@ -13,12 +13,13 @@ dependencies:
   - seaborn
   - statsmodels
   - astropy
-  - torch
-  - torchvision
-  - torchaudio
-  - pytorch-lightning
+  - pip
   - pycbc  # -- install after torch to ensure compatibility
   - pip:
     - pdfkit
     - wkhtmltopdf
     - tqdm
+    - torch
+    # - torchvision
+    # - torchaudio
+    # - pytorch-lightning
