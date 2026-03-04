@@ -32,8 +32,8 @@ else:
     DEVICE = torch.device("cpu")
 
 datadir = "../data/"
-train_hdf = datadir + 'SEOBNRv4-train-100-fcutoff-uniform-aligned'
-val_hdf = datadir + "SEOBNRv4-test-100-fcutoff-uniform-aligned"
+train_hdf = datadir + 'SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen'
+val_hdf = datadir + "SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen"
 
 logging.info(f'Reading training data from {train_hdf}.hdf')
 train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=False,
