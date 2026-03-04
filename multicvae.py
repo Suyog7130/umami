@@ -166,30 +166,37 @@ class BaseCoder(nn.Module):
             pool_kernel_size: Optional[Sequence[Optional[int]]] = None,
             n_layers: Optional[int] = None,
             use_last_activation: bool = False) -> nn.Sequential:
-            # Defensive: auto-expand single values to lists of n_layers length
-            def expand(val, n):
-                if isinstance(val, (list, tuple)):
-                    return list(val)
-                return [val] * n
+        # Defensive: auto-expand single values to lists of n_layers length
+        def expand(val, n):
+            if isinstance(val, (list, tuple)):
+                return list(val)
+            return [val] * n
 
-            # Determine n_layers
-            n_layers = n_layers or max(
-                len(in_channels) if isinstance(in_channels, (list, tuple)) else 1,
-                len(out_channels) if isinstance(out_channels, (list, tuple)) else 1,
-                len(kernel_size) if isinstance(kernel_size, (list, tuple)) else 1,
-                len(dilation) if isinstance(dilation, (list, tuple)) else 1,
-                len(pool_kernel_size) if pool_kernel_size and isinstance(pool_kernel_size, (list, tuple)) else 0
-            )
+        # Find the minimum length among all parameter lists
+        param_lengths = [
+            len(in_channels) if isinstance(in_channels, (list, tuple)) else 1,
+            len(out_channels) if isinstance(out_channels, (list, tuple)) else 1,
+            len(kernel_size) if isinstance(kernel_size, (list, tuple)) else 1,
+            len(dilation) if isinstance(dilation, (list, tuple)) else 1,
+            len(pool_kernel_size) if pool_kernel_size and isinstance(pool_kernel_size, (list, tuple)) else 1
+        ]
+        min_len = min(param_lengths)
+        # If n_layers is not set, use min_len; if set, use min(n_layers, min_len)
+        n_layers = n_layers if n_layers is not None else min_len
+        if n_layers > min_len:
+            import warnings
+            warnings.warn(f"CNN spec mismatch: Reducing n_layers from {n_layers} to {min_len} due to parameter list lengths. in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}, dilation={dilation}, pool_kernel_size={pool_kernel_size}")
+            n_layers = min_len
 
-            in_c  = expand(in_channels, n_layers)
-            out_c = expand(out_channels, n_layers)
-            ksz   = expand(kernel_size, n_layers)
-            dil   = expand(dilation, n_layers)
-            pool  = expand(pool_kernel_size if pool_kernel_size is not None else None, n_layers)
+        in_c  = expand(in_channels, n_layers)
+        out_c = expand(out_channels, n_layers)
+        ksz   = expand(kernel_size, n_layers)
+        dil   = expand(dilation, n_layers)
+        pool  = expand(pool_kernel_size if pool_kernel_size is not None else None, n_layers)
 
-            # Validate lengths
-            if not (len(in_c) == len(out_c) == len(ksz) == len(dil) == len(pool) == n_layers):
-                raise ValueError(f"CNN spec length mismatch: in_channels={in_c}, out_channels={out_c}, kernel_size={ksz}, dilation={dil}, pool_kernel_size={pool}, n_layers={n_layers}")
+        # Validate lengths
+        if not (len(in_c) == len(out_c) == len(ksz) == len(dil) == len(pool) == n_layers):
+            raise ValueError(f"CNN spec length mismatch: in_channels={in_c}, out_channels={out_c}, kernel_size={ksz}, dilation={dil}, pool_kernel_size={pool}, n_layers={n_layers}")
 
             layers: List[nn.Module] = []
             for i in range(n_layers):
