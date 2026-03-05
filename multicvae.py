@@ -151,11 +151,26 @@ class BaseCoder(nn.Module):
         if n_layers is None:
             n_layers = len(in_f)
         print(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
-        assert n_layers == len(in_f) == len(out_f), "FC spec length mismatch"
+        assert n_layers == len(in_f) == len(out_f), f"FC spec length mismatch: n_layers={n_layers}, in_f={len(in_f)}, out_f={len(out_f)}"
+        # Robust compatibility check: ensure each in_f[i] matches previous output shape
         for i in range(n_layers):
+            if i > 0 and in_f[i] != out_f[i-1]:
+                raise ValueError(f"FC layer size mismatch at layer {i}: in_features={in_f[i]} does not match previous out_features={out_f[i-1]}. Full sizes: in_f={in_f}, out_f={out_f}, sizes={sizes}")
             is_last = (i == n_layers - 1) and use_last_activation
             layers.append(self.linear_layer(in_f[i], out_f[i], is_last=is_last))
-        return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
+
+        # Add runtime assertion for input shape compatibility
+        class AssertInputShape(nn.Module):
+            def __init__(self, expected_in_features):
+                super().__init__()
+                self.expected_in_features = expected_in_features
+            def forward(self, x):
+                if x.shape[-1] != self.expected_in_features:
+                    raise RuntimeError(f"Input tensor last dimension {x.shape[-1]} does not match expected in_features {self.expected_in_features} for FC block.")
+                return x
+
+        seq = nn.Sequential(AssertInputShape(in_f[0]), *layers)
+        return seq.to(torch.float64)  # ensure double precision for all layers
 
     def cnn(self,
             in_channels: Sequence[int],

@@ -160,7 +160,9 @@ def objective(trial):
         # You could add more checks here for compatibility if needed
 
     post_fc_hidden = trial.suggest_categorical("post_fc_hidden", [(128,), (256, 128), (512, 256, 128)])
-    post_fc_sizes_raw = [pre_fc_hidden[-1] + num_classes] + list(post_fc_hidden) + [latent_dim_x * 2]
+    # Set previous layer output to last hidden size plus num_classes for FC block compatibility
+    post_fc_input_size = post_fc_hidden[-1] + num_classes
+    post_fc_sizes_raw = [post_fc_input_size] + list(post_fc_hidden) + [latent_dim_x * 2]
     post_fc_sizes = tuple(post_fc_sizes_raw)
     n_fc_post = len(post_fc_sizes) - 1
     for i in range(n_fc_post):
