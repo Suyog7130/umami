@@ -356,6 +356,8 @@ class CVAE(nn.Module):
         # This works regardless of whether MODEL_CONFIG is provided or not, 
         # because if MODEL_CONFIG is not provided, the default values will be used.
         if paramsnorm:
+            logging.info("Input parameter normalization is ENABLED. \
+                The model will normalize the input parameters.")
             if labels_mean is None or labels_std is None:
                 raise ValueError("labels_mean and labels_std must be provided when paramsnorm is True.")
             if not isinstance(labels_mean, torch.Tensor):
@@ -366,7 +368,10 @@ class CVAE(nn.Module):
             self.register_buffer('labels_std', labels_std)
         elif labels_mean is not None or labels_std is not None:
             logging.warning("labels_mean and labels_std are provided but paramsnorm is False. \
-                These will be ignored since input param normalization is not enabled.")
+                These will be ignored since input param normalization is NOT enabled.")
+        else:
+            logging.info("Input parameter normalization is NOT enabled. \
+                The model will use the raw labels without normalization.")
 
         # E2 in Fig 11 of the paper
         # self.x_encoder = nn.Sequential(

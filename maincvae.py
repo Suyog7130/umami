@@ -233,15 +233,16 @@ def train(args):
     params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
     params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
 
-    if args.use_base_model_config:
-        MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
-    else:
-        MODEL_CONFIG['paramsmean'] = True
+    MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
+    if not args.use_base_model_config:
+        MODEL_CONFIG['paramsmean'] = False
         MODEL_CONFIG['labels_mean'] = params_mean
         MODEL_CONFIG['labels_std'] = params_std
         MODEL_CONFIG['num_classes'] = num_classes
         MODEL_CONFIG['latent_dim_x'] = 32
         MODEL_CONFIG['latent_dim_key'] = 2
+        MODEL_CONFIG['learning_rate'] = 1e-3
+    logging.info(f'Model Config: {MODEL_CONFIG}')
 
     # Initialize Model
     # `num_classes` is the size of the labels.
@@ -269,7 +270,7 @@ def train(args):
 
     # Add a learning rate scheduler
     # Scheduler will adjust learning rate after every epoch
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    optimizer = torch.optim.Adam(model.parameters(), lr=MODEL_CONFIG.get('learning_rate', 1e-4))
     # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, 
