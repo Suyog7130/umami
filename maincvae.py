@@ -489,8 +489,9 @@ class Test:
         self.savedir = savedir+f'/{today}/'
 
         self.epochs = 1
-        self.model_path = '../trained-models/' + args.model
-        logging.info('Test DataLoader set up.')
+        if args.model is not None:
+            self.model_path = '../trained-models/' + args.model        
+            logging.info('Test DataLoader set up.')
 
     def _load_model(self):
         """
@@ -1418,11 +1419,48 @@ class Test:
         if test_ml_model:
             raise NotImplementedError("Mismatch comparison for ML-generated waveforms is not implemented yet.")
 
-        # -- check if self.testloader is available
-        hasattr(self, 'testloader') or logging.warning("Test dataloader not found. Please run prepare_test_data() before testing mismatch comparison.")
+        # -- load data from testdataset with batchsize=1, so that we can generate waveforms
+        # for each waveform and compare mismatches.
+        test_loader = self.setdataloader(batch_size=1)
 
-        for (x, labels, keys, phases, strains, attr) in tqdm(iter(self.test_loader)):
+        for (x, labels, keys, phases, strains, attr) in tqdm(iter(test_loader)):
+            m1, m2, s1, s2 = labels[0].cpu().numpy()
+            delta_t = attr['delta_t'][0]
+            f_lower = attr['f_lower'][0]
+            logging.info(f"Testing mismatch comparison for waveform with parameters: \
+                         m1={m1}, m2={m2}, s1={s1}, s2={s2}, delta_t={delta_t}, f_lower={f_lower}")
 
+            # -- get original base waveforms
+            hp_orig = strains[0][0].cpu().numpy()
+            hc_orig = strains[0][1].cpu().numpy()
+
+            # -- set waveform generation parameters
+            wfkwargs = {
+                'mass1': m1,
+                'mass2': m2,
+                'spin1z': s1,
+                'spin2z': s2,
+                'delta_t': delta_t,
+                'f_lower': f_lower,
+                'approximant': self.approximant
+            }
+
+            # -- get ROM waveforms
+            wfkwargs['approximant'] = 'SEOBNRv4_ROM'
+            hp_rom, hc_rom = pycbc.waveform.get_td_waveform(**wfkwargs)
+
+            # -- get optimized SEOBNRv4 waveforms
+            wfkwargs['approximant'] = 'SEOBNRv4_opt'
+            hp_opt, hc_opt = pycbc.waveform.get_td_waveform(**wfkwargs)
+
+            # -- calculate mismatches
+            mm_rom_hp = calc_polarization_mismatch(hp_orig, hp_rom, delta_t, f_lower)
+            mm_rom_hc = calc_polarization_mismatch(hc_orig, hc_rom, delta_t, f_lower)
+            mm_opt_hp = calc_polarization_mismatch(hp_orig, hp_opt, delta_t, f_lower)
+            mm_opt_hc = calc_polarization_mismatch(hc_orig, hc_opt, delta_t, f_lower)
+            logging.info(f"Calculated mismatches: \
+                         ROM hp mismatch={mm_rom_hp:.4e}, ROM hc mismatch={mm_rom_hc:.4e}, \
+                         Optimized hp mismatch={mm_opt_hp:.4e}, Optimized hc mismatch={mm_opt_hc:.4e}")
 
 
 def removezeros(x, reconst, phase, attr):
@@ -2066,6 +2104,8 @@ if __name__ == "__main__":
                         help='whether to test time complexity?')
     parser.add_argument('--time-compare', action='store_true', default=False,
                         help='whether to compare time complexity with standard waveform generation?')
+    parser.add_argument('--test-mm-compare', action='store_true', default=False,
+                        help='whether to compare mismatch with standard waveform generation?')
     parser.add_argument('--generate', action='store_true', default=False,
                             help='whether to generate samples from trained model?')
 
@@ -2080,7 +2120,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--today', action='store', default=None,
                         help='Date of the model we are currently using, in YYYYMMDD. \
-                            Results will be saved to this folder. (default=%(default)')
+                            Results will be saved to this folder. (default=%(default)s)')
     parser.add_argument('--fname', action='store', default=None,
                         help='Dummy filename argument. (default=%(default)s)')
     parser.add_argument('--savedir', action='store', default=None,
@@ -2153,6 +2193,8 @@ if __name__ == "__main__":
                 Test(args).plot_time_complexity_compare(fname=args.fname)
             else:
                 Test(args).test_timecomplexity_compare(iters=100)
+        elif args.test_mm_compare:
+            Test(args).test_mismatch_compare()
         else:
             Test(args).test()
         # except RuntimeError as e:
