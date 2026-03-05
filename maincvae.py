@@ -22,6 +22,7 @@ Working on the minimal working example today!
 """
 
 import os
+import json
 import time
 import argparse
 import h5py
@@ -232,12 +233,15 @@ def train(args):
     params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
     params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
 
-    MODEL_CONFIG['paramsmean'] = True
-    MODEL_CONFIG['labels_mean'] = params_mean
-    MODEL_CONFIG['labels_std'] = params_std
-    MODEL_CONFIG['num_classes'] = num_classes
-    MODEL_CONFIG['latent_dim_x'] = 32
-    MODEL_CONFIG['latent_dim_key'] = 2
+    if args.use_base_model_config:
+        MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
+    else:
+        MODEL_CONFIG['paramsmean'] = True
+        MODEL_CONFIG['labels_mean'] = params_mean
+        MODEL_CONFIG['labels_std'] = params_std
+        MODEL_CONFIG['num_classes'] = num_classes
+        MODEL_CONFIG['latent_dim_x'] = 32
+        MODEL_CONFIG['latent_dim_key'] = 2
 
     # Initialize Model
     # `num_classes` is the size of the labels.
@@ -378,16 +382,6 @@ def train(args):
     model_path = f'../trained-models/model-'
     model_path += 'mmloss-' if args.usemmloss else ''
     model_path += args.modeltype + '-nokll-' if noklloss else ''
-    # -- update model name with MODEL_CONFIG parameters
-    for key, value in MODEL_CONFIG.items():
-        # Skip params mean and std in filename
-        if key in ['labels_mean', 'labels_std']:
-            continue
-        if isinstance(value, bool):
-            value_str = 'T' if value else 'F'
-        else:
-            value_str = str(value)
-        model_path += f'{key}-{value_str}-'
     model_path += savename
 
     if not args.nosave:
@@ -411,17 +405,13 @@ def train(args):
             'netvmmloss': netvmmloss if args.usemmloss or noklloss else [0]*len(netvklloss)
             })
         savename = args.modeltype + '-nokll-' if noklloss else ''
-        # -- update model name with MODEL_CONFIG parameters
-        for key, value in MODEL_CONFIG.items():
-            # Skip params mean and std in filename
-            if key in ['labels_mean', 'labels_std']:
-                continue
-            if isinstance(value, bool):
-                value_str = 'T' if value else 'F'
-            else:
-                value_str = str(value)
-            savename += f'{key}-{value_str}-'
         dfnet.to_csv(savedir + f'net-loss-{savename}{timestamp}.csv', index=False)
+
+        # -- Save MODEL_CONFIG to JSON file with same savename for future reference
+        model_config_path = f'../trained-models/model-config-{savename}{timestamp}.json'
+        with open(model_config_path, 'w') as f:
+            json.dump(MODEL_CONFIG, f)
+        logging.info(f"Model config saved at {model_config_path}")
 
     fig, axes = plt.subplots(2, 1, figsize=(5, 10))
     axes[0].plot(np.arange(args.epochs), train_loss, label='training loss')
@@ -2116,12 +2106,15 @@ if __name__ == "__main__":
                         help='whether to compare time complexity with standard waveform generation?')
     parser.add_argument('--generate', action='store_true', default=False,
                             help='whether to generate samples from trained model?')
+
     parser.add_argument('--model', action='store', default=None,
                         help='name of a pre-trained model.')
     parser.add_argument('--modeltype', action='store', default='cvae',
                         help='type of model to use, e.g., cvae or cae (default=%(default)s)')
     parser.add_argument('--usemmloss', action='store_true', default=False,
                         help='whether to use mismatch loss during training (default=%(default)s)')
+    parser.add_argument('--use-base-model-config', action='store_true', default=False,
+                        help='Whether to use the base model config for training? (default=%(default)s)')
     
     parser.add_argument('--today', action='store', default=None,
                         help='Date of the model we are currently using, in YYYYMMDD. \
