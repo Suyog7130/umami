@@ -76,7 +76,12 @@ from data import SEOBNRv4
 import random
 markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
 
-
+BASE_MODEL_CONFIG = {
+    'modeltype': 'cvae',
+    'latent_dim_x': 8,
+    'latent_dim_key': 3,
+    'paramsmean': False,  # whether to use mean and std of labels for normalization
+}
 
 # def train_one_epoch(training_loader, epoch_index, tb_writer=None):
 #      running_loss = 0.
@@ -227,6 +232,13 @@ def train(args):
     params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
     params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
 
+    MODEL_CONFIG['paramsmean'] = True
+    MODEL_CONFIG['labels_mean'] = params_mean
+    MODEL_CONFIG['labels_std'] = params_std
+    MODEL_CONFIG['num_classes'] = num_classes
+    MODEL_CONFIG['latent_dim_x'] = 32
+    MODEL_CONFIG['latent_dim_key'] = 2
+
     # Initialize Model
     # `num_classes` is the size of the labels.
     # if args.fcutoff or args.aligned:
@@ -234,11 +246,11 @@ def train(args):
     if args.modeltype=='cae':
         logging.info(f'Using model type: CAE with num_classes={num_classes} and preset_array_size={PRESET_ARRAY_SIZE}')
         model = CAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2),
-                    latent_dim_x=32, latent_dim_key=2, labels_mean=params_mean, labels_std=params_std)
+                    MODEL_CONFIG=MODEL_CONFIG)
     else:
         logging.info(f'Using model type: CVAE with num_classes={num_classes} and preset_array_size={PRESET_ARRAY_SIZE}')
         model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2),
-                    labels_mean=params_mean, labels_std=params_std, latent_dim_x=32, latent_dim_key=2)
+                    MODEL_CONFIG=MODEL_CONFIG)
 
     if args.model is not None:
         model_path = '../trained-models/' + args.model
@@ -366,7 +378,18 @@ def train(args):
     model_path = f'../trained-models/model-'
     model_path += 'mmloss-' if args.usemmloss else ''
     model_path += args.modeltype + '-nokll-' if noklloss else ''
+    # -- update model name with MODEL_CONFIG parameters
+    for key, value in MODEL_CONFIG.items():
+        # Skip params mean and std in filename
+        if key in ['labels_mean', 'labels_std']:
+            continue
+        if isinstance(value, bool):
+            value_str = 'T' if value else 'F'
+        else:
+            value_str = str(value)
+        model_path += f'{key}-{value_str}-'
     model_path += savename
+
     if not args.nosave:
         if not os.path.isdir(savedir):
             os.makedirs(savedir)
@@ -388,6 +411,16 @@ def train(args):
             'netvmmloss': netvmmloss if args.usemmloss or noklloss else [0]*len(netvklloss)
             })
         savename = args.modeltype + '-nokll-' if noklloss else ''
+        # -- update model name with MODEL_CONFIG parameters
+        for key, value in MODEL_CONFIG.items():
+            # Skip params mean and std in filename
+            if key in ['labels_mean', 'labels_std']:
+                continue
+            if isinstance(value, bool):
+                value_str = 'T' if value else 'F'
+            else:
+                value_str = str(value)
+            savename += f'{key}-{value_str}-'
         dfnet.to_csv(savedir + f'net-loss-{savename}{timestamp}.csv', index=False)
 
     fig, axes = plt.subplots(2, 1, figsize=(5, 10))
@@ -469,7 +502,48 @@ class Test:
         logging.info('Test DataLoader set up.')
 
     def _load_model(self):
-        pass
+        """
+        Load the trained model from the specified path.
+        Depending on the model type (CAE or CVAE), initialize the appropriate 
+        model architecture and load the state dictionary.
+        Also, gets the mean and std of labels for normalization, 
+        which are needed to initialize the model.
+        """
+        # Load the trained model
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
+        num_classes = 4 if self.aligned else 2
+
+        # -- get mean and std of labels for normalization
+        params_fname = '../data/params-' + args.approximant + '-train-100000-fcutoff-uniform-aligned-regen'
+        params_df = pd.read_csv(params_fname+'.csv', index_col=0, sep=',')
+        params_mean = params_df.mean().values
+        params_std = params_df.std().values
+        logging.info(f"Labels mean: {params_mean}")
+        logging.info(f"Labels std: {params_std}")
+        params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
+        params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
+
+        MODEL_CONFIG['paramsmean'] = True
+        MODEL_CONFIG['labels_mean'] = params_mean
+        MODEL_CONFIG['labels_std'] = params_std
+        MODEL_CONFIG['num_classes'] = num_classes
+        MODEL_CONFIG['latent_dim_x'] = 32
+        MODEL_CONFIG['latent_dim_key'] = 2
+
+        if self.modeltype=='cae':
+            logging.info(f'Using model type: CAE with num_classes={num_classes} and preset_array_size={preset_array_size}')
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2),
+                        MODEL_CONFIG=MODEL_CONFIG)
+        else:
+            logging.info(f'Using model type: CVAE with num_classes={num_classes} and preset_array_size={preset_array_size}')
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2),
+                        MODEL_CONFIG=MODEL_CONFIG)
+        model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+        model.to(self.device)
+        model.to(torch.float64)
+        model.eval()  # Set model to evaluation mode
+        logging.info(f"Loaded model from {self.model_path}")
+        return model
 
     def setdataloader(self, batch_size=None, custom_batch=None):
         """
@@ -493,30 +567,7 @@ class Test:
         """
         logging.info(f"Testing with model: {self.model_path}")
 
-        # -- get mean and std of labels for normalization
-        params_fname = '../data/params-' + args.approximant + '-train-100000-fcutoff-uniform-aligned-regen'
-        params_df = pd.read_csv(params_fname+'.csv', index_col=0, sep=',')
-        params_mean = params_df.mean().values
-        params_std = params_df.std().values
-        logging.info(f"Labels mean: {params_mean}")
-        logging.info(f"Labels std: {params_std}")
-        params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
-        params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
-
-        # Load the trained model
-        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
-        num_classes = 4 if self.aligned else 2
-        if self.modeltype=='cae':
-            logging.info(f'Using model type: CAE with num_classes={num_classes} and preset_array_size={preset_array_size}')
-            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2),
-                        latent_dim_x=32, latent_dim_key=2, labels_mean=params_mean, labels_std=params_std)
-        else:
-            logging.info(f'Using model type: CVAE with num_classes={num_classes} and preset_array_size={preset_array_size}')
-            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2))
-        model.load_state_dict(torch.load(self.model_path, map_location=self.device))
-        model.to(self.device)
-        model.to(torch.float64)
-        model.eval()
+        model = self._load_model()
         logging.info("Model loaded and set to evaluation mode.")
 
         # Initialize dataframe to store mismatch results of whole test set!
@@ -1360,6 +1411,66 @@ class Test:
                                         savedir=self.savedir, nobatchwiseplot=False,
                                         num_saved_overplots=0, generating=True)
         return generated
+
+    def test_mismatch_compare(self, num_samples=100):
+        """
+        Test the mismatch of ML-generated, ROM and optimized SEOBNRv4 waveforms 
+        against the base SEOBNRv4 waveforms for the same Test dataset.
+        This is useful for understanding the accuracy of the ML model in comparison
+        to the base, ROM and optimized models across a range of parameters.
+
+        The waveform keyargs are read from the HDF file containing the test dataset, 
+        and the same keyargs are used to generate the base, ROM, optimized, and ML 
+        waveforms for comparison. These saved attributes include the masses, spins, 
+        DELTA_T, f_lower, and approximant used for generating the waveforms in the test dataset.
+        """
+        logging.info(f"Testing mismatch comparison with model: {self.model_path}")
+        # Load the trained model
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
+        num_classes = 4 if args.aligned else 2
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2)).to(args.device)
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                    key_shape=(2,2)).to(args.device)
+        model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(torch.float64)
+        model.to(device)
+        model.eval()
+        logging.info("Model loaded and set to evaluation mode.")
+
+        # Load the test dataset from HDF file
+        test_dataset = WaveformDataset(self.test_data_path, self.approximant,
+                                      preset_array_size=preset_array_size,
+                                      fcutoff=args.fcutoff, aligned=args.aligned)
+        test_loader = DataLoader(test_dataset, batch_size=num_samples, shuffle=False)
+
+        # Get one batch of test data
+        x_test, labels_test, keys_test, phases_test = next(iter(test_loader))
+        x_test = x_test.to(device)
+        labels_test = labels_test.to(device)
+        keys_test = keys_test.to(device)
+        phases_test = phases_test.to(device)
+
+        # Generate reconstructed waveforms from the ML model for the test data
+        with torch.no_grad():
+            z1_mean, z1_log_var = model.encode_label_for_x(labels_test)
+            z1p_mean, z1p_log_var = model.encode_label_for_key(labels_test)
+            z1 = model.reparameterize(z1_mean, z1_log_var)
+            z1p = model.reparameterize(z1p_mean, z1p_log_var)
+            reconst_ml = model.decode(z1, z1p, labels_test)
+
+        # Remove zero padding from original and reconstructed data for accurate mismatch calculation
+        x_test_np, reconst_ml_np, phases_np = removezeros(x_test.cpu(), reconst_ml.cpu(), phases_test.cpu(), test_dataset.attr)
+
+        # Calculate mismatches for ML-generated waveforms against original waveforms
+        logging.info("Calculating mismatches for ML-generated waveforms against original waveforms")
+        mismatch_ml_hplus, mismatch_ml_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
+            = plot_polarization_mismatch(x_test_np, reconst_ml_np, labels_test.cpu(), keys_test.cpu(), phases_np,
+                                        savedir=self.savedir, nobatchwiseplot=False, num_saved_overplots=0, generating=False)
+        
+
 
 
 def removezeros(x, reconst, phase, attr):

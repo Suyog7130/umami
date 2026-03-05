@@ -332,17 +332,38 @@ class CVAE(nn.Module):
         Computes the total loss, including reconstruction and KL divergence.
     """
     def __init__(self, input_shape, num_classes, key_shape, \
-                 labels_mean, labels_std,
-                 latent_dim_x=8, latent_dim_key=3):
+                 labels_mean=None, labels_std=None, paramsnorm=False, \
+                 latent_dim_x=8, latent_dim_key=3, MODEL_CONFIG=None):
         super(CVAE, self).__init__()
+
+        # Override hyperparameters with MODEL_CONFIG values if provided
+        # This allows for flexible model configuration while maintaining default values.
+        if MODEL_CONFIG is not None:
+            latent_dim_x = MODEL_CONFIG.get('latent_dim_x', latent_dim_x)
+            latent_dim_key = MODEL_CONFIG.get('latent_dim_key', latent_dim_key)
+            labels_mean = MODEL_CONFIG.get('labels_mean', labels_mean)
+            labels_std = MODEL_CONFIG.get('labels_std', labels_std)
+            num_classes = MODEL_CONFIG.get('num_classes', num_classes)
+
+        # If MODEL_CONFIG is provided, it should contain all necessary hyperparameters.
+        # If not provided, the default values will be used.
         self.latent_dim_x = latent_dim_x  # Dimension of the latent space
         self.latent_dim_key = latent_dim_key  # Dimension of the latent space
         self.input_shape = input_shape  # shape of strain array
         self.num_classes = num_classes  # shape of labels
         self.key_shape = key_shape      # shape of mean/var array
 
-        self.register_buffer('labels_mean', torch.tensor(labels_mean))
-        self.register_buffer('labels_std', torch.tensor(labels_std))
+        # This works regardless of whether MODEL_CONFIG is provided or not, 
+        # because if MODEL_CONFIG is not provided, the default values will be used.
+        if paramsnorm or (labels_mean is not None and labels_std is not None):
+            if labels_mean is None or labels_std is None:
+                raise ValueError("labels_mean and labels_std must be provided when paramsnorm is True.")
+            if not isinstance(labels_mean, torch.Tensor):
+                labels_mean = torch.tensor(labels_mean, dtype=torch.float64)
+            if not isinstance(labels_std, torch.Tensor):
+                labels_std = torch.tensor(labels_std, dtype=torch.float64)
+            self.register_buffer('labels_mean', labels_mean)
+            self.register_buffer('labels_std', labels_std)
 
         # E2 in Fig 11 of the paper
         # self.x_encoder = nn.Sequential(
@@ -427,10 +448,15 @@ class CVAE(nn.Module):
 
         Returns:
             Output of the forward method.
+
+        NOTE: Input labels normalization is only performed if `paramsnorm` is set to True 
+        during initialization and `labels_mean` and `labels_std` are provided. 
+        If `paramsnorm` is False, the labels will be used as they are without normalization.
         """
         # print('__call__')
         logging.debug(f'__call__ with x.shape={x.shape}, labels.shape={labels.shape}, keys.shape={keys.shape}')
-        labels = self.normalize_labels(labels)
+        if hasattr(self, 'labels_mean') and hasattr(self, 'labels_std'):
+            labels = self.normalize_labels(labels)
         return self.forward(x, labels, keys)
 
     def encode_x(self, x, labels):
