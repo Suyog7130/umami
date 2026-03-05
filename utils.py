@@ -79,8 +79,8 @@ def calc_polarization_mismatch(hp_orig, hp_recon, resample_psd=True, delta_t=DEL
     hp_orig = np.asarray(hp_orig, dtype=np.float64)
     hp_recon = np.asarray(hp_recon, dtype=np.float64)
     psd = psd.astype(np.float64)
-    # assert len(hp_orig) == len(hp_recon), "Original and reconstructed waveforms must have the same length."
     logging.debug(f'len(hp_orig), len(hp_recon), len(psd) = {len(hp_orig)}, {len(hp_recon)}, {len(psd)}')
+    assert len(hp_orig) == len(hp_recon), "Original and reconstructed waveforms must have the same length."
 
     hp_orig = TimeSeries(hp_orig, delta_t=delta_t)
     hp_recon = TimeSeries(hp_recon, delta_t=delta_t)
@@ -88,11 +88,12 @@ def calc_polarization_mismatch(hp_orig, hp_recon, resample_psd=True, delta_t=DEL
     logging.debug(f"hp_orig delta_f: {hp_orig.delta_f}")
     logging.debug(f'len(hp_orig)={len(hp_orig)}, len(hp_recon)={len(hp_recon)}, \
                   len(psd)={len(psd)}')
+    assert hp_orig.delta_f == hp_recon.delta_f, "Delta_f of original and reconstructed waveforms must match."
     
     # -- This still gives the same delta_f not matching error --#
     # Resample PSD at specific frequencies to match `delta_f` of the 
     # waveforms to the `delta_f` of the PSD. This is necessary for the mismatch calculation.
-    hp_fs = hp_recon.to_frequencyseries(delta_f=hp_orig.delta_f)
+    hp_fs = hp_recon.to_frequencyseries(delta_f=hp_recon.delta_f)
     freqs = hp_fs.sample_frequencies
     psd_interp = np.interp(freqs, psd.sample_frequencies, psd.data)
     psd_resampled = pycbc.types.FrequencySeries(psd_interp, delta_f=hp_recon.delta_f, dtype=psd.dtype)

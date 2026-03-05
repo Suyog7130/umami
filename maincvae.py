@@ -1423,6 +1423,12 @@ class Test:
         # for each waveform and compare mismatches.
         test_loader = self.setdataloader(batch_size=1)
 
+        # -- open file to save mismatch comparison results
+        csv_fname = self.savedir + 'mismatch_comparison_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv'
+        csvfile = open(csv_fname, mode='w', newline='')
+        csvfile.write('m1,m2,s1,s2,delta_t,f_lower,mm_rom_hp,mm_rom_hc,mm_opt_hp,mm_opt_hc\n')  # Write header row
+        logging.info(f"CSV file opened for writing mismatch comparison results: {csv_fname}")
+
         for (x, labels, keys, phases, strains, attr) in tqdm(iter(test_loader)):
             m1, m2, s1, s2 = labels[0].cpu().numpy()
             delta_t = attr['delta_t'][0]
@@ -1461,6 +1467,10 @@ class Test:
             logging.info(f"Calculated mismatches: \
                          ROM hp mismatch={mm_rom_hp:.4e}, ROM hc mismatch={mm_rom_hc:.4e}, \
                          Optimized hp mismatch={mm_opt_hp:.4e}, Optimized hc mismatch={mm_opt_hc:.4e}")
+
+            # -- write results to csv file
+            csvfile.write(f'{m1},{m2},{s1},{s2},{delta_t},{f_lower},{mm_rom_hp},{mm_rom_hc},{mm_opt_hp},{mm_opt_hc}\n')
+            logging.info("Mismatch comparison results written to CSV file.")
 
 
 def removezeros(x, reconst, phase, attr):
