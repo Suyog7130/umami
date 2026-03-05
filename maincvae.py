@@ -239,8 +239,16 @@ def train(args):
         logging.info(f'Using model type: CVAE with num_classes={num_classes} and preset_array_size={PRESET_ARRAY_SIZE}')
         model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2),
                     labels_mean=params_mean, labels_std=params_std, latent_dim_x=32, latent_dim_key=2)
+
+    if args.model is not None:
+        model_path = '../trained-models/' + args.model
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        model.load_state_dict(torch.load(model_path, map_location=args.device))
+        logging.info(f"Loaded model from {model_path}")
+
+    # -- move model to device and convert to double precision
     model.to(device)
-    # -- convert model to double precision
     model.to(torch.float64)
 
     # Add a learning rate scheduler
@@ -252,7 +260,7 @@ def train(args):
                 mode='min', 
                 factor=0.5, 
                 patience=2, 
-                threshold=1e-7)
+                threshold=1e-5)
     logging.info('Model Initialized')
 
     logging.info(f'Starting Training with: {args}')
@@ -355,7 +363,8 @@ def train(args):
     savename = timestamp + '-' + str(args.epochs)
     if not os.path.isdir('../trained-models/'):
         os.makedirs('../trained-models/')
-    model_path = f'../trained-models/model-mmloss-'
+    model_path = f'../trained-models/model-'
+    model_path += 'mmloss-' if args.usemmloss else ''
     model_path += args.modeltype + '-nokll-' if noklloss else ''
     model_path += savename
     if not args.nosave:
@@ -1997,7 +2006,7 @@ if __name__ == "__main__":
     parser.add_argument('--generate', action='store_true', default=False,
                             help='whether to generate samples from trained model?')
     parser.add_argument('--model', action='store', default=None,
-                        help='path to already trained model.')
+                        help='name of a pre-trained model.')
     parser.add_argument('--modeltype', action='store', default='cvae',
                         help='type of model to use, e.g., cvae or cae (default=%(default)s)')
     parser.add_argument('--usemmloss', action='store_true', default=False,
