@@ -1403,7 +1403,7 @@ class Test:
                                         num_saved_overplots=0, generating=True)
         return generated
 
-    def test_mismatch_compare(self, num_samples=100):
+    def test_mismatch_compare(self, test_ml_model=False):
         """
         Test the mismatch of ML-generated, ROM and optimized SEOBNRv4 waveforms 
         against the base SEOBNRv4 waveforms for the same Test dataset.
@@ -1415,52 +1415,13 @@ class Test:
         waveforms for comparison. These saved attributes include the masses, spins, 
         DELTA_T, f_lower, and approximant used for generating the waveforms in the test dataset.
         """
-        logging.info(f"Testing mismatch comparison with model: {self.model_path}")
-        # Load the trained model
-        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
-        num_classes = 4 if args.aligned else 2
-        if self.modeltype=='cae':
-            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                        key_shape=(2,2)).to(args.device)
-        else:
-            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                    key_shape=(2,2)).to(args.device)
-        model.load_state_dict(torch.load(self.model_path, map_location=device))
-        model.to(torch.float64)
-        model.to(device)
-        model.eval()
-        logging.info("Model loaded and set to evaluation mode.")
+        if test_ml_model:
+            raise NotImplementedError("Mismatch comparison for ML-generated waveforms is not implemented yet.")
 
-        # Load the test dataset from HDF file
-        test_dataset = WaveformDataset(self.test_data_path, self.approximant,
-                                      preset_array_size=preset_array_size,
-                                      fcutoff=args.fcutoff, aligned=args.aligned)
-        test_loader = DataLoader(test_dataset, batch_size=num_samples, shuffle=False)
+        # -- check if self.testloader is available
+        hasattr(self, 'testloader') or logging.warning("Test dataloader not found. Please run prepare_test_data() before testing mismatch comparison.")
 
-        # Get one batch of test data
-        x_test, labels_test, keys_test, phases_test = next(iter(test_loader))
-        x_test = x_test.to(device)
-        labels_test = labels_test.to(device)
-        keys_test = keys_test.to(device)
-        phases_test = phases_test.to(device)
-
-        # Generate reconstructed waveforms from the ML model for the test data
-        with torch.no_grad():
-            z1_mean, z1_log_var = model.encode_label_for_x(labels_test)
-            z1p_mean, z1p_log_var = model.encode_label_for_key(labels_test)
-            z1 = model.reparameterize(z1_mean, z1_log_var)
-            z1p = model.reparameterize(z1p_mean, z1p_log_var)
-            reconst_ml = model.decode(z1, z1p, labels_test)
-
-        # Remove zero padding from original and reconstructed data for accurate mismatch calculation
-        x_test_np, reconst_ml_np, phases_np = removezeros(x_test.cpu(), reconst_ml.cpu(), phases_test.cpu(), test_dataset.attr)
-
-        # Calculate mismatches for ML-generated waveforms against original waveforms
-        logging.info("Calculating mismatches for ML-generated waveforms against original waveforms")
-        mismatch_ml_hplus, mismatch_ml_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
-            = plot_polarization_mismatch(x_test_np, reconst_ml_np, labels_test.cpu(), keys_test.cpu(), phases_np,
-                                        savedir=self.savedir, nobatchwiseplot=False, num_saved_overplots=0, generating=False)
-        
+        for (x, labels, keys, phases, strains, attr) in tqdm(iter(self.test_loader)):
 
 
 
