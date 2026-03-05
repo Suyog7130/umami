@@ -297,14 +297,14 @@ def train(args):
                 loss, reconloss, klloss, mmloss = model.mismatch_loss_func(target, x_recon, zvars, strains=strains, keys=keys, attr=attr)
             else:
                 loss, reconloss, klloss = model.loss_function(target, x_recon, zvars)
-                mmloss = torch.tensor(0.0)  # Placeholder for mismatch loss when not used
             loss.backward()
 
             train_rloss.append(loss.item())
             netreconloss.append(reconloss.item())
             if not noklloss:
                 netklloss.append(klloss.item())
-            netmmloss.append(mmloss.item())
+            if args.usemmloss or noklloss:
+                netmmloss.append(mmloss.item())
 
             # -- perform optimization per batch/step
             optimizer.step()
@@ -338,12 +338,12 @@ def train(args):
                     vloss, vreconloss, vklloss, vmmloss = model.mismatch_loss_func(target, vx_recon, vzvars, strains=vstrains.to(args.device), keys=vkeys.to(args.device), attr=vattr)
                 else:
                     vloss, vreconloss, vklloss = model.loss_function(target, vx_recon, vzvars)
-                    vmmloss = torch.tensor(0.0)  # Placeholder for mismatch loss when not used
                 valid_rloss.append(vloss.item())
                 netvreconloss.append(vreconloss.item())
                 if not noklloss:
                     netvklloss.append(vklloss.item())
-                netvmmloss.append(vmmloss.item())
+                if args.usemmloss or noklloss:
+                    netvmmloss.append(vmmloss.item())
             valid_loss.append(vloss.item())
         tqdm.write(f'Epoch {epoch+1} : train loss {loss.item()} & valid loss {vloss.item()}')
         
@@ -373,10 +373,11 @@ def train(args):
         dfnet = pd.DataFrame({
             'netreconloss': netreconloss,
             'netklloss': netklloss if not noklloss else [0]*len(netreconloss),
-            'netmmloss': netmmloss,
+            'netmmloss': netmmloss if args.usemmloss or noklloss else [0]*len(netreconloss),
             'netvreconloss': netvreconloss,
             'netvklloss': netvklloss if not noklloss else [0]*len(netvreconloss),
-            'netvmmloss': netvmmloss})
+            'netvmmloss': netvmmloss if args.usemmloss or noklloss else [0]*len(netvklloss)
+            })
         savename = args.modeltype + '-nokll-' if noklloss else ''
         dfnet.to_csv(savedir + f'net-loss-{savename}{timestamp}.csv', index=False)
 
@@ -391,11 +392,13 @@ def train(args):
     axes[1].plot(np.arange(args.epochs*ntbatches), netreconloss, label='reconstruction loss')
     if not noklloss:
         axes[1].plot(np.arange(args.epochs*ntbatches), netklloss, label='latent loss')
-    axes[1].plot(np.arange(args.epochs*ntbatches), netmmloss, label='mismatch loss')
+    if args.usemmloss or noklloss:
+        axes[1].plot(np.arange(args.epochs*ntbatches), netmmloss, label='mismatch loss')
     axes[1].plot(np.arange(args.epochs*nvbatches), netvreconloss, label='valid reconstruction loss')
     if not noklloss:
         axes[1].plot(np.arange(args.epochs*nvbatches), netvklloss, label='valid latent loss')
-    axes[1].plot(np.arange(args.epochs*nvbatches), netvmmloss, label='valid mismatch loss')
+    if args.usemmloss or noklloss:
+        axes[1].plot(np.arange(args.epochs*nvbatches), netvmmloss, label='valid mismatch loss')
     axes[1].set_xlabel('Batch', fontsize=12)
     axes[1].set_yscale('log')  # Set y-axis to logarithmic scale
     axes[1].set_ylabel('Loss', fontsize=12)
