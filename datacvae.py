@@ -104,8 +104,6 @@ def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
              m2delta=None, criterion=True, plot=False, splitTT=True,
              splitq=False, ntraining=0.7, nvald=0.1, ntest=0.2, qlim=10,
              transparent=True):
-             splitq=False, ntraining=0.7, nvald=0.1, ntest=0.2, qlim=10,
-             transparent=True):
     """
     Generate mass range for different specified criterion.
     Default is the one used is:
@@ -597,8 +595,6 @@ def get_fd_strain(m1, m2, approximant='IMRPhenomD', plot=False):
 
 def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
                     otherparams=False):
-def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
-                    otherparams=False):
     """
     It is taken care of that the `hp` and `hc` are of the same length
     and the `amp` and `phase` and `freq` are of the same length.
@@ -901,11 +897,6 @@ def write_hdf_grp(hf, data, grpname):
     else:
         raise ValueError("Data must be a numpy array or a list of arrays or \
                           a dictionary of arrays.")
-    
-
-def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
-                      otherparams=False, dataset=None):
-    
 
 def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                       otherparams=False, dataset=None):
@@ -915,9 +906,6 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
     if os.path.exists(fname+'.hdf'):
         logging.info(f'File {fname}.hdf already exists. Using an incremented name.')
         fname = fname.split('.hdf')[0] + '-1.hdf'
-    if dataset is not None:
-        fname += f'-{dataset}'
-    with h5py.File(fname+'.hdf', 'w') as hf:
     if dataset is not None:
         fname += f'-{dataset}'
     with h5py.File(fname+'.hdf', 'w') as hf:
@@ -971,11 +959,6 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                 hfgrp.attrs['coa_phase'] = data[-1]['coa_phase']
                 hfgrp.attrs['inclination'] = data[-1]['inclination']
 
-
-            if otherparams:
-                hfgrp.attrs['coa_phase'] = data[-1]['coa_phase']
-                hfgrp.attrs['inclination'] = data[-1]['inclination']
-
             # extra info like truncated or padded
             # save these for all samples, with `False` vals when no padding.
             # save these for all samples, with `False` vals when no padding.
@@ -990,26 +973,10 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
             if data[-1]['truncated_len'] is not None:
                 hfgrp.attrs['truncated_len'] = data[-1]['truncated_len']
             if data[-1]['padded_at'] is not None:
-            hfgrp.attrs['truncated'] = data[-1]['truncated']
-            hfgrp.attrs['padded'] = data[-1]['padded']
-            # This is the length of the original waveform
-            # before padding.
-            # This is useful to know how much padding was done.
-            # If the waveform was truncated, this will not be present.
-            # If the waveform was padded, this will be present.
-            if data[-1]['truncated_len'] is not None:
-                hfgrp.attrs['truncated_len'] = data[-1]['truncated_len']
-            if data[-1]['padded_at'] is not None:
                 hfgrp.attrs['padded_at'] = data[-1]['padded_at']
-
-
             write_hdf_grp(hf, data, grpname)
         logging.info(f"Data written to {fname+'.hdf'} successfully.")
-        logging.info(f"Data written to {fname+'.hdf'} successfully.")
         hf.close()
-
-
-def check_hdf(fname, noshow=False):
 
 def check_hdf(fname, noshow=False):
     """
@@ -1833,14 +1800,6 @@ class CustomDataLoader(DataLoader):
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle,
                          num_workers=num_workers, pin_memory=pin_memory,
                          collate_fn=dataset.collate_fn)
-            return self.make_strain(idx, custom_batch=custom_batch)
-        
-
-class CustomDataLoader(DataLoader):
-    def __init__(self, dataset, batch_size=32, shuffle=True, num_workers=0, pin_memory=False):
-        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle,
-                         num_workers=num_workers, pin_memory=pin_memory,
-                         collate_fn=dataset.collate_fn)
     
 
 def example_input_plot():
@@ -1936,7 +1895,6 @@ def example2 (appoximant='SEONRv4', nsamples=10, qlim=5, m1end=75):
     plt.close()
 
 def example3 (approximant='SEONRv4', ecc=True, transparent=True):
-def example3 (approximant='SEONRv4', ecc=True, transparent=True):
     fig, axes = plt.subplots(1, 2, figsize=(5, 2))
     # masses = get_mass(qlim=5, m1end=m1end)[0]
     masses = np.array([[15, 50],[5, 30]])  # [5,10]])
@@ -1987,7 +1945,6 @@ def example3 (approximant='SEONRv4', ecc=True, transparent=True):
     plt.show()
     plt.close()
 
-def example4(approximant='SEOBNRv4', ecc=True, transparent=True):
 def example4(approximant='SEOBNRv4', ecc=True, transparent=True):
     fig, ax = plt.subplots(1, 1, figsize=(5, 2))
     masses = np.array([[15, 50],[5, 30]]) # [5,10]])
