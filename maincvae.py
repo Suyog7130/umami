@@ -1445,11 +1445,11 @@ class Test:
                 'approximant': self.approximant
             }
 
-            # -- get ROM waveforms
+            # -- get SEOBNRv4_ROM waveforms (this is frequency-domain)
             wfkwargs['approximant'] = 'SEOBNRv4_ROM'
             hp_rom, hc_rom = pycbc.waveform.get_td_waveform(**wfkwargs)
 
-            # -- get optimized SEOBNRv4 waveforms
+            # -- get SEOBNRv4_opt waveforms (this is time-domain)
             wfkwargs['approximant'] = 'SEOBNRv4_opt'
             hp_opt, hc_opt = pycbc.waveform.get_td_waveform(**wfkwargs)
 
