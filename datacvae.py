@@ -6,6 +6,11 @@ we should not be converting the strain to freq-amp.
 Instead, for the Phenom models atleast, we should be
 able to directly use the freq-amp values from lalsuite.
 However, as the initial work, this code is alrighto.
+
+2026/02/13
+This code is to read already saved waveforms from HDF5 files,
+and then load them as PyTorch Datasets and DataLoaders.
+These waveforms and input files are created using `data.py`.
 """
 
 import os
@@ -45,6 +50,7 @@ from pycbc.waveform import get_td_waveform
 import pycbc.waveform, pycbc.noise, pycbc.psd, pycbc.distributions, \
     pycbc.detector
 import pycbc.filter
+import pycbc.filter
 
 from sklearn import metrics
 
@@ -63,6 +69,7 @@ APPROXIMANTS = ['IMRPhenomD', 'SEOBNRv4', 'NRSur7dq4', 'EccentricTD']
 SAMPLE_RATE = 8192.0  # n_samples = duration(s) / sample_rate
 DURATION = 1.00
 sample_len = int(DURATION * SAMPLE_RATE)
+DELTA_T = DURATION / SAMPLE_RATE   # delta_t is just 1/sample_rate!
 DELTA_T = DURATION / SAMPLE_RATE   # delta_t is just 1/sample_rate!
 delta_f = 1.0 / DURATION  # delta_f = 1.0 / duration(s)
 f_lower = 40.0
@@ -95,6 +102,8 @@ NOW = datetime.now().strftime("%Y-%m-%d-%H%M%S")
 
 def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
              m2delta=None, criterion=True, plot=False, splitTT=True,
+             splitq=False, ntraining=0.7, nvald=0.1, ntest=0.2, qlim=10,
+             transparent=True):
              splitq=False, ntraining=0.7, nvald=0.1, ntest=0.2, qlim=10,
              transparent=True):
     """
@@ -173,12 +182,55 @@ def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
         ntest = int(ntest*len(masses))
         logging.debug(f'Training: {ntraining}, Validation: {nvald}, Testing: {ntest}')
 
+    logging.debug(f'type(masses)={type(masses)}')
+    if not splitTT:
+        logging.debug(f'type(masses)={type(masses)}')
+        return masses
+
+    if splitTT:
+        ntraining = int(ntraining*len(masses))
+        nvald = int(nvald*len(masses))
+        ntest = int(ntest*len(masses))
+        logging.debug(f'Training: {ntraining}, Validation: {nvald}, Testing: {ntest}')
+
         ttsplits = np.split(masses, [ntraining,ntraining+nvald,ntraining+nvald+ntest])
         logging.debug(f"Training set shape: {ttsplits[0].shape}")
         logging.debug(f"Validation set shape: {ttsplits[1].shape}")
         logging.debug(f"Testing set shape: {ttsplits[2].shape}")
         logging.debug(f'type(ttsplits)={type(ttsplits)}')
+        logging.debug(f"Training set shape: {ttsplits[0].shape}")
+        logging.debug(f"Validation set shape: {ttsplits[1].shape}")
+        logging.debug(f"Testing set shape: {ttsplits[2].shape}")
+        logging.debug(f'type(ttsplits)={type(ttsplits)}')
 
+        if plot:
+            fig, ax = plt.subplots(1, 1, figsize=(5,5))
+            if splitTT:
+                ax.plot(ttsplits[0][:,0], ttsplits[0][:,1], '.', 
+                        color='darkgray', label='Training')
+                ax.plot(ttsplits[1][:,0], ttsplits[1][:,1], '.', 
+                        color='blue', label='Validation', alpha=0.5)
+                ax.plot(ttsplits[2][:,0], ttsplits[2][:,1], '.', 
+                        color='red', label='Testing', alpha=0.5,)
+                ax.legend()
+            else:
+                ax.plot(masses[:,0], masses[:,1], '.')
+            #if not criterion=='gh18':
+            #    ax.set_xlim([m1start-m1delta, m1end+m1delta])
+            #    ax.set_ylim([m2start-m2delta, m2end+m2delta])
+            ax.set_xlabel('$m_1$ ($M_{\\odot}$)')
+            ax.set_ylabel('$m_2$ ($M_{\\odot}$)')
+            putils.beautifyPlot([ax], grid=True, tickNum=8)
+            plt.tight_layout()
+            fname = fname+f'-{str(len(masses))}-qlim{qlim}'
+            if transparent:
+                fname += '-transparent'
+                plt.savefig(fname+'.png', dpi=300, transparent=True)
+            else:
+                plt.savefig(fname+'.png', dpi=300)
+            logging.info(f"Mass plot saved to {fname+'.png'}")
+            plt.show()
+        logging.debug(f'type(ttsplits)={type(ttsplits)}')
         if plot:
             fig, ax = plt.subplots(1, 1, figsize=(5,5))
             if splitTT:
@@ -274,6 +326,7 @@ def get_strain (m1, m2, approximant='IMRPhenomD', convert=False,
 
     logging.debug(f"Type of hp: {type(hp)}, Type of hc: {type(hc)}")
     logging.debug(f"Length of hp: {len(hp)}, Length of hc: {len(hc)}")
+    # logging.debug(dir(hp))
     # logging.debug(dir(hp))
     logging.debug(f'duration={hp.duration}')
     logging.debug(f'sample-rate={hp.sample_rate}')
@@ -544,6 +597,8 @@ def get_fd_strain(m1, m2, approximant='IMRPhenomD', plot=False):
 
 def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
                     otherparams=False):
+def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
+                    otherparams=False):
     """
     It is taken care of that the `hp` and `hc` are of the same length
     and the `amp` and `phase` and `freq` are of the same length.
@@ -552,6 +607,9 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     These are the full waveforms, i.e. the ringdown part is not cut-off.
     The amplitudes are not rescaled to 10^20.
     """
+    # Initialize random distributions.
+    angles = np_gen.uniform(0., 2*np.pi, 3)
+
     # Initialize random distributions.
     angles = np_gen.uniform(0., 2*np.pi, 3)
 
@@ -567,6 +625,10 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
                         }
     if eccentricity is not None:
         waveform_kwargs['eccentricity'] = eccentricity
+    if otherparams:
+        waveform_kwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
+        # TODO: check if the inclination has to be in this range ??
+        waveform_kwargs['inclination'] = np_gen.uniform(0., np.pi)
     if otherparams:
         waveform_kwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
         # TODO: check if the inclination has to be in this range ??
@@ -621,6 +683,7 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
                             \n So truncating array from the left!')
         amp = amp[diff:]
     logging.debug(f'amp.shape: {amp.shape}')
+    logging.debug(f'amp.shape: {amp.shape}')
     if len(phase) > PRESET_ARRAY_SIZE:
         diff = len(phase) - PRESET_ARRAY_SIZE
         logging.debug(f'len(phase) > {PRESET_ARRAY_SIZE} by {diff} ele \
@@ -644,6 +707,14 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     # hc = hc * 10**20
     # amp = amp * 10**20
 
+    # append the extra info to the end of the data
+    extra['truncated'] = extra.get('truncated', False)
+    extra['padded'] = extra.get('padded', False)
+    extra['truncated_len'] = extra.get('truncated_len', None)
+    extra['padded_at'] = extra.get('padded_at', None)
+    extra['eccentricity'] = waveform_kwargs.get('eccentricity', None)
+    extra['coa_phase'] = waveform_kwargs.get('coa_phase', None)
+    extra['inclination'] = waveform_kwargs.get('inclination', None)
     # append the extra info to the end of the data
     extra['truncated'] = extra.get('truncated', False)
     extra['padded'] = extra.get('padded', False)
@@ -834,10 +905,19 @@ def write_hdf_grp(hf, data, grpname):
 
 def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                       otherparams=False, dataset=None):
+    
+
+def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
+                      otherparams=False, dataset=None):
     logging.info(f'Writing data to HDF5 file {fname}')
     if os.path.exists(fname+'.hdf'):
         logging.info(f'File {fname}.hdf already exists. Using an incremented name.')
+    if os.path.exists(fname+'.hdf'):
+        logging.info(f'File {fname}.hdf already exists. Using an incremented name.')
         fname = fname.split('.hdf')[0] + '-1.hdf'
+    if dataset is not None:
+        fname += f'-{dataset}'
+    with h5py.File(fname+'.hdf', 'w') as hf:
     if dataset is not None:
         fname += f'-{dataset}'
     with h5py.File(fname+'.hdf', 'w') as hf:
@@ -861,6 +941,14 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                 data = get_vals(m1, m2, approximant=approximant,
                                 eccentricity=ecc, otherparams=otherparams,
                                 dataset=dataset, cutoffconst=cutoffconst)
+            if dataset is None:
+                data = get_vals_for_hdf(m1, m2, approximant, eccentricity=ecc,
+                                        otherparams=otherparams)
+            else:
+                cutoffconst = calc_cutoffconst()
+                data = get_vals(m1, m2, approximant=approximant,
+                                eccentricity=ecc, otherparams=otherparams,
+                                dataset=dataset, cutoffconst=cutoffconst)
             # plt.plot(range(len(data[0])), data[0], label=f'{m1} & {m2}')
             # plt.legend()
             # plt.show()
@@ -874,6 +962,8 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
             hfgrp.attrs['sample_rate'] = SAMPLE_RATE
             hfgrp.attrs['delta_t'] = data[-1].get('delta_t', DELTA_T)
             hfgrp.attrs['f_lower'] = data[-1].get('f_lower', f_lower)
+            hfgrp.attrs['delta_t'] = data[-1].get('delta_t', DELTA_T)
+            hfgrp.attrs['f_lower'] = data[-1].get('f_lower', f_lower)
             if approximant == 'EccentricTD':
                 hfgrp.attrs['eccentricity'] = ecc
 
@@ -881,7 +971,13 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                 hfgrp.attrs['coa_phase'] = data[-1]['coa_phase']
                 hfgrp.attrs['inclination'] = data[-1]['inclination']
 
+
+            if otherparams:
+                hfgrp.attrs['coa_phase'] = data[-1]['coa_phase']
+                hfgrp.attrs['inclination'] = data[-1]['inclination']
+
             # extra info like truncated or padded
+            # save these for all samples, with `False` vals when no padding.
             # save these for all samples, with `False` vals when no padding.
             logging.info(f'extra: {data[-1]}')
             hfgrp.attrs['truncated'] = data[-1]['truncated']
@@ -894,12 +990,26 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
             if data[-1]['truncated_len'] is not None:
                 hfgrp.attrs['truncated_len'] = data[-1]['truncated_len']
             if data[-1]['padded_at'] is not None:
+            hfgrp.attrs['truncated'] = data[-1]['truncated']
+            hfgrp.attrs['padded'] = data[-1]['padded']
+            # This is the length of the original waveform
+            # before padding.
+            # This is useful to know how much padding was done.
+            # If the waveform was truncated, this will not be present.
+            # If the waveform was padded, this will be present.
+            if data[-1]['truncated_len'] is not None:
+                hfgrp.attrs['truncated_len'] = data[-1]['truncated_len']
+            if data[-1]['padded_at'] is not None:
                 hfgrp.attrs['padded_at'] = data[-1]['padded_at']
+
 
             write_hdf_grp(hf, data, grpname)
         logging.info(f"Data written to {fname+'.hdf'} successfully.")
+        logging.info(f"Data written to {fname+'.hdf'} successfully.")
         hf.close()
 
+
+def check_hdf(fname, noshow=False):
 
 def check_hdf(fname, noshow=False):
     """
@@ -914,6 +1024,7 @@ def check_hdf(fname, noshow=False):
             for name in grp.keys():
                 print(grp[name])
                 print(name, grp[name].shape)
+                # print(list(grp[name].attrs.keys()))
                 # print(list(grp[name].attrs.keys()))
                 # print(grp[name].__dict__)
                 ts = grp[name]
@@ -1322,13 +1433,29 @@ class CustomDataset(Dataset):
             else:
                 raise ValueError(f"Invalid approximant: {approximant}. \
                                 Choose from {APPROXIMANTS}")
+            if approximant.split('-')[0][-7:]=='padinfo':
+                # If the approximant is of the form `IMRPhenomDpadinfo-<something>.hdf`,
+                # self.approximant = approximant.split('-')[0].removesuffix('padinfo')
+                # logging.warning(f"Approximant {approximant} is a padded info \
+                #                 approximant. Using {self.approximant} instead.")
+                logging.info('Approximant is a padded info approximant.')
+            else:
+                raise ValueError(f"Invalid approximant: {approximant}. \
+                                Choose from {APPROXIMANTS}")
         else:
             self.approximant = approximant
         # # Automatically initialize kwargs as attributes
         # for key, value in kwargs.items():
         #     setattr(self, key, value)
         
+        
     def __len__(self):
+        return self.nsamples
+    
+    def _find_nsamples(self):
+        with h5py.File(self.hdf_fname+'.hdf', 'r') as hf:
+            self.nsamples = len(hf.keys())
+            logging.info(f'Set nsamples to {self.nsamples}')
         return self.nsamples
     
     def _find_nsamples(self):
@@ -1410,6 +1537,11 @@ class CustomDataset(Dataset):
         self.n_samples = len(masses)
         self.masses = masses
 
+    def make_strain(self, idx, custom_batch=None):
+        if custom_batch is not None:
+            m1, m2 = custom_batch[idx]
+        else:
+            m1, m2 = self.masses[idx]
     def make_strain(self, idx, custom_batch=None):
         if custom_batch is not None:
             m1, m2 = custom_batch[idx]
@@ -1527,6 +1659,8 @@ class CustomDataset(Dataset):
             data = hf[f'sample{idx}']
             logging.debug(f'keys: {data.keys()}')
 
+            logging.debug(f'keys: {data.keys()}')
+
             m1, m2 = data.attrs['mass1'], data.attrs['mass2']
             labels = [m1,m2]
             spin1z = data.attrs.get('spin1z', None)
@@ -1585,6 +1719,7 @@ class CustomDataset(Dataset):
             freq_keys = [np.mean(freq), np.std(freq)]
             logging.debug(f"Amplitude Keys: {amp_keys}")
             logging.debug(f"Frequency Keys: {freq_keys}")
+            unnorm_amp, unnorm_freq = amp.copy(), freq.copy()
             unnorm_amp, unnorm_freq = amp.copy(), freq.copy()
             amp = (amp - np.mean(amp)) / np.std(amp)
             freq = (freq - np.mean(freq)) / np.std(freq)
@@ -1698,6 +1833,14 @@ class CustomDataLoader(DataLoader):
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle,
                          num_workers=num_workers, pin_memory=pin_memory,
                          collate_fn=dataset.collate_fn)
+            return self.make_strain(idx, custom_batch=custom_batch)
+        
+
+class CustomDataLoader(DataLoader):
+    def __init__(self, dataset, batch_size=32, shuffle=True, num_workers=0, pin_memory=False):
+        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle,
+                         num_workers=num_workers, pin_memory=pin_memory,
+                         collate_fn=dataset.collate_fn)
     
 
 def example_input_plot():
@@ -1722,6 +1865,7 @@ def example_input_plot():
 
     fig, ax1 = plt.subplots(1,1,figsize=(2,2))
     impulse = inputs[len(inputs)//2][6:]
+    # logging.debug(impulse)
     # logging.debug(impulse)
     ax1.plot(np.arange(len(impulse)),impulse,)
     #plotAnal.beautifyPlot([ax1],xTicks=False,yTicks=False)
@@ -1792,8 +1936,10 @@ def example2 (appoximant='SEONRv4', nsamples=10, qlim=5, m1end=75):
     plt.close()
 
 def example3 (approximant='SEONRv4', ecc=True, transparent=True):
+def example3 (approximant='SEONRv4', ecc=True, transparent=True):
     fig, axes = plt.subplots(1, 2, figsize=(5, 2))
     # masses = get_mass(qlim=5, m1end=m1end)[0]
+    masses = np.array([[15, 50],[5, 30]])  # [5,10]])
     masses = np.array([[15, 50],[5, 30]])  # [5,10]])
     for i in range(len(masses)):
         m1 = masses[i,0]
@@ -1833,11 +1979,18 @@ def example3 (approximant='SEONRv4', ecc=True, transparent=True):
         plt.savefig(fname+'.png', dpi=300, bbox_inches='tight', transparent=True)
     else:
         plt.savefig(fname+'.png', dpi=300, bbox_inches='tight')
+    if transparent:
+        fname += '-transparent'
+        plt.savefig(fname+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    else:
+        plt.savefig(fname+'.png', dpi=300, bbox_inches='tight')
     plt.show()
     plt.close()
 
 def example4(approximant='SEOBNRv4', ecc=True, transparent=True):
+def example4(approximant='SEOBNRv4', ecc=True, transparent=True):
     fig, ax = plt.subplots(1, 1, figsize=(5, 2))
+    masses = np.array([[15, 50],[5, 30]]) # [5,10]])
     masses = np.array([[15, 50],[5, 30]]) # [5,10]])
     for i in range(len(masses)):
         m1 = masses[i, 0]
@@ -1860,6 +2013,11 @@ def example4(approximant='SEOBNRv4', ecc=True, transparent=True):
     plt.tight_layout()
     fname = f'strain-plot-{approximant}'
     # fname += '-jsps'
+    if transparent:
+        fname += '-transparent'
+        plt.savefig(fname + '.png', dpi=300, bbox_inches='tight', transparent=True)
+    else:
+        plt.savefig(fname + '.png', dpi=300, bbox_inches='tight')
     if transparent:
         fname += '-transparent'
         plt.savefig(fname + '.png', dpi=300, bbox_inches='tight', transparent=True)
@@ -2348,11 +2506,65 @@ def check_datasets(nsamples=10,):
 
 
 
+def calc_cutoffconst(approximant='SEOBNRv4', nsamples=500, aligned=False):
+    """
+    Calculates the proportionality constant relating the duration
+    of the signal to the lower frequency cutoff.
+
+    ```math
+        T \\propto f_{low}^{-8/3} M_{chirp}^{-5/3}
+        T = k * f_{low}^{-8/3} M_{chirp}^{-5/3}
+    ```
+
+    We keep `f_low` fixed at 40 Hz, generate samples for different
+    mass values and then find the proportionality constant based on the
+    formula described above.
+    """
+    m1 = m2 = np.arange(5, 75, nsamples)
+    mchirp = (m1 * m2) ** (3/5) / (m1 + m2) ** (1/5)
+    consts = np.zeros(len(mchirp))
+    wfkwargs = {"approximant": approximant, 
+                "delta_t": DELTA_T, 
+                "f_lower": f_lower}
+    if aligned:
+        spin1z, spin2z = np.random.uniform(-0.99, 0.99, 2)
+        wfkwargs["spin1z"] = spin1z
+        wfkwargs["spin2z"] = spin2z
+    for i in range(len(mchirp)):
+        wfkwargs["mass1"] = m1[i]
+        wfkwargs["mass2"] = m2[i]
+        hp, hc = get_td_waveform(**wfkwargs)
+        consts[i] = hp.duration / (40 ** (-8/3) * mchirp[i] ** (-5/3))
+    const = np.mean(consts)
+    logging.info(f"Proportionality constant (k) for {approximant}: {const}")
+    return const
+
+
+def check_datasets(nsamples=10,):
+    """
+    Checks the datasets obtained via changing f_cutoff and f_sample.
+    """
+    logging.info("Checking datasets with different f_cutoff and f_sample values.")
+    masses = get_mass(splitTT=False)
+    cutoffconst = calc_cutoffconst()
+    durations = np.zeros(nsamples)
+    for i in tqdm(range(nsamples)):
+        m1 = np.random.choice(masses[:,0])
+        m2 = np.random.choice(masses[:,1])
+        logging.info(f"Masses: {m1}, {m2}")
+        durations[i] = get_vals(m1, m2, dataset='f_cutoff', cutoffprop=cutoffconst, 
+                                calc_duration_mean=True)
+        print(f"Mean duration: {np.mean(durations)}")
+
+
+
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description='Generate Data for training a CVAE for GW data')
 
     parser.add_argument('--nsamples', type=int, default=1,
                         help='Number of samples to generate for the specified operation.')
+    parser.add_argument('--qlim', type=int, default=5,
+                        help='Maximum mass ratio limit for generating waveforms.')
     parser.add_argument('--qlim', type=int, default=5,
                         help='Maximum mass ratio limit for generating waveforms.')
 
@@ -2366,6 +2578,9 @@ if __name__=="__main__":
                         help='Generate example frequency-domain strain data to check code.')
     parser.add_argument('--approximant', nargs='+', default=['IMRPhenomD'],
                         help='Approximant(s) to use. Can be a single value or a list.')
+    parser.add_argument('--otherparams', action='store_true', default=False,
+                        help='Use other parameters for the waveform generation.')
+    
     parser.add_argument('--otherparams', action='store_true', default=False,
                         help='Use other parameters for the waveform generation.')
     
@@ -2389,6 +2604,8 @@ if __name__=="__main__":
                         help='Plot the duration of the waveform as a function of the sample rate.')
     parser.add_argument('--flower_duration_3d_plot', '-flower3d', action='store_true', default=False,
                         help='3D plot of duration as a function of m1, m2, and f_lower.')
+    parser.add_argument('--checkdatasets', action='store_true', default=False,
+                        help='Check the datasets obtained via changing f_cutoff and f_sample.')
     parser.add_argument('--checkdatasets', action='store_true', default=False,
                         help='Check the datasets obtained via changing f_cutoff and f_sample.')
 
@@ -2448,11 +2665,14 @@ if __name__=="__main__":
                             approximant=args.approximant, convert=args.convert)
         for i, x in enumerate(ds):
             logging.debug(f'x: {x}')
+            logging.debug(f'x: {x}')
             if i==args.nsamples:
                 break
         logging.debug(f"Length of dataset: {len(ds)}")
+        logging.debug(f"Length of dataset: {len(ds)}")
     
     if args.plotmass:
+        get_mass(plot=args.plot, qlim=10)
         get_mass(plot=args.plot, qlim=10)
 
     if args.getstrain:
@@ -2491,7 +2711,17 @@ if __name__=="__main__":
             approximant = [approximant]
         for apx in approximant:
             example3(approximant=apx)
+        approximant = args.approximant
+        if type(approximant) is str:
+            approximant = [approximant]
+        for apx in approximant:
+            example3(approximant=apx)
     if args.example4:
+        approximant = args.approximant
+        if type(approximant) is str:
+            approximant = [approximant]
+        for apx in approximant:
+            example4(approximant=apx)
         approximant = args.approximant
         if type(approximant) is str:
             approximant = [approximant]
@@ -2533,7 +2763,21 @@ if __name__=="__main__":
         if args.otherparams:
             fname += '-coa&incli'
         fname += args.fname
+        fname = '../data/' + args.approximant
+        if args.otherparams:
+            fname += '-coa&incli'
+        fname += args.fname
         ttsplits = get_mass(splitTT=True, plot=False)
+
+        dataset = 'f_cutoff'
+        # `dataset` can be `None`, `raw`, `f_cutoff`, `f_sample`!
+        write_data_to_hdf(fname+'-train', masses=ttsplits[0], dataset=dataset,
+                          approximant=args.approximant, otherparams=args.otherparams)
+        write_data_to_hdf(fname+'-valid', masses=ttsplits[1], dataset=dataset,
+                          approximant=args.approximant, otherparams=args.otherparams)
+        write_data_to_hdf(fname+'-test', masses=ttsplits[2], dataset=dataset,
+                          approximant=args.approximant,
+                          otherparams=args.otherparams)
 
         dataset = 'f_cutoff'
         # `dataset` can be `None`, `raw`, `f_cutoff`, `f_sample`!
