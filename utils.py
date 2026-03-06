@@ -44,6 +44,12 @@ markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
 def calc_polarization_mismatch(hp_orig, hp_recon, resample_psd=True, delta_t=DELTA_T, f_lower=20.0):
     """
     Calculate the mismatch between the original and reconstructed hplus/hcross waveforms.
+    This calls the `match` function from `pycbc.filter` to compute the match between the two waveforms, 
+    and then returns the mismatch as 1 - match. The `match` function computes the optimum match
+    between the waveforms by maximizing over time shifts and phase shifts, and it uses the 
+    power spectral density (PSD) of the noise to weight the match calculation. 
+    The `resample_psd` option allows you to resample the PSD to match the frequency resolution of the waveforms, 
+    which is necessary for accurate mismatch calculation.
 
     Parameters:
     -----------

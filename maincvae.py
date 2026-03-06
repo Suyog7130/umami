@@ -1454,10 +1454,31 @@ class Test:
             # -- get SEOBNRv4_ROM waveforms (this is frequency-domain)
             wfkwargs['approximant'] = 'SEOBNRv4_ROM'
             hp_rom, hc_rom = pycbc.waveform.get_td_waveform(**wfkwargs)
+            hp_rom = hp_rom.trim_zeros()
+            hc_rom = hc_rom.trim_zeros()
+
+            logging.info(f"Original waveform length: {len(hp_orig)}, ROM waveform length: {len(hp_rom)}")
+            if len(hp_orig)<len(hp_rom):
+                hp_rom = hp_rom[-len(hp_orig):]
+                hc_rom = hc_rom[-len(hc_orig):]
+                logging.info(f"Trimmed ROM waveform to match original length: {len(hp_rom)}")
 
             # -- get SEOBNRv4_opt waveforms (this is time-domain)
             wfkwargs['approximant'] = 'SEOBNRv4_opt'
             hp_opt, hc_opt = pycbc.waveform.get_td_waveform(**wfkwargs)
+            hp_opt = hp_opt.trim_zeros()
+            hc_opt = hc_opt.trim_zeros()
+            logging.info(f"Original waveform length: {len(hp_orig)}, Optimized waveform length: {len(hp_opt)}")
+            if len(hp_orig)<len(hp_opt):
+                hp_opt = hp_opt[-len(hp_orig):]
+                hc_opt = hc_opt[-len(hc_orig):]
+                logging.info(f"Trimmed Optimized waveform to match original length: {len(hp_opt)}")
+
+            # -- plot waveforms to see how they look like
+            plot_hphc_overplot(hp_orig, hc_orig, hp_rom, hc_rom, savename='../results/overplot-rom', label=labels[0], transparent=False)
+            plot_hphc_overplot(hp_orig, hc_orig, hp_opt, hc_opt, savename='../results/overplot-opt', label=labels[0], transparent=False)
+
+            assert len(hp_orig)==len(hp_rom)==len(hp_opt), "Waveform lengths do not match after trimming. Cannot calculate mismatch."
 
             # -- calculate mismatches
             mm_rom_hp = calc_polarization_mismatch(hp_orig, hp_rom, delta_t, f_lower)
