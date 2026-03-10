@@ -1456,18 +1456,39 @@ class Test:
             hp_rom, hc_rom = pycbc.waveform.get_td_waveform(**wfkwargs)
             hp_rom = hp_rom.trim_zeros()
             hc_rom = hc_rom.trim_zeros()
-
+            hp_rom = np.asarray(hp_rom, dtype=np.float64)
+            hc_rom = np.asarray(hc_rom, dtype=np.float64)
             logging.info(f"Original waveform length: {len(hp_orig)}, ROM waveform length: {len(hp_rom)}")
             if len(hp_orig)<len(hp_rom):
-                hp_rom = hp_rom[-len(hp_orig):]
-                hc_rom = hc_rom[-len(hc_orig):]
-                logging.info(f"Trimmed ROM waveform to match original length: {len(hp_rom)}")
+                # Align merger points and extract matching segment
+                merger_idx_orig = np.argmax(np.abs(hp_orig))
+                merger_idx_rom = np.argmax(np.abs(hp_rom))
+                
+                # Calculate left and right portions relative to merger in original
+                left_len = merger_idx_orig
+                right_len = len(hp_orig) - merger_idx_orig - 1
+                
+                # Extract ROM segment centered at its merger with same left/right lengths
+                rom_start = max(0, merger_idx_rom - left_len)
+                rom_end = min(len(hp_rom), merger_idx_rom + right_len + 1)
+                
+                # Adjust if we hit boundaries
+                if rom_start == 0:
+                    rom_end = min(len(hp_rom), left_len + right_len + 1)
+                elif rom_end == len(hp_rom):
+                    rom_start = max(0, len(hp_rom) - left_len - right_len - 1)
+                
+                hp_rom = hp_rom[rom_start:rom_end]
+                hc_rom = hc_rom[rom_start:rom_end]
+                logging.info(f"Aligned ROM waveform at merger. Original length: {len(hp_orig)}, ROM segment length: {len(hp_rom)}")
 
             # -- get SEOBNRv4_opt waveforms (this is time-domain)
             wfkwargs['approximant'] = 'SEOBNRv4_opt'
             hp_opt, hc_opt = pycbc.waveform.get_td_waveform(**wfkwargs)
             hp_opt = hp_opt.trim_zeros()
             hc_opt = hc_opt.trim_zeros()
+            hp_opt = np.asarray(hp_opt, dtype=np.float64)
+            hc_opt = np.asarray(hc_opt, dtype=np.float64)
             logging.info(f"Original waveform length: {len(hp_orig)}, Optimized waveform length: {len(hp_opt)}")
             if len(hp_orig)<len(hp_opt):
                 hp_opt = hp_opt[-len(hp_orig):]
