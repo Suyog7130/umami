@@ -41,7 +41,7 @@ markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
 # of the main features of my code. So, I need to make sure that the f_lower 
 # used in the mismatch calculation is consistent with the one used 
 # in the waveform generation.
-def calc_polarization_mismatch(hp_orig, hp_recon, resample_psd=True, delta_t=DELTA_T, f_lower=20.0):
+def calc_polarization_mismatch(hp_orig, hp_recon, delta_t=DELTA_T, f_lower=20.0, resample_psd=True):
     """
     Calculate the mismatch between the original and reconstructed hplus/hcross waveforms.
     This calls the `match` function from `pycbc.filter` to compute the match between the two waveforms, 
@@ -72,6 +72,7 @@ def calc_polarization_mismatch(hp_orig, hp_recon, resample_psd=True, delta_t=DEL
     from pycbc.filter import match as matchfunc
     from pycbc.psd import aLIGOZeroDetHighPower
     from pycbc.types import TimeSeries
+    logging.debug(f"Calculating mismatch with delta_t={delta_t}, f_lower={f_lower}, resample_psd={resample_psd}")
 
     if isinstance(hp_orig, torch.Tensor):
         hp_orig = hp_orig.detach().cpu().numpy()

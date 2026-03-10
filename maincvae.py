@@ -542,7 +542,9 @@ class Test:
         Set up the DataLoader for the test dataset.
         """
         batch_size = batch_size if batch_size is not None else self.batch_size
-        testhdf = self.testhdf + '-100000-fcutoff-uniform-aligned' if self.aligned else self.testhdf
+        testhdf = self.testhdf + '-100000-fcutoff-uniform-aligned-regen' if self.aligned else self.testhdf
+        if not os.path.isfile('../data/' + testhdf + '.hdf'):
+            raise FileNotFoundError(f"Test data file not found: {testhdf}.hdf")
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
                                 convert=self.convert, hdf_fname=testhdf,
                                 returnattr=True, train_device=args.device, 
@@ -1436,10 +1438,6 @@ class Test:
             logging.info(f"Testing mismatch comparison for waveform with parameters: \
                          m1={m1}, m2={m2}, s1={s1}, s2={s2}, delta_t={delta_t}, f_lower={f_lower}")
 
-            # -- get original base waveforms
-            hp_orig = strains[0][0].cpu().numpy()
-            hc_orig = strains[0][1].cpu().numpy()
-
             # -- set waveform generation parameters
             wfkwargs = {
                 'mass1': m1,
@@ -1451,9 +1449,19 @@ class Test:
                 'approximant': self.approximant
             }
 
+            # -- get original base waveforms
+            hp_hdf = strains[0][0].detach().cpu().numpy()
+            hc_hdf = strains[0][1].detach().cpu().numpy()
+            logging.info(f'length of hdf hp and hc: {len(hp_hdf)}, {len(hc_hdf)}')
+            hp_orig, hc_orig = pycbc.waveform.get_td_waveform(**wfkwargs)
+            hp_orig = hp_orig.trim_zeros()
+            hc_orig = hc_orig.trim_zeros()
+            logging.info(f'length of original hp and hc after trimming zeros: {len(hp_orig)}, {len(hc_orig)}')
+
             # -- get SEOBNRv4_ROM waveforms (this is frequency-domain)
             wfkwargs['approximant'] = 'SEOBNRv4_ROM'
             hp_rom, hc_rom = pycbc.waveform.get_td_waveform(**wfkwargs)
+            logging.info(f'{type(hp_rom)=}, {type(hc_rom)=}, {hp_rom.shape=}, {hc_rom.shape=}')
             hp_rom = hp_rom.trim_zeros()
             hc_rom = hc_rom.trim_zeros()
             hp_rom = np.asarray(hp_rom, dtype=np.float64)
@@ -1495,17 +1503,19 @@ class Test:
                 hc_opt = hc_opt[-len(hc_orig):]
                 logging.info(f"Trimmed Optimized waveform to match original length: {len(hp_opt)}")
 
-            # -- plot waveforms to see how they look like
-            plot_hphc_overplot(hp_orig, hc_orig, hp_rom, hc_rom, savename='../results/overplot-rom', label=labels[0], transparent=False)
-            plot_hphc_overplot(hp_orig, hc_orig, hp_opt, hc_opt, savename='../results/overplot-opt', label=labels[0], transparent=False)
-
             assert len(hp_orig)==len(hp_rom)==len(hp_opt), "Waveform lengths do not match after trimming. Cannot calculate mismatch."
 
+            # -- plot waveforms to see how they look like
+            if not args.nosave:
+                plot_hphc_overplot(hp_orig, hc_orig, hp_hdf, hc_hdf, savename='../results/overplot-hdf', label=labels[0], transparent=False)
+                plot_hphc_overplot(hp_orig, hc_orig, hp_rom, hc_rom, savename='../results/overplot-rom', label=labels[0], transparent=False)
+                plot_hphc_overplot(hp_orig, hc_orig, hp_opt, hc_opt, savename='../results/overplot-opt', label=labels[0], transparent=False)
+
             # -- calculate mismatches
-            mm_rom_hp = calc_polarization_mismatch(hp_orig, hp_rom, delta_t, f_lower)
-            mm_rom_hc = calc_polarization_mismatch(hc_orig, hc_rom, delta_t, f_lower)
-            mm_opt_hp = calc_polarization_mismatch(hp_orig, hp_opt, delta_t, f_lower)
-            mm_opt_hc = calc_polarization_mismatch(hc_orig, hc_opt, delta_t, f_lower)
+            mm_rom_hp = calc_polarization_mismatch(hp_orig, hp_rom, delta_t=delta_t, f_lower=f_lower)
+            mm_rom_hc = calc_polarization_mismatch(hc_orig, hc_rom, delta_t=delta_t, f_lower=f_lower)
+            mm_opt_hp = calc_polarization_mismatch(hp_orig, hp_opt, delta_t=delta_t, f_lower=f_lower)
+            mm_opt_hc = calc_polarization_mismatch(hc_orig, hc_opt, delta_t=delta_t, f_lower=f_lower)
             logging.info(f"Calculated mismatches: \
                          ROM hp mismatch={mm_rom_hp:.4e}, ROM hc mismatch={mm_rom_hc:.4e}, \
                          Optimized hp mismatch={mm_opt_hp:.4e}, Optimized hc mismatch={mm_opt_hc:.4e}")
