@@ -1406,7 +1406,7 @@ class Test:
                                         num_saved_overplots=0, generating=True)
         return generated
 
-    def test_mismatch_compare(self, test_ml_model=False):
+    def test_mismatch_compare(self, test_ml_model=False, get_new_orig_wave=False):
         """
         Test the mismatch of ML-generated, ROM and optimized SEOBNRv4 waveforms 
         against the base SEOBNRv4 waveforms for the same Test dataset.
@@ -1453,11 +1453,23 @@ class Test:
             hp_hdf = strains[0][0].detach().cpu().numpy()
             hc_hdf = strains[0][1].detach().cpu().numpy()
             logging.info(f'length of hdf hp and hc: {len(hp_hdf)}, {len(hc_hdf)}')
-            hp_orig, hc_orig = pycbc.waveform.get_td_waveform(**wfkwargs)
-            hp_orig = hp_orig.trim_zeros()
-            hc_orig = hc_orig.trim_zeros()
-            logging.info(f'length of original hp and hc after trimming zeros: {len(hp_orig)}, {len(hc_orig)}')
-
+            if get_new_orig_wave:
+                hp_orig, hc_orig = pycbc.waveform.get_td_waveform(**wfkwargs)
+                hp_orig = hp_orig.trim_zeros()
+                hc_orig = hc_orig.trim_zeros()
+                logging.info(f'length of original hp and hc after trimming zeros: {len(hp_orig)}, {len(hc_orig)}')
+                if len(hp_orig)>PRESET_ARRAY_SIZE:
+                    diff = len(hp_orig) - PRESET_ARRAY_SIZE
+                    hp_orig = hp_orig[diff:]
+                    hc_orig = hc_orig[diff:]
+                    logging.info(f'Trimmed hdf hp and hc to preset array size: {len(hp_hdf)}, {len(hc_hdf)}')
+                if not args.nosave:
+                    plot_hphc_overplot(hp_orig, hc_orig, hp_hdf, hc_hdf, savename='../results/overplot-hdf', label=labels[0], 
+                                       transparent=False)
+            else:
+                hp_orig = hp_hdf
+                hc_orig = hc_hdf# -- plot waveforms to see how they look like
+            
             # -- get SEOBNRv4_ROM waveforms (this is frequency-domain)
             wfkwargs['approximant'] = 'SEOBNRv4_ROM'
             hp_rom, hc_rom = pycbc.waveform.get_td_waveform(**wfkwargs)
@@ -1489,6 +1501,17 @@ class Test:
                 hp_rom = hp_rom[rom_start:rom_end]
                 hc_rom = hc_rom[rom_start:rom_end]
                 logging.info(f"Aligned ROM waveform at merger. Original length: {len(hp_orig)}, ROM segment length: {len(hp_rom)}")
+            assert len(hp_orig) == len(hp_rom), "After alignment, original and ROM waveforms should have the same length."
+            assert len(hc_orig) == len(hc_rom), "After alignment, original and ROM waveforms should have the same length."
+
+            # -- plot waveforms to see how they look like
+            if not args.nosave:
+                plot_hphc_overplot(hp_orig, hc_orig, hp_rom, hc_rom, savename='../results/overplot-rom', label=labels[0], 
+                                   transparent=False)
+               
+            # -- calculate mismatches
+            mm_rom_hp = calc_polarization_mismatch(hp_orig, hp_rom, delta_t=delta_t, f_lower=f_lower)
+            mm_rom_hc = calc_polarization_mismatch(hc_orig, hc_rom, delta_t=delta_t, f_lower=f_lower)
 
             # -- get SEOBNRv4_opt waveforms (this is time-domain)
             wfkwargs['approximant'] = 'SEOBNRv4_opt'
@@ -1502,20 +1525,21 @@ class Test:
                 hp_opt = hp_opt[-len(hp_orig):]
                 hc_opt = hc_opt[-len(hc_orig):]
                 logging.info(f"Trimmed Optimized waveform to match original length: {len(hp_opt)}")
-
-            assert len(hp_orig)==len(hp_rom)==len(hp_opt), "Waveform lengths do not match after trimming. Cannot calculate mismatch."
+            if len(hp_orig)>len(hp_opt):
+                hp_orig = hp_orig[-len(hp_opt):]
+                hc_orig = hc_orig[-len(hc_opt):]
+                logging.info(f"Trimmed original waveform to match Optimized length: {len(hp_orig)}")
+            assert len(hp_orig) == len(hp_opt), "After trimming, original and Optimized waveforms should have the same length."
+            assert len(hc_orig) == len(hc_opt), "After trimming, original and Optimized waveforms should have the same length."
 
             # -- plot waveforms to see how they look like
             if not args.nosave:
-                plot_hphc_overplot(hp_orig, hc_orig, hp_hdf, hc_hdf, savename='../results/overplot-hdf', label=labels[0], transparent=False)
-                plot_hphc_overplot(hp_orig, hc_orig, hp_rom, hc_rom, savename='../results/overplot-rom', label=labels[0], transparent=False)
                 plot_hphc_overplot(hp_orig, hc_orig, hp_opt, hc_opt, savename='../results/overplot-opt', label=labels[0], transparent=False)
 
             # -- calculate mismatches
-            mm_rom_hp = calc_polarization_mismatch(hp_orig, hp_rom, delta_t=delta_t, f_lower=f_lower)
-            mm_rom_hc = calc_polarization_mismatch(hc_orig, hc_rom, delta_t=delta_t, f_lower=f_lower)
             mm_opt_hp = calc_polarization_mismatch(hp_orig, hp_opt, delta_t=delta_t, f_lower=f_lower)
             mm_opt_hc = calc_polarization_mismatch(hc_orig, hc_opt, delta_t=delta_t, f_lower=f_lower)
+            
             logging.info(f"Calculated mismatches: \
                          ROM hp mismatch={mm_rom_hp:.4e}, ROM hc mismatch={mm_rom_hc:.4e}, \
                          Optimized hp mismatch={mm_opt_hp:.4e}, Optimized hc mismatch={mm_opt_hc:.4e}")
