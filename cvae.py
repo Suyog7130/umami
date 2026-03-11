@@ -667,6 +667,7 @@ class CVAE(nn.Module):
         # print("z2p_log_var:", z2p_log_var)
         z2 = self.reparameterize(z2_mean, z2_log_var)
         z2p = self.reparameterize(z2p_mean, z2p_log_var)
+        # TODO: Should be inputting label embeddings, instead of raw labels!
         x_recon = self.decode(z2, z2p, labels)
         zvars = [z1_mean, z1_log_var, z2_mean, z2_log_var, \
                  z1p_mean, z1p_log_var, z2p_mean, z2p_log_var]

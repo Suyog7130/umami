@@ -32,7 +32,7 @@ else:
     DEVICE = torch.device("cpu")
 
 datadir = "../data/"
-train_hdf = datadir + 'SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen'
+train_hdf = datadir + 'SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen'
 val_hdf = datadir + "SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen"
 
 logging.info(f'Reading training data from {train_hdf}.hdf')
@@ -138,8 +138,9 @@ def objective(trial):
     num_classes = 4  # Set according to your dataset
     latent_dim_x = trial.suggest_int("latent_dim_x", 8, 100)
     latent_dim_key = trial.suggest_int("latent_dim_key", 2, 4)
-    dropout_p = trial.suggest_float("dropout_p", 0.1, 0.5)
     activation = trial.suggest_categorical("activation", ["relu", "silu", "gelu"])
+
+    dropout_p = trial.suggest_float("dropout_p", 0.1, 0.5)
     n_cnn_enc = trial.suggest_int("n_cnn_enc", 2, 5)
     n_cnn_dec = trial.suggest_int("n_cnn_dec", 2, 5)
     n_fc_pre = trial.suggest_int("n_fc_pre", 1, 3)
