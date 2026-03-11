@@ -1468,7 +1468,7 @@ class Test:
                                        transparent=False)
             else:
                 hp_orig = hp_hdf
-                hc_orig = hc_hdf# -- plot waveforms to see how they look like
+                hc_orig = hc_hdf  # -- plot waveforms to see how they look like
             
             # -- get SEOBNRv4_ROM waveforms (this is frequency-domain)
             wfkwargs['approximant'] = 'SEOBNRv4_ROM'
