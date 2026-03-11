@@ -1,4 +1,4 @@
-from init import *
+from __init__ import *
 
 def check_for_nan_inf(tensor, name):
     if torch.isnan(tensor).any():

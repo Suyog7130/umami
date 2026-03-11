@@ -10,7 +10,7 @@
 #     * Add Conditioners to embed labels y before concatenation
 #     * Build models by code like "2C2E1D" (= 2 Conditioners, 2 Encoders, 1 Decoder)
 
-from init import *  # expects torch, nn, etc. to be available
+from __init__ import *  # expects torch, nn, etc. to be available
 from utils import *
 from typing import List, Sequence, Optional, Union, Callable
 
@@ -219,6 +219,34 @@ class BaseCoder(nn.Module):
             layers.append(self.conv_layer(in_c[i], out_c[i], ksz[i], dil[i], pool_size=pool[i], is_last=is_last))
         return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
 
+    def _calculate_cnn_output_size(self, sequence_length=500):
+        """
+        Calculates the output size of the CNN layers given the input
+        sequence length and the CNN configuration. This is necessary to determine
+        the correct input size for the post-FC layers after the CNN layers.
+        Works for arbitrary CNN configurations, including varying kernel sizes, 
+        dilations, and pooling.
+
+        Args:
+            sequence_length (int): The input sequence length to CNN layers.
+
+        Returns:
+            int: The size of the flattened CNN output.
+        """
+        length = sequence_length
+        for i in range(len(self.cnn_in_channels)):
+            kernel_size = self.cnn_kernel_size[i] if i < len(self.cnn_kernel_size) else self.cnn_kernel_size[-1]
+            dilation = self.cnn_dilation[i] if i < len(self.cnn_dilation) else self.cnn_dilation[-1]
+            pool_size = self.cnn_pool_ks[i] if i < len(self.cnn_pool_ks) else self.cnn_pool_ks[-1] if self.cnn_pool_ks else kernel_size
+            # Calculate the effective kernel size with dilation
+            effective_kernel_size = (kernel_size - 1) * dilation + 1
+            # Update length after convolution (assuming stride=1 and no padding)
+            length = length - effective_kernel_size + 1
+            # Update length after pooling
+            length = length // pool_size
+        final_out_channels = self.cnn_out_channels[-1] if self.cnn_out_channels else self.cnn_in_channels[-1]
+        return final_out_channels * length
+
 
 # -----------------
 # Encoders/Decoders
@@ -258,8 +286,9 @@ class BaseEncoder(BaseCoder):
         if not self.concat_xy_before:
             x = torch.cat([x.view(x.size(0), -1), y_cat], dim=1)
 
-        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_in_features):
-            x = self.fc(self.post_fc_in_features, self.post_fc_out_features,
+        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
+            post_fc_in_features = self._calculate_cnn_output_size() if self.has_cnn else x.size(1)
+            x = self.fc(post_fc_in_features, self.post_fc_out_features,
                         n_layers=self.n_layers_post_fc,
                         sizes=self.post_fc_sizes,
                         use_last_activation=False)(x)
@@ -287,8 +316,9 @@ class BaseDecoder(BaseCoder):
                          n_layers=self.n_layers_cnn)(z)
             z = z.view(z.size(0), -1)
 
-        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_in_features):
-            z = self.fc(self.post_fc_in_features, self.post_fc_out_features,
+        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
+            post_fc_in_features = self._calculate_cnn_output_size() if self.has_cnn else z.size(1)
+            z = self.fc(post_fc_in_features, self.post_fc_out_features,
                         n_layers=self.n_layers_post_fc,
                         sizes=self.post_fc_sizes,
                         use_last_activation=False)(z)
