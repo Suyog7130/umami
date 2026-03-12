@@ -271,35 +271,45 @@ class BaseEncoder(BaseCoder):
     """
     def __init__(self, **kwargs):
         super(BaseEncoder, self).__init__(**kwargs)
-        # The actual layers will be built in forward() based on the config
 
-    def forward(self, x):
-        # Build layers on the fly based on config (this allows for dynamic architectures)
+        # -- Build layers on the fly based on config (this allows for dynamic architectures)
+        # -- Do this in __init__ so that the layers are registered as part of the module, 
+        # but they will be built based on the config! This allows `model.parameters()` to work correctly and include these layers, even though they are built based on the config.
         if self.has_pre_fc and (self.pre_fc_sizes or self.pre_fc_out_features):
             pre_fc_in_features = self.input_shape[0] * self.input_shape[1] if self.input_shape else self.pre_fc_in_features[0]
             pre_fc_out_features = self.pre_fc_out_features[-1] if self.pre_fc_out_features else self.pre_fc_sizes[-1]
-            z = x.view(x.size(0), -1)  # flatten input for FC layers
-            z = self.fc(pre_fc_in_features, pre_fc_out_features,
+            self.pre_fc_layers = self.fc(pre_fc_in_features, pre_fc_out_features,
                         n_layers=self.n_layers_pre_fc,
                         sizes=self.pre_fc_sizes,
-                        use_last_activation=True)(z)
+                        use_last_activation=True)
+
+        if self.has_cnn and self.cnn_in_channels and self.cnn_out_channels and self.cnn_kernel_size:
+            self.cnn_layer = self.cnn(self.cnn_in_channels, self.cnn_out_channels, self.cnn_kernel_size, self.cnn_dilation,
+                         pool_kernel_size=self.cnn_pool_ks,
+                         n_layers=self.n_layers_cnn)
+
+        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
+            post_fc_in_features = self._calculate_cnn_output_size() if self.has_cnn else self.input_shape[0] * self.input_shape[1] if self.input_shape else self.post_fc_in_features[0]
+            post_fc_out_features = self.post_fc_out_features[-1] if self.post_fc_out_features else self.post_fc_sizes[-1]
+            self.post_fc_layers = self.fc(post_fc_in_features, post_fc_out_features,
+                        n_layers=self.n_layers_post_fc,
+                        sizes=self.post_fc_sizes,
+                        use_last_activation=False)
+
+    def forward(self, x):
+        if self.has_pre_fc:
+            z = x.view(x.size(0), -1)  # flatten input for FC layers
+            z = self.pre_fc_layers(z)
         else:
             z = x
 
         if self.has_cnn and self.cnn_in_channels and self.cnn_out_channels and self.cnn_kernel_size:
             z = z.view(z.size(0), *self.input_shape)  # reshape to (B, C, L) for CNN
-            z = self.cnn(self.cnn_in_channels, self.cnn_out_channels, self.cnn_kernel_size, self.cnn_dilation,
-                         pool_kernel_size=self.cnn_pool_ks,
-                         n_layers=self.n_layers_cnn)(z)
+            z = self.cnn_layer(z)
             z = z.view(z.size(0), -1)  # flatten CNN output for post-FC layers
 
-        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
-            post_fc_in_features = self._calculate_cnn_output_size() if self.has_cnn else z.size(1)
-            post_fc_out_features = self.post_fc_out_features[-1] if self.post_fc_out_features else self.post_fc_sizes[-1]
-            z = self.fc(post_fc_in_features, post_fc_out_features,
-                        n_layers=self.n_layers_post_fc,
-                        sizes=self.post_fc_sizes,
-                        use_last_activation=False)(z)
+        if self.has_post_fc:
+            z = self.post_fc_layers(z)
         return z.view(-1, *self.input_shape)
     
 class BaseDecoder(BaseCoder):
@@ -311,7 +321,24 @@ class BaseDecoder(BaseCoder):
     """
     def __init__(self, **kwargs):
         super(BaseDecoder, self).__init__(**kwargs)
-        # The actual layers will be built in forward() based on the config
+
+        if self.has_pre_fc and (self.pre_fc_sizes or self.pre_fc_in_features):
+            self.pre_fc_layers = self.fc(self.pre_fc_in_features, self.pre_fc_out_features,
+                        n_layers=self.n_layers_pre_fc,
+                        sizes=self.pre_fc_sizes)
+
+        if self.has_cnn and self.cnn_in_channels:
+            self.cnn_layers = self.cnn(self.cnn_in_channels, self.cnn_out_channels,
+                         self.cnn_kernel_size, self.cnn_dilation,
+                         pool_kernel_size=self.cnn_pool_ks,
+                         n_layers=self.n_layers_cnn)
+
+        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
+            post_fc_in_features = self._calculate_cnn_output_size() if self.has_cnn else self.input_shape[0] * self.input_shape[1] if self.input_shape else self.post_fc_in_features[0]
+            self.post_fc_layers = self.fc(post_fc_in_features, self.post_fc_out_features,
+                        n_layers=self.n_layers_post_fc,
+                        sizes=self.post_fc_sizes,
+                        use_last_activation=False)
 
     def forward(self, z: torch.Tensor, y: torch.Tensor, y_embed: Optional[torch.Tensor] = None):
         assert z.size(1) == self.latent_dim, "z latent_dim mismatch"
@@ -319,26 +346,16 @@ class BaseDecoder(BaseCoder):
         y_cat = y_embed if y_embed is not None else y
         z = torch.cat([z, y_cat], dim=1)
 
-        if self.has_pre_fc and (self.pre_fc_sizes or self.pre_fc_in_features):
-            z = self.fc(self.pre_fc_in_features, self.pre_fc_out_features,
-                        n_layers=self.n_layers_pre_fc,
-                        sizes=self.pre_fc_sizes)(z)
+        if self.has_pre_fc:
+            z = self.pre_fc_layers(z)
 
         if self.has_cnn and self.cnn_in_channels:
             z = z.view(z.size(0), self.cnn_in_channels[0], -1)
-            z = self.cnn(self.cnn_in_channels, self.cnn_out_channels,
-                         self.cnn_kernel_size, self.cnn_dilation,
-                         pool_kernel_size=self.cnn_pool_ks,
-                         n_layers=self.n_layers_cnn)(z)
+            z = self.cnn_layers(z)
             z = z.view(z.size(0), -1)
 
         if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
-            post_fc_in_features = self._calculate_cnn_output_size() if self.has_cnn else z.size(1)
-            z = self.fc(post_fc_in_features, self.post_fc_out_features,
-                        n_layers=self.n_layers_post_fc,
-                        sizes=self.post_fc_sizes,
-                        use_last_activation=False)(z)
-
+            z = self.post_fc_layers(z)
         return z.view(-1, *self.input_shape)
     
 class BaseConditional(BaseCoder):
@@ -354,15 +371,20 @@ class BaseConditional(BaseCoder):
         self.has_cnn=False
         self.has_post_fc=False
 
-    def forward(self, y):
         pre_fc_in_features = self.input_shape[0] if self.input_shape else self.pre_fc_in_features[0]
         pre_fc_out_features = self.pre_fc_out_features[-1] if self.pre_fc_out_features else self.pre_fc_sizes[-1]
-        z = y.view(y.size(0), -1)  # flatten input for FC layers
-        z = self.fc(pre_fc_in_features, pre_fc_out_features,
+       
+        self.pre_fc_layers = self.fc(pre_fc_in_features, pre_fc_out_features,
                     n_layers=self.n_layers_pre_fc,
                     sizes=self.pre_fc_sizes,
-                    use_last_activation=False)(z)
+                    use_last_activation=False)
+
+    def forward(self, y):
+        z = y.view(y.size(0), -1)  # flatten input for FC layers
+        z = self.pre_fc_layers(z)
         return z.view(-1, self.latent_dim)  # ensure output shape is (B, latent_dim)
+    
+
     
 class TwoC2E1D(nn.Module):
     """

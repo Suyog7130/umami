@@ -91,7 +91,7 @@ def training(model: FlexTwoC2E1D,
             logging.warning(f"Parameter {name} contains NaN values before training.")
         if torch.isinf(param).any():
             logging.warning(f"Parameter {name} contains Inf values before training.")
-        logging.info(f"Parameter {name} - min: {param.min().item()}, max: {param.max().item()}, mean: {param.mean().item()}")
+        # logging.info(f"Parameter {name} - min: {param.min().item()}, max: {param.max().item()}, mean: {param.mean().item()}")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)    
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -277,7 +277,7 @@ def run_training(MODEL_CONFIG=None):
         labels_std=params_std,
         paramsnorm=True,
     )
-    print(model)
+    # print(model)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
     print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
           )
