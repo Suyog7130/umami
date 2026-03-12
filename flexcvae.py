@@ -3,6 +3,7 @@ Flexible CVAE implementation using my class from `cvae.py` code.
 Works for both CVAE and CAE configurations, with 2 encoders or 1 encoder.
 """
 
+import os
 import logging
 import Optional, Union, List, Sequence, Callable
 import torch
@@ -57,9 +58,11 @@ class BaseCoder(nn.Module):
     """
     General base coder inherited by encoders/decoders.
     Contains atleast one pre-FC, CNN, and post-FC layer, with flexible sizes and counts for each stage.
-    The number of each layer type can be more than 1, and the actual layers are built in the forward pass based on the provided configuration,
-    allowing for dynamic architectures. The configuration is designed to be flexible and can specify either the full sizes list or just the in/out features for FC layers, and similarly for CNN layers.
-
+    The number of each layer type can be more than 1, and the actual layers are built in the forward 
+    pass based on the provided configuration,
+    allowing for dynamic architectures. The configuration is designed to be flexible and can 
+    specify either the full sizes list or just the in/out features for FC layers, and similarly 
+    for CNN layers.
     """
     def __init__(self, **kwargs):
         super(BaseCoder, self).__init__()
@@ -411,7 +414,7 @@ class TwoC2E1D(BaseCoder):
     loss_function(x, x_recon, z_mean, z_log_var):
         Computes the total loss, including reconstruction and KL divergence.
     """
-    def __init__(self, input_shape, num_classes, key_shape, \
+    def __init__(self, input_shape=(2,8191), num_classes=4, key_shape=(2,2), \
                  labels_mean=None, labels_std=None, paramsnorm=False, \
                  latent_dim_x=8, latent_dim_key=3, MODEL_CONFIG=None, **kwargs):
         super(TwoC2E1D, self).__init__()
@@ -419,12 +422,21 @@ class TwoC2E1D(BaseCoder):
         # Override hyperparameters with MODEL_CONFIG values if provided
         # This allows for flexible model configuration while maintaining default values.
         if MODEL_CONFIG is not None:
+            self.MODEL_CONFIG = MODEL_CONFIG
+            input_shape = MODEL_CONFIG.get('input_shape', input_shape)
+            num_classes = MODEL_CONFIG.get('num_classes', num_classes)
+            key_shape = MODEL_CONFIG.get('key_shape', key_shape)
             latent_dim_x = MODEL_CONFIG.get('latent_dim_x', latent_dim_x)
             latent_dim_key = MODEL_CONFIG.get('latent_dim_key', latent_dim_key)
             labels_mean = MODEL_CONFIG.get('labels_mean', labels_mean)
             labels_std = MODEL_CONFIG.get('labels_std', labels_std)
-            num_classes = MODEL_CONFIG.get('num_classes', num_classes)
             paramsnorm = MODEL_CONFIG.get('paramsnorm', paramsnorm)
+            self.activation_name = MODEL_CONFIG.get('activation', self.activation_name)
+            self.beta = MODEL_CONFIG.get('beta', 0.1)  # default beta value for KL divergence loss
+            self.decoder_input_type = MODEL_CONFIG.get('decoder_input_type', 'concat')
+            self.embed_labels_in_decoder = MODEL_CONFIG.get('embed_labels_in_decoder', False)
+        else:
+            logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
 
         # If MODEL_CONFIG is provided, it should contain all necessary hyperparameters.
         # If not provided, the default values will be used.
@@ -460,28 +472,29 @@ class TwoC2E1D(BaseCoder):
                                        num_classes=self.num_classes,
                                        n_layers=1,
                                        n_layers_cnn=2,
-                                       **kwargs)
+                                       activation_name=self.activation_name,)
         self.encoder_key = BaseEncoder(latent_dim_x=self.latent_dim_key,
                                           input_shape=self.key_shape,
                                           num_classes=self.num_classes,
                                           n_layers = 3,
                                           has_cnn=False,
                                           has_post_fc=False,
-                                          **kwargs)
+                                          activation_name=self.activation_name)
         self.decoder = BaseDecoder(latent_dim=self.latent_dim_x + self.latent_dim_key,
                                    input_shape=self.input_shape,
                                    num_classes=self.num_classes,
                                    n_layers_cnn=3,
-                                   **kwargs)
+                                   activation_name=self.activation_name)
         self.conditional_x = BaseConditional(latent_dim=self.latent_dim_x,  # z1 mean and logvar
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
-                                            n_layers=4, **kwargs)
+                                            n_layers=4, 
+                                            activation_name=self.activation_name)
         self.conditional_key = BaseConditional(latent_dim=self.latent_dim_key,  # z1prime mean and logvar
                                               input_shape=(self.num_classes,),
                                               num_classes=self.num_classes,
                                               n_layers=4,
-                                              **kwargs)
+                                              activation_name=self.activation_name)
         
     def normalize_labels(self, labels, batchwise=False):
         """
@@ -553,8 +566,7 @@ class TwoC2E1D(BaseCoder):
         z_mean, z_log_var = torch.chunk(h, 2, dim=1)
         return z_mean, z_log_var
     
-    def decode(self, z_x, z_key, y_embed):
-        z = torch.cat([z_x, z_key], dim=1)
+    def decode(self, z, y_embed):
         recon_x = self.decoder(z, y_embed)
         return recon_x.view(-1, *self.input_shape)
 
@@ -642,21 +654,44 @@ class TwoC2E1D(BaseCoder):
         to generalize well to unseen labels and generate meaningful outputs based on the learned 
         relationships between the data and the labels.
         """
-        z_mean_x, z_log_var_x = self.encode_x(x, y)
-        z_mean_key, z_log_var_key = self.encode_key(keys, y)
-        z_mean_label_x, z_log_var_label_x = self.encode_label_for_x(y)
-        z_mean_label_key, z_log_var_label_key = self.encode_label_for_key(y)
+        zx_mu, zx_logvar = self.encode_x(x, y)
+        zy_mu, zy_logvar = self.encode_label_for_x(y)
+        zkey_mu, zkey_logvar = self.encode_key(keys, y)
+        zykey_mu, zykey_logvar = self.encode_label_for_key(y)
 
-        z_x = self.reparameterize(z_mean_x, z_log_var_x)
-        z_key = self.reparameterize(z_mean_key, z_log_var_key)
+        z_x = self.reparameterize(zx_mu, zx_logvar)
+        z_key = self.reparameterize(zkey_mu, zkey_logvar)
 
         # TODO: Can input embeddings for the labels!
-        recon_x = self.decode(z_x, z_key, y)
-        zvars = [z_mean_x, z_log_var_x, z_mean_key, z_log_var_key, z_mean_label_x, z_log_var_label_x, z_mean_label_key, z_log_var_label_key]
-        return recon_x, zvars
+        if self.embed_labels_in_decoder:
+            y_embed = self.conditional_x(y)  # Use the label-conditioned encoder for x as the label embedding
+        else:
+            y_embed = y  # Use raw labels as input to the decoder
+
+        # Select decoder input based on the specified type
+        if self.decoder_input_type == 'sum':
+            z = z_x + z_key
+        elif self.decoder_input_type == 'concat':
+            z = torch.cat([z_x, z_key], dim=1)
+        elif self.decoder_input_type == 'onlyzx':
+            z = z_x
+        elif self.decoder_input_type == 'onlyzkey':
+            z = z_key
+        elif self.decoder_input_type == 'weighted_sum':
+            alpha = 0.5  # This can be a hyperparameter to tune
+            z = alpha * z_x + (1 - alpha) * z_key
+        elif self.decoder_input_type == 'concat_all':
+            z = torch.cat([z_x, z_key, zy_mu, zykey_mu], dim=1)
+        else:
+            z = torch.cat([z_x, z_key], dim=1)  # default to concat if unknown type
+            logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of z_x and z_key.")
+        
+        recon_x = self.decode(z, y_embed)
+        zvars = [zx_mu, zx_logvar, zy_mu, zy_logvar, zkey_mu, zkey_logvar, zykey_mu, zykey_logvar]
+        return (recon_x, zvars)
     
 
-    def loss_function(self, x, x_recon, zvars):
+    def loss_function(self, x, x_recon, zvars) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Computes the total loss for the CVAE, including reconstruction loss,
         KL divergence for latent spaces, and latent loss between encoders.
@@ -681,10 +716,10 @@ class TwoC2E1D(BaseCoder):
         total_loss : torch.Tensor
             Total loss combining reconstruction and latent losses.
         """
-        z1_mean, z1_log_var, z2_mean, z2_log_var, \
-            z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
-        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
-            z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
+        zx_mu, zx_logvar, zy_mu, zy_logvar, \
+            zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
+        logging.debug(f'zx_mu={zx_mu}, zx_logvar={zx_logvar}, zy_mu={zy_mu}, zy_logvar={zy_logvar}, \
+            zkey_mu={zkey_mu}, zkey_logvar={zkey_logvar}, zykey_mu={zykey_mu}, zykey_logvar={zykey_logvar}')
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         # TODO: What is the `reduction` thing doing here?
@@ -692,20 +727,64 @@ class TwoC2E1D(BaseCoder):
         logging.info(f"Reconstruction Loss: {recon_loss.item()}")
 
         # KL divergence for each latent space
-        kl_loss_z1 = self.latent_loss(z1_mean, z1_log_var)
-        kl_loss_z2 = self.latent_loss(z2_mean, z2_log_var)
-        kl_loss_z1p = self.latent_loss(z1p_mean, z1p_log_var)
-        kl_loss_z2p = self.latent_loss(z2p_mean, z2p_log_var)
+        kl_loss_zx = self.latent_loss(zx_mu, zx_logvar)
+        kl_loss_zy = self.latent_loss(zy_mu, zy_logvar)
+        kl_loss_zkey = self.latent_loss(zkey_mu, zkey_logvar)
+        kl_loss_zykey = self.latent_loss(zykey_mu, zykey_logvar)
         # Print KL divergence losses for debugging
-        logging.info(f"KL Loss z1: {kl_loss_z1.item()}, KL Loss z2: {kl_loss_z2.item()}, "
-            f"KL Loss z1p: {kl_loss_z1p.item()}, KL Loss z2p: {kl_loss_z2p.item()}")
+        logging.info(f"KL Loss zx: {kl_loss_zx.item()}, KL Loss zy: {kl_loss_zy.item()}, "
+            f"KL Loss zkey: {kl_loss_zkey.item()}, KL Loss zykey: {kl_loss_zykey.item()}")
 
         # Latent loss between encoders
-        ll1 = self.latent_loss_between_encoders(z1_mean, z1_log_var, z2_mean, z2_log_var)
-        ll2 = self.latent_loss_between_encoders(z1p_mean, z1p_log_var, z2p_mean, z2p_log_var)
+        ll1 = self.latent_loss_between_encoders(zx_mu, zx_logvar, zy_mu, zy_logvar)
+        ll2 = self.latent_loss_between_encoders(zkey_mu, zkey_logvar, zykey_mu, zykey_logvar)
 
         # Total loss
-        beta = 0.1   # Weighting factor for KL divergence
-        kl_loss = kl_loss_z1 + kl_loss_z2 + kl_loss_z1p + kl_loss_z2p + ll1 + ll2
-        total_loss = recon_loss + beta * kl_loss
+        kl_loss = kl_loss_zx + kl_loss_zy + kl_loss_zkey + kl_loss_zykey + ll1 + ll2
+        total_loss = recon_loss + self.beta * kl_loss
+        total_loss = torch.tensor(total_loss, dtype=torch.float64)  # ensure total loss is in double precision
         return (total_loss, recon_loss, kl_loss)
+    
+    def _save_model_config(self, filepath=None, **kwargs):
+        """
+        Saves the model configuration to JSON file.
+        """
+        if filepath is None:
+            filepath = 'model_config.json'
+        if not '.json' in filepath:
+            logging.warning(f"Model configuration file should be a JSON file. Adding '.json' extension to {filepath}.")
+            filepath += '.json'
+        if not hasattr(self, 'MODEL_CONFIG'):
+            logging.warning("MODEL_CONFIG attribute not found. Creating a new MODEL_CONFIG dictionary to save hyperparameters.")
+            self.MODEL_CONFIG = {}
+        # Add additional hyperparameters to MODEL_CONFIG before saving
+        self.MODEL_CONFIG.update({
+            'input_shape': self.input_shape,
+            'num_classes': self.num_classes,
+            'key_shape': self.key_shape,
+            'latent_dim_x': self.latent_dim_x // 2,  # divide by 2 to get original latent dim before doubling for mean and logvar
+            'latent_dim_key': self.latent_dim_key // 2,  # divide by 2 to get original latent dim before doubling for mean and logvar
+            'labels_mean': getattr(self, 'labels_mean', None),
+            'labels_std': getattr(self, 'labels_std', None),
+            'paramsnorm': hasattr(self, 'labels_mean') and hasattr(self, 'labels_std'),
+            'activation': self.activation_name,
+            'beta': self.beta,
+            'decoder_input_type': self.decoder_input_type,
+            'embed_labels_in_decoder': self.embed_labels_in_decoder,
+            'n_layers': {
+                'pre_fc': self.n_layers_pre_fc,
+                'cnn': self.n_layers_cnn,
+                'post_fc': self.n_layers_post_fc
+            },
+            'pre_fc_sizes': self.pre_fc_sizes,
+            'cnn_in_channels': self.cnn_in_channels,
+            'cnn_out_channels': self.cnn_out_channels,
+            'cnn_kernel_size': self.cnn_kernel_size,
+            'cnn_dilation': self.cnn_dilation,
+            'cnn_pool_ks': self.cnn_pool_ks,
+        })
+        # Save other supplied kwargs to MODEL_CONFIG
+        self.MODEL_CONFIG.update(kwargs)
+        torch.save(self.MODEL_CONFIG, filepath)
+        logging.info(f"Model configuration saved to {filepath}")
+        

@@ -4,6 +4,7 @@ hyper-parameters and number of layers etc.
 """
 
 import os
+import argparse
 import pandas as pd
 import datetime
 import logging
@@ -16,10 +17,12 @@ import torch.nn.functional as F
 
 from datacvae import CustomDataset, CustomDataLoader
 from multicvae import TwoC2E1D
+from flexcvae import TwoC2E1D as FlexTwoC2E1D
 
 
-today = datetime.date.today().strftime("%Y%m%d")
-now = datetime.datetime.now().strftime("%H%M%S")
+TODAY = datetime.date.today().strftime("%Y%m%d")
+TIME = datetime.datetime.now().strftime("%H%M%S")
+NOW = TODAY + '-' + TIME
 
 BATCH_SIZE = 64
 PRESET_ARRAY_SIZE = 8191
@@ -32,7 +35,7 @@ else:
     DEVICE = torch.device("cpu")
 
 datadir = "../data/"
-train_hdf = datadir + 'SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen'
+train_hdf = datadir + 'SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen'
 val_hdf = datadir + "SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen"
 
 logging.info(f'Reading training data from {train_hdf}.hdf')
@@ -55,8 +58,17 @@ logging.info(f"Labels std: {params_std}")
 params_mean = torch.tensor(params_mean, dtype=torch.float64).to(DEVICE)
 params_std = torch.tensor(params_std, dtype=torch.float64).to(DEVICE)
 
+BASE_MODEL_CONFIG = {
+    'latent_dim_x': 16,
+    'latent_dim_key': 4,
+    'activation': 'gelu',
+}
 
-def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
+
+def training(model: FlexTwoC2E1D, 
+             epochs: int = 5, 
+             datafrac: float = 0.1,
+             savemodel=False, savelosses=False):
     """
     Using a fraction of training data for quick training and
     trains the model for a few epochs, returning validation loss.
@@ -64,8 +76,11 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
     Arguments:
         model: The model to be trained.
         epochs: Number of epochs to train for.
-        frac_data: Fraction of training data to use for quick training (default 0.1).
+        datafrac: Fraction of training data to use for quick training (default 0.1)
+        savemodel: Whether to save the trained model (default False)
+        savelosses: Whether to save training and validation losses (default False)
     """
+    logging.info(f"Starting training for {epochs} epochs with data fraction {datafrac}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(torch.float64)
     model = model.to(device)
@@ -76,9 +91,10 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
                 factor=0.5, 
                 patience=2, 
                 threshold=1e-7)
-    num_train_batches = int(len(train_loader) * frac_data)
+    num_train_batches = int(len(train_loader) * datafrac)
 
     # Train for a few epochs
+    rloss_train, rloss_recon, rloss_kl = [], [], []
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
@@ -92,6 +108,9 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
+            rloss_train.append(loss.item())
+            rloss_recon.append(recon_loss.item())
+            rloss_kl.append(kl_loss.item())
         avg_train_loss = train_loss / num_train_batches
         logging.info(f"Epoch {epoch+1}, Train Loss: {avg_train_loss:.4f}")
         scheduler.step(avg_train_loss)
@@ -99,14 +118,33 @@ def training(model, epochs: int = 5, frac_data: float = 0.1) -> float:
     # Evaluate on validation set
     model.eval()
     val_loss = 0.0
+    rloss_val, rloss_recon_val, rloss_kl_val = [], [], []
     with torch.no_grad():
         for x, target, labels, keys, strains in val_loader:
             x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
             x_recon, zvars = model(x, labels, keys)
             loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
             val_loss += loss.item()
+            rloss_val.append(loss.item())
+            rloss_recon_val.append(recon_loss.item())
+            rloss_kl_val.append(kl_loss.item())
     avg_val_loss = val_loss / len(val_loader)
     logging.info(f"Validation Loss: {avg_val_loss:.4f}")
+
+    if savemodel:
+        model_path = f'../trained-models/model-flexcvae-{NOW}.pt'
+        torch.save(model.state_dict(), model_path)
+    if savelosses:
+        # Save losses to pandas dataframe and then to csv
+        losses_df = pd.DataFrame({
+            'train_loss': rloss_train,
+            'recon_loss': rloss_recon,
+            'kl_loss': rloss_kl,
+            'val_loss': rloss_val,
+            'val_recon_loss': rloss_recon_val,
+            'val_kl_loss': rloss_kl_val,
+        })
+        losses_df.to_csv(f'../trained-models/losses-flexcvae-{NOW}.csv', index=False)
     return avg_val_loss
 
 
@@ -208,20 +246,49 @@ def objective(trial):
     val_loss = training(model, epochs=5)
     return val_loss
 
+def run_optuna():
+    study = optuna.create_study(direction="minimize")
+    study.optimize(objective, n_trials=args.trials)
+    print("Best trial:", study.best_trial.params)
+    joblib.dump(study, f"optuna_{args.model_type}_study_{NOW}.pkl")
+
+
+def run_training(MODEL_CONFIG=None):
+    logging.info("Starting training with specified hyperparameters")
+    if MODEL_CONFIG is not None:
+        logging.info(f"Using MODEL_CONFIG: {MODEL_CONFIG}")
+    else:
+        logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
+        MODEL_CONFIG = BASE_MODEL_CONFIG
+    model = FlexTwoC2E1D(
+        MODEL_CONFIG=MODEL_CONFIG,
+        input_shape=(2, PRESET_ARRAY_SIZE),
+        num_classes=4,
+        labels_mean=params_mean,
+        labels_std=params_std,
+        paramsnorm=True,
+    )
+    training(model, epochs=10, savemodel=True, savelosses=True)
+    model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
+                             epochs=10, datafrac=0.5)
+
 
 if __name__ == "__main__":
 
-    log_filename = f"optuna_multicvae_{today}-{now}.log"
+    parser = argparse.ArgumentParser(description="Optuna optimization for TwoC2E1D model")
+    sp1 = parser.add_subparsers().add_parser("optuna", help="Run Optuna optimization")
+    sp1.add_argument("--trials", type=int, default=30, help="Number of Optuna trials to run")
+    sp2 = parser.add_subparsers().add_parser("train", help="Train model with specified hyperparameters")
+    args = parser.parse_args()
+
+    log_filename = f"optuna_multicvae_{NOW}.log"
     logging.basicConfig(
         filename=log_filename,
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(message)s",
     )
 
-    # Run Optuna study
-    study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=30)
-
-    print("Best trial:", study.best_trial.params)
-    # Save the study for future reference
-    joblib.dump(study, f"optuna_multicvae_study_{today}-{now}.pkl")
+    if "optuna" in args:
+        run_optuna()
+    elif "train" in args:
+        run_training()
