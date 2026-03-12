@@ -302,9 +302,13 @@ class BaseEncoder(BaseCoder):
             z = self.pre_fc_layers(z)
         else:
             z = x
+        # print(f"After pre-FC layers, z shape: {z.shape}")
 
         if self.has_cnn and self.cnn_in_channels and self.cnn_out_channels and self.cnn_kernel_size:
-            z = z.view(z.size(0), *self.input_shape)  # reshape to (B, C, L) for CNN
+            if self.has_pre_fc:
+                z = z.view(z.size(0), self.cnn_in_channels[0], -1)  # reshape to (B, C, L) for CNN
+            else:
+                z = z.view(z.size(0), self.input_shape[0], self.input_shape[1])  # reshape to (B, C, L) for CNN
             z = self.cnn_layer(z)
             z = z.view(z.size(0), -1)  # flatten CNN output for post-FC layers
 
@@ -385,7 +389,7 @@ class BaseConditional(BaseCoder):
         return z.view(-1, self.latent_dim)  # ensure output shape is (B, latent_dim)
     
 
-    
+
 class TwoC2E1D(nn.Module):
     """
     Conditional Variational Autoencoder (CVAE) implementation based on my 
@@ -506,17 +510,16 @@ class TwoC2E1D(nn.Module):
                                        num_classes=self.num_classes,
                                        n_layers=1,
                                        n_layers_cnn=2,
+                                       has_pre_fc=False,
+                                       has_cnn=True,
+                                       has_post_fc=True,
                                        activation_name=self.activation_name,
-                                       pre_fc_sizes=[self.input_shape[0] * self.input_shape[1], 512],
-                                       cnn_in_channels=[16, 32],
-                                       cnn_out_channels=[32, 32],
+                                       cnn_in_channels=[2, 16],
+                                       cnn_out_channels=[16, 32],
                                        cnn_kernel_size=[5, 5],
                                        cnn_dilation=[1, 1],
                                        cnn_pool_kernel_size=[4, 4],
-                                       post_fc_sizes=[512, self.latent_dim_x],
-                                       has_pre_fc=True,
-                                       has_cnn=True,
-                                       has_post_fc=True,)
+                                       post_fc_sizes=[512, self.latent_dim_x],)
         self.encoder_key = BaseEncoder(latent_dim_x=self.latent_dim_key,
                                           input_shape=self.key_shape,
                                           num_classes=self.num_classes,
@@ -530,7 +533,10 @@ class TwoC2E1D(nn.Module):
                                    input_shape=self.input_shape,
                                    num_classes=self.num_classes,
                                    n_layers=1,
-                                   n_layers_cnn=3,
+                                   n_layers_cnn=3,                                   
+                                   has_pre_fc=True,
+                                   has_cnn=True,
+                                   has_post_fc=True,
                                    activation_name=self.activation_name,
                                    pre_fc_sizes=[self.latent_dim_x + self.latent_dim_key + self.num_classes, 512],
                                    cnn_in_channels=[64, 32, 16],
@@ -539,9 +545,7 @@ class TwoC2E1D(nn.Module):
                                    cnn_dilation=[1, 1, 1],
                                    cnn_pool_kernel_size=[4, 4, 4],
                                    post_fc_sizes=[512, self.input_shape[0] * self.input_shape[1]],
-                                   has_pre_fc=True,
-                                   has_cnn=True,
-                                   has_post_fc=True)
+                                   )
         self.conditional_x = BaseConditional(latent_dim=self.latent_dim_x,  # z1 mean and logvar
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
