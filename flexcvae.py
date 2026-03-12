@@ -32,12 +32,12 @@ def _as_list(x) -> List:
 
 def _pair_from_sizes(sizes: Sequence[int]):
     """
-    Given sizes like [a, b, c], return in=[a, b, b], out=[b, b, c],
-    which corresponds to a 3-layer MLP with layer sizes a->b->b->c. 
-    The 3 layers in this case would be: Linear(a, b), Linear(b, b), Linear(b, c).
-    This allows users to specify just the sizes list, and we can infer the in/out features 
-    for each layer, ensuring consistency and reducing the chance of user error in 
-    specifying layer sizes.
+    Given a list of sizes, [a, b, c, ...], returns two lists:
+    in_features = [a, b, c, ...] (all but last)
+    out_features = [b, c, ...] (all but first)
+    These will be used to construct the layers of the FC blocks,
+    like: Linear(a, b) → Linear(b, c) → ... for the pre-FC and post-FC stages.
+    The number of layers should be len(sizes) - 1, and the sizes should be compatible for chaining.
     """
     sizes = list(sizes)
     assert len(sizes) >= 2, "sizes must have len >= 2"
@@ -149,8 +149,11 @@ class BaseCoder(nn.Module):
            n_layers: Optional[int] = None,
            sizes: Optional[Sequence[int]] = None,
            use_last_activation: bool = False) -> nn.Sequential:
-        """Builds an MLP. You may specify either (in_features, out_features)
-        or a single `sizes=[in, h1, ..., out]`. The original API is preserved.
+        """
+        Builds a flexible FC block with the specified configuration. The user can specify either:
+        1) in_features and out_features lists, which directly define the sizes of each layer, or
+        2) a single sizes list, from which we will infer the in/out features for each layer.
+        The number of layers is determined by the length of the sizes list or the in/out features lists, and should be consistent. The use_last_activation flag allows for optionally applying an activation function to the last layer, which can be useful for certain configurations (e.g., if the last layer is not meant to be linear).
         """
         print(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
         layers: List[nn.Module] = []
@@ -449,11 +452,11 @@ class TwoC2E1D(nn.Module):
 
         # If MODEL_CONFIG is provided, it should contain all necessary hyperparameters.
         # If not provided, the default values will be used.
-        self.latent_dim_x = latent_dim_x * 2  # latent mean and logvar
-        self.latent_dim_key = latent_dim_key * 2 # latent mean and logvar
-        self.input_shape = input_shape  # shape of strain array
-        self.num_classes = num_classes  # shape of labels
-        self.key_shape = key_shape      # shape of normalization keys
+        self.latent_dim_x = latent_dim_x * 2       # latent mean and logvar
+        self.latent_dim_key = latent_dim_key * 2   # latent mean and logvar
+        self.input_shape = input_shape
+        self.num_classes = num_classes
+        self.key_shape = key_shape
 
          # This works regardless of whether MODEL_CONFIG is provided or not, 
         # because if MODEL_CONFIG is not provided, the default values will be used.
@@ -499,7 +502,7 @@ class TwoC2E1D(nn.Module):
                                           has_cnn=False,
                                           has_post_fc=False,
                                           activation_name=self.activation_name,
-                                          pre_fc_sizes=[self.key_shape[0] * self.key_shape[1], 64, self.latent_dim_key]
+                                          pre_fc_sizes=[self.key_shape[0] * self.key_shape[1], 64, 64, self.latent_dim_key],
                                           )
         self.decoder = BaseDecoder(latent_dim=self.latent_dim_x + self.latent_dim_key,  # e.g. z1 + z1prime
                                    input_shape=self.input_shape,
@@ -521,12 +524,14 @@ class TwoC2E1D(nn.Module):
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
                                             n_layers=4, 
-                                            activation_name=self.activation_name)
+                                            activation_name=self.activation_name,
+                                            pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_x])
         self.conditional_key = BaseConditional(latent_dim=self.latent_dim_key,  # z1prime mean and logvar
                                               input_shape=(self.num_classes,),
                                               num_classes=self.num_classes,
                                               n_layers=4,
-                                              activation_name=self.activation_name)
+                                              activation_name=self.activation_name,
+                                              pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_key])
         
     def normalize_labels(self, labels, batchwise=False):
         """
