@@ -5,7 +5,6 @@ Works for both CVAE and CAE configurations, with 2 encoders or 1 encoder.
 
 import os
 import logging
-import Optional, Union, List, Sequence, Callable
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -14,6 +13,8 @@ import numpy as np
 from datetime import datetime
 
 from utils import polarizations_from_ampfreq, calc_polarization_mismatch
+
+from typing import List, Sequence, Optional, Union, Callable
 
 
 
@@ -30,12 +31,19 @@ def _as_list(x) -> List:
 
 
 def _pair_from_sizes(sizes: Sequence[int]):
-    """Given sizes like [a, b, c], return in=[a, b], out=[b, c]."""
+    """
+    Given sizes like [a, b, c], return in=[a, b, b], out=[b, b, c],
+    which corresponds to a 3-layer MLP with layer sizes a->b->b->c. 
+    The 3 layers in this case would be: Linear(a, b), Linear(b, b), Linear(b, c).
+    This allows users to specify just the sizes list, and we can infer the in/out features 
+    for each layer, ensuring consistency and reducing the chance of user error in 
+    specifying layer sizes.
+    """
     sizes = list(sizes)
     assert len(sizes) >= 2, "sizes must have len >= 2"
-    in_f = sizes[:-1]
-    out_f = sizes[1:]
-    return in_f, out_f
+    in_features = sizes[:-1]  # all but last
+    out_features = sizes[1:]  # all but first
+    return in_features, out_features
 
 
 def _make_activation(name: Optional[str]) -> nn.Module:
@@ -76,14 +84,14 @@ class BaseCoder(nn.Module):
         self.has_cnn     = kwargs.get('has_cnn', True)
         self.has_post_fc = kwargs.get('has_post_fc', True)
 
-        # Layer counts (defaults kept)
+        # Layer counts
         self.n_layers            = kwargs.get('n_layers', 1)
         self.n_layers_cnn        = kwargs.get('n_layers_cnn', self.n_layers)
         self.n_layers_fc         = kwargs.get('n_layers_fc', self.n_layers)
         self.n_layers_pre_fc     = kwargs.get('n_layers_pre_fc', self.n_layers_fc)
         self.n_layers_post_fc    = kwargs.get('n_layers_post_fc', self.n_layers_fc)
 
-        # FC sizing (legacy-compatible)
+        # FC sizing
         self.pre_fc_in_features  = _as_list(kwargs.get('pre_fc_in_features', None))
         self.pre_fc_out_features = _as_list(kwargs.get('pre_fc_out_features', None))
         self.pre_fc_sizes        = _as_list(kwargs.get('pre_fc_sizes', None))  # optional: [in, ..., out]
@@ -353,7 +361,7 @@ class BaseConditional(BaseCoder):
                     use_last_activation=False)(z)
         return z.view(-1, self.latent_dim)  # ensure output shape is (B, latent_dim)
     
-class TwoC2E1D(BaseCoder):
+class TwoC2E1D(nn.Module):
     """
     Conditional Variational Autoencoder (CVAE) implementation based on my 
     paper. We basically keep everything the same, e.g. loss function and
@@ -431,10 +439,11 @@ class TwoC2E1D(BaseCoder):
             labels_mean = MODEL_CONFIG.get('labels_mean', labels_mean)
             labels_std = MODEL_CONFIG.get('labels_std', labels_std)
             paramsnorm = MODEL_CONFIG.get('paramsnorm', paramsnorm)
-            self.activation_name = MODEL_CONFIG.get('activation', self.activation_name)
+            self.activation_name = MODEL_CONFIG.get('activation', 'relu')
             self.beta = MODEL_CONFIG.get('beta', 0.1)  # default beta value for KL divergence loss
             self.decoder_input_type = MODEL_CONFIG.get('decoder_input_type', 'concat')
             self.embed_labels_in_decoder = MODEL_CONFIG.get('embed_labels_in_decoder', False)
+            logging.info(f"MODEL_CONFIG provided. Using hyperparameters from MODEL_CONFIG: {MODEL_CONFIG}")
         else:
             logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
 
@@ -472,19 +481,42 @@ class TwoC2E1D(BaseCoder):
                                        num_classes=self.num_classes,
                                        n_layers=1,
                                        n_layers_cnn=2,
-                                       activation_name=self.activation_name,)
+                                       activation_name=self.activation_name,
+                                       pre_fc_sizes=[self.input_shape[0] * self.input_shape[1], 512],
+                                       cnn_in_channels=[16, 32],
+                                       cnn_out_channels=[32, 32],
+                                       cnn_kernel_size=[5, 5],
+                                       cnn_dilation=[1, 1],
+                                       cnn_pool_kernel_size=[4, 4],
+                                       post_fc_sizes=[512, self.latent_dim_x],
+                                       has_pre_fc=True,
+                                       has_cnn=True,
+                                       has_post_fc=True,)
         self.encoder_key = BaseEncoder(latent_dim_x=self.latent_dim_key,
                                           input_shape=self.key_shape,
                                           num_classes=self.num_classes,
                                           n_layers = 3,
                                           has_cnn=False,
                                           has_post_fc=False,
-                                          activation_name=self.activation_name)
-        self.decoder = BaseDecoder(latent_dim=self.latent_dim_x + self.latent_dim_key,
+                                          activation_name=self.activation_name,
+                                          pre_fc_sizes=[self.key_shape[0] * self.key_shape[1], 64, self.latent_dim_key]
+                                          )
+        self.decoder = BaseDecoder(latent_dim=self.latent_dim_x + self.latent_dim_key,  # e.g. z1 + z1prime
                                    input_shape=self.input_shape,
                                    num_classes=self.num_classes,
+                                   n_layers=1,
                                    n_layers_cnn=3,
-                                   activation_name=self.activation_name)
+                                   activation_name=self.activation_name,
+                                   pre_fc_sizes=[self.latent_dim_x + self.latent_dim_key + self.num_classes, 512],
+                                   cnn_in_channels=[64, 32, 16],
+                                   cnn_out_channels=[32, 16, self.input_shape[0]],
+                                   cnn_kernel_size=[5, 5, 5],
+                                   cnn_dilation=[1, 1, 1],
+                                   cnn_pool_kernel_size=[4, 4, 4],
+                                   post_fc_sizes=[512, self.input_shape[0] * self.input_shape[1]],
+                                   has_pre_fc=True,
+                                   has_cnn=True,
+                                   has_post_fc=True)
         self.conditional_x = BaseConditional(latent_dim=self.latent_dim_x,  # z1 mean and logvar
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
@@ -691,7 +723,7 @@ class TwoC2E1D(BaseCoder):
         return (recon_x, zvars)
     
 
-    def loss_function(self, x, x_recon, zvars) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def loss_function(self, x, x_recon, zvars) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Computes the total loss for the CVAE, including reconstruction loss,
         KL divergence for latent spaces, and latent loss between encoders.
@@ -782,6 +814,12 @@ class TwoC2E1D(BaseCoder):
             'cnn_kernel_size': self.cnn_kernel_size,
             'cnn_dilation': self.cnn_dilation,
             'cnn_pool_ks': self.cnn_pool_ks,
+        })
+        # Update config with model architecture and parameters details
+        self.MODEL_CONFIG.update({
+            'model_architecture': str(self),
+            'total_parameters': sum(p.numel() for p in self.parameters()),
+            'trainable_parameters': sum(p.numel() for p in self.parameters() if p.requires_grad)
         })
         # Save other supplied kwargs to MODEL_CONFIG
         self.MODEL_CONFIG.update(kwargs)

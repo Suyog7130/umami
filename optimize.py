@@ -82,8 +82,17 @@ def training(model: FlexTwoC2E1D,
     """
     logging.info(f"Starting training for {epochs} epochs with data fraction {datafrac}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(torch.float64)
     model = model.to(device)
+    model = model.to(torch.float64)
+
+    # Check if model parameters contain NaN or Inf before training
+    for name, param in model.named_parameters():
+        if torch.isnan(param).any():
+            logging.warning(f"Parameter {name} contains NaN values before training.")
+        if torch.isinf(param).any():
+            logging.warning(f"Parameter {name} contains Inf values before training.")
+        logging.info(f"Parameter {name} - min: {param.min().item()}, max: {param.max().item()}, mean: {param.mean().item()}")
+
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)    
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, 
@@ -268,6 +277,10 @@ def run_training(MODEL_CONFIG=None):
         labels_std=params_std,
         paramsnorm=True,
     )
+    print(model)
+    print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
+    print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
+          )
     training(model, epochs=10, savemodel=True, savelosses=True)
     model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
                              epochs=10, datafrac=0.5)
@@ -276,19 +289,43 @@ def run_training(MODEL_CONFIG=None):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Optuna optimization for TwoC2E1D model")
-    sp1 = parser.add_subparsers().add_parser("optuna", help="Run Optuna optimization")
-    sp1.add_argument("--trials", type=int, default=30, help="Number of Optuna trials to run")
-    sp2 = parser.add_subparsers().add_parser("train", help="Train model with specified hyperparameters")
+    parser.add_argument('--optuna', action='store_true', 
+                        help="Run Optuna optimization")
+    parser.add_argument('--model_type', type=str, default='flexcvae', 
+                        help="Model type for Optuna or Training study naming")
+    parser.add_argument('--trials', type=int, default=20, 
+                        help="Number of Optuna trials to run")
+    parser.add_argument('--train', action='store_true', 
+                        help="Run training with specified hyperparameters")
+    parser.add_argument('-v', '--verbose', action='store_true',
+                        help="Enable verbose logging")
+    parser.add_argument('-d', '--debug', action='store_true',
+                        help="Enable debug logging")
     args = parser.parse_args()
 
-    log_filename = f"optuna_multicvae_{NOW}.log"
+    if args.debug:
+        log_level = logging.DEBUG
+    elif args.verbose:
+        log_level = logging.INFO
+    else:
+        log_level = logging.WARNING
+
+    logfname = f"optimize-{args.model_type}-{NOW}.log"
+    log_dir = f'../logs/{TODAY}/'
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, logfname)
     logging.basicConfig(
-        filename=log_filename,
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
+        format='%(levelname)s | %(asctime)s: %(message)s',
+        level=log_level,
+        datefmt='%y-%m-%d %H:%M:%S',
+        force=True,
+        handlers=[
+            logging.StreamHandler(),  # Log to console
+            logging.FileHandler(log_file)  # Log to file
+        ]
     )
 
-    if "optuna" in args:
+    if args.optuna:
         run_optuna()
-    elif "train" in args:
+    if args.train:
         run_training()
