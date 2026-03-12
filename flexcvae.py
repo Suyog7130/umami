@@ -336,25 +336,30 @@ class BaseConditional(BaseCoder):
     """
     def __init__(self, **kwargs):
         super(BaseConditional, self).__init__(**kwargs)
-        # The actual layers will be built in forward() based on the config
+        self.has_pre_fc=True
+        self.has_cnn=False
+        self.has_post_fc=False
 
     def forward(self, y):
-        if self.has_pre_fc and (self.pre_fc_sizes or self.pre_fc_out_features):
-            pre_fc_in_features = self.input_shape[0] if self.input_shape else self.pre_fc_in_features[0]
-            pre_fc_out_features = self.pre_fc_out_features[-1] if self.pre_fc_out_features else self.pre_fc_sizes[-1]
-            z = y.view(y.size(0), -1)  # flatten input for FC layers
-            z = self.fc(pre_fc_in_features, pre_fc_out_features,
-                        n_layers=self.n_layers_pre_fc,
-                        sizes=self.pre_fc_sizes,
-                        use_last_activation=False)(z)
-        else:
-            z = y
+        pre_fc_in_features = self.input_shape[0] if self.input_shape else self.pre_fc_in_features[0]
+        pre_fc_out_features = self.pre_fc_out_features[-1] if self.pre_fc_out_features else self.pre_fc_sizes[-1]
+        z = y.view(y.size(0), -1)  # flatten input for FC layers
+        z = self.fc(pre_fc_in_features, pre_fc_out_features,
+                    n_layers=self.n_layers_pre_fc,
+                    sizes=self.pre_fc_sizes,
+                    use_last_activation=False)(z)
         return z.view(-1, self.latent_dim)  # ensure output shape is (B, latent_dim)
     
 class TwoC2E1D(BaseCoder):
     """
-    Conditional Variational Autoencoder (CVAE) implementation based on the 
-    paper: https://doi.org/10.1103/PhysRevD.103.124051
+    Conditional Variational Autoencoder (CVAE) implementation based on my 
+    paper. We basically keep everything the same, e.g. loss function and
+    what goes into the decoder, and only use the variational model.
+    What is flexible is the number of layers in encoders / conditionals and
+    the size of each of those layers. Plus, the activation function is
+    also optimized during hyper-parameter tuning.
+    Aim is to get the best model performance for the configuration I have
+    in CVAE-Paper-I !
 
     This model encodes and decodes data conditioned on labels, with two 
     separate latent spaces for the data and the keys. It includes encoders 
@@ -419,6 +424,7 @@ class TwoC2E1D(BaseCoder):
             labels_mean = MODEL_CONFIG.get('labels_mean', labels_mean)
             labels_std = MODEL_CONFIG.get('labels_std', labels_std)
             num_classes = MODEL_CONFIG.get('num_classes', num_classes)
+            paramsnorm = MODEL_CONFIG.get('paramsnorm', paramsnorm)
 
         # If MODEL_CONFIG is provided, it should contain all necessary hyperparameters.
         # If not provided, the default values will be used.
@@ -452,22 +458,29 @@ class TwoC2E1D(BaseCoder):
         self.encoder_x = BaseEncoder(latent_dim_x=self.latent_dim_x,
                                        input_shape=self.input_shape,
                                        num_classes=self.num_classes,
+                                       n_layers=1,
+                                       n_layers_cnn=2,
                                        **kwargs)
         self.encoder_key = BaseEncoder(latent_dim_x=self.latent_dim_key,
                                           input_shape=self.key_shape,
                                           num_classes=self.num_classes,
+                                          n_layers = 3,
+                                          has_cnn=False,
+                                          has_post_fc=False,
                                           **kwargs)
         self.decoder = BaseDecoder(latent_dim=self.latent_dim_x + self.latent_dim_key,
                                    input_shape=self.input_shape,
                                    num_classes=self.num_classes,
+                                   n_layers_cnn=3,
                                    **kwargs)
         self.conditional_x = BaseConditional(latent_dim=self.latent_dim_x,  # z1 mean and logvar
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
-                                            **kwargs)
+                                            n_layers=4, **kwargs)
         self.conditional_key = BaseConditional(latent_dim=self.latent_dim_key,  # z1prime mean and logvar
                                               input_shape=(self.num_classes,),
                                               num_classes=self.num_classes,
+                                              n_layers=4,
                                               **kwargs)
         
     def normalize_labels(self, labels, batchwise=False):
@@ -552,11 +565,61 @@ class TwoC2E1D(BaseCoder):
         # torch.manual_seed(42)
         eps = torch.randn_like(std)
         return z_mean + eps * std
+    
+    def latent_loss(self, z_mean, z_log_var):
+        """
+        Computes the KL divergence between the approximate posterior q(z|x)
+        and the prior p(z) (assumed to be a standard Gaussian N(0, I)).
 
+        Parameters:
+        -----------
+        z_mean : torch.Tensor
+            Mean of the latent space distribution.
+        z_log_var : torch.Tensor
+            Log variance of the latent space distribution.
 
-class CVAE(TwoC2E1D):
-    def __init__(self, **kwargs):
-        super(CVAE, self).__init__(**kwargs)
+        Returns:
+        --------
+        kl_loss : torch.Tensor
+            KL divergence loss for the latent space.
+        """
+        # Clamp log variance to avoid numerical instability
+        z_log_var = torch.clamp(z_log_var, min=-10, max=10)
+        # print(z_log_var)
+        kl_loss = -0.5 * torch.sum(1 + z_log_var - z_mean.pow(2) - z_log_var.exp(), dim=1)
+        return kl_loss.mean()  # Average over the batch
+    
+    def latent_loss_between_encoders(self, z1_mean, z1_log_var, z2_mean, z2_log_var):
+        """
+        Computes the KL divergence between two Gaussian distributions
+        generated by the two encoders.
+
+        Parameters:
+        -----------
+        z1_mean : torch.Tensor
+            Mean of the first Gaussian distribution (from the first encoder).
+        z1_log_var : torch.Tensor
+            Log variance of the first Gaussian distribution (from the first encoder).
+        z2_mean : torch.Tensor
+            Mean of the second Gaussian distribution (from the second encoder).
+        z2_log_var : torch.Tensor
+            Log variance of the second Gaussian distribution (from the second encoder).
+
+        Returns:
+        --------
+        kl_loss : torch.Tensor
+            KL divergence loss between the two Gaussian distributions.
+        """
+        # Variances
+        sigma1_sq = torch.exp(z1_log_var)
+        sigma2_sq = torch.exp(z2_log_var)
+
+        # KL divergence
+        kl_loss = 0.5 * torch.sum(
+            (sigma1_sq / sigma2_sq) + ((z2_mean - z1_mean).pow(2) / sigma2_sq) - 1 + (z2_log_var - z1_log_var),
+            dim=1
+        )
+        return kl_loss.mean()  # Average over the batch
 
     def forward(self, x: torch.Tensor, y: torch.Tensor, keys: torch.Tensor):
         """
@@ -591,3 +654,58 @@ class CVAE(TwoC2E1D):
         recon_x = self.decode(z_x, z_key, y)
         zvars = [z_mean_x, z_log_var_x, z_mean_key, z_log_var_key, z_mean_label_x, z_log_var_label_x, z_mean_label_key, z_log_var_label_key]
         return recon_x, zvars
+    
+
+    def loss_function(self, x, x_recon, zvars):
+        """
+        Computes the total loss for the CVAE, including reconstruction loss,
+        KL divergence for latent spaces, and latent loss between encoders.
+
+        Parameters:
+        -----------
+        x : torch.Tensor
+            Original input data.
+        x_recon : torch.Tensor
+            Reconstructed input data.
+        z1_mean, z1_log_var : torch.Tensor
+            Mean and log variance for latent space z1.
+        z2_mean, z2_log_var : torch.Tensor
+            Mean and log variance for latent space z2.
+        z1p_mean, z1p_log_var : torch.Tensor
+            Mean and log variance for latent space z1p.
+        z2p_mean, z2p_log_var : torch.Tensor
+            Mean and log variance for latent space z2p.
+
+        Returns:
+        --------
+        total_loss : torch.Tensor
+            Total loss combining reconstruction and latent losses.
+        """
+        z1_mean, z1_log_var, z2_mean, z2_log_var, \
+            z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
+        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
+            z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
+
+        # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
+        # TODO: What is the `reduction` thing doing here?
+        recon_loss = F.mse_loss(x_recon, x, reduction='mean')
+        logging.info(f"Reconstruction Loss: {recon_loss.item()}")
+
+        # KL divergence for each latent space
+        kl_loss_z1 = self.latent_loss(z1_mean, z1_log_var)
+        kl_loss_z2 = self.latent_loss(z2_mean, z2_log_var)
+        kl_loss_z1p = self.latent_loss(z1p_mean, z1p_log_var)
+        kl_loss_z2p = self.latent_loss(z2p_mean, z2p_log_var)
+        # Print KL divergence losses for debugging
+        logging.info(f"KL Loss z1: {kl_loss_z1.item()}, KL Loss z2: {kl_loss_z2.item()}, "
+            f"KL Loss z1p: {kl_loss_z1p.item()}, KL Loss z2p: {kl_loss_z2p.item()}")
+
+        # Latent loss between encoders
+        ll1 = self.latent_loss_between_encoders(z1_mean, z1_log_var, z2_mean, z2_log_var)
+        ll2 = self.latent_loss_between_encoders(z1p_mean, z1p_log_var, z2p_mean, z2p_log_var)
+
+        # Total loss
+        beta = 0.1   # Weighting factor for KL divergence
+        kl_loss = kl_loss_z1 + kl_loss_z2 + kl_loss_z1p + kl_loss_z2p + ll1 + ll2
+        total_loss = recon_loss + beta * kl_loss
+        return (total_loss, recon_loss, kl_loss)
