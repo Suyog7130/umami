@@ -277,6 +277,10 @@ class BaseEncoderDecoder(BaseCoder):
     flexible architecture configuration and layer building logic. This class can be 
     further extended to implement specific encoder and decoder architectures for CVAE/CAE models, 
     allowing for dynamic and configurable designs based on the provided hyperparameters.
+
+    The encoded latent values are output in 2 channels for mean and logvar, which are then 
+    split in the forward pass of the encoder. The Decoder either uses reparametrized single channel
+    latent values or only the mean latent values!
     """
     def __init__(self, **kwargs):
         super(BaseEncoderDecoder, self).__init__(**kwargs)
@@ -367,12 +371,13 @@ class BaseEncoder(BaseEncoderDecoder):
             # for the encoder and only feed them to the decoder? Need to experiment with this as well.
 
         if self.has_post_fc:
+            assert self.post_fc_sizes[-1] == self.latent_dim * 2, f"post_fc_sizes[-1] should be {self.latent_dim * 2} to account for mean and logvar channels, but got {self.post_fc_sizes[-1]}"
             z = self.post_fc_layers(z)
             print(f"After post-FC layers, z shape: {z.shape}")
         # -- Keep first `Batch` dim and reshape rest into `latent_dim` for mean and logvar,
         # -- which was already configured to be 2x the latent_dim in __init__ to account for mean and logvar concatenation.
-        # print(f"Final encoder output shape after view: {z.view(-1, self.latent_dim).shape}")
-        return z.view(-1, self.latent_dim)  # output shape: (B, latent_dim)
+        print(f"Final encoder output shape after view: {z.view(-1, 2, self.latent_dim).shape}")
+        return z.view(-1, 2, self.latent_dim)  # output shape: (B, C, latent_dim)
 
 class BaseDecoder(BaseEncoderDecoder):
     """
@@ -453,9 +458,18 @@ class BaseConditional(BaseCoder):
                     use_last_activation=False)
 
     def forward(self, y):
+        """
+        Forward pass for the conditional encoder. Takes the input labels `y`, processes them 
+        through the pre-FC layers, and outputs the latent representation. The output is reshaped 
+        to have a shape of (B, 2, latent_dim) to account for the mean and logvar channels in 
+        the latent space. This allows the conditional encoder to produce a latent representation 
+        that can be used in conjunction with the main encoder's output for conditioning the 
+        decoder in the CVAE/CAE model.
+        """
+        assert self.pre_fc_sizes[-1] == self.latent_dim * 2, f"pre_fc_out_features[-1] should be {self.latent_dim * 2} to account for mean and logvar channels, but got {self.pre_fc_out_features[-1]}"
         z = y.view(y.size(0), -1)  # flatten input for FC layers
         z = self.pre_fc_layers(z)
-        return z.view(-1, self.latent_dim)  # ensure output shape is (B, latent_dim)
+        return z.view(-1, 2, self.latent_dim)  # ensure output shape is (B, 2, latent_dim)
     
 
 
@@ -574,7 +588,7 @@ class TwoC2E1D(nn.Module):
                 The model will use the raw labels without normalization.")
 
         # The actual layers will be built in forward() based on the config
-        self.encoder_x = BaseEncoder(latent_dim=self.latent_dim_x * 2,  # mean and logvar concatenated
+        self.encoder_x = BaseEncoder(latent_dim=self.latent_dim_x,  # mean and logvar are output in two channels
                                        input_shape=self.input_shape,
                                        num_classes=self.num_classes,
                                        n_layers=1,
@@ -592,7 +606,7 @@ class TwoC2E1D(nn.Module):
                                        cnn_pool_kernel_size=[4, 4],
                                        post_fc_sizes=[0, 512, 512, self.latent_dim_x * 2],)
         logging.info(f"Encoder for x configured with latent_dim_x={self.latent_dim_x}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=2, n_layers_post_fc=3, has_pre_fc=False, has_cnn=True, has_post_fc=True, activation_name={self.activation_name}, last_activation={self.activation_name}, cnn_in_channels=[2, 16], cnn_out_channels=[16, 32], cnn_kernel_size=[5, 5], cnn_dilation=[1, 1], cnn_pool_kernel_size=[4, 4], post_fc_sizes=[0, 512, 512, {self.latent_dim_x}]")
-        self.encoder_key = BaseEncoder(latent_dim=self.latent_dim_key * 2,  # mean and logvar concatenated
+        self.encoder_key = BaseEncoder(latent_dim=self.latent_dim_key,  # mean and logvar are output in two channels
                                           input_shape=self.key_shape,
                                           num_classes=self.num_classes,
                                           n_layers=3,
@@ -627,14 +641,14 @@ class TwoC2E1D(nn.Module):
                                             num_classes=self.num_classes,
                                             n_layers=4, 
                                             activation_name=self.activation_name,
-                                            pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_x])
+                                            pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_x * 2])
         logging.info(f"Label-conditioned encoder for x configured with latent_dim={self.latent_dim_x}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation_name={self.activation_name}, pre_fc_sizes=[{self.num_classes}, 128, 128, 128, {self.latent_dim_x}]")
         self.conditional_key = BaseConditional(latent_dim=self.latent_dim_key,  # z1prime mean and logvar
                                               input_shape=(self.num_classes,),
                                               num_classes=self.num_classes,
                                               n_layers=4,
                                               activation_name=self.activation_name,
-                                              pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_key])
+                                              pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_key * 2])
         logging.info(f"Label-conditioned encoder for key configured with latent_dim={self.latent_dim_key}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation_name={self.activation_name}, pre_fc_sizes=[{self.num_classes}, 128, 128, 128, {self.latent_dim_key}]")
 
     def normalize_labels(self, labels, batchwise=False):
@@ -688,25 +702,36 @@ class TwoC2E1D(nn.Module):
         return self.forward(x, labels, keys)
     
     def encode_x(self, x, labels):
-        h = self.encoder_x(x)
-        z_mean, z_log_var = torch.chunk(h, 2, dim=1)
+        """
+        Inputs are encoded into a 2 channel latent space,
+        where the first channel is the mean and the second channel is the log variance,
+        which are then split here in the forward pass and reparameterized later (if req)
+        to get the final latent representation that is fed to the decoder.
+
+        Shape of latent space : (B, 2, latent_dim), 
+        where the second dimension of size 2 corresponds to mean and log variance channels.
+        """
+        latent = self.encoder_x(x)
+        z_mean, z_log_var = latent[:, 0, :], latent[:, 1, :]
         print(f"Encoded x to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def encode_key(self, keys, labels):
-        h = self.encoder_key(keys)
-        z_mean, z_log_var = torch.chunk(h, 2, dim=1)
+        latent = self.encoder_key(keys)
+        z_mean, z_log_var = latent[:, 0, :], latent[:, 1, :]
         print(f"Encoded key to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def encode_label_for_x(self, labels):
-        h = self.conditional_x(labels)
-        z_mean, z_log_var = torch.chunk(h, 2, dim=1)
+        latent = self.conditional_x(labels)
+        z_mean, z_log_var = latent[:, 0, :], latent[:, 1, :]
+        print(f"Encoded label for x to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def encode_label_for_key(self, labels):
-        h = self.conditional_key(labels)
-        z_mean, z_log_var = torch.chunk(h, 2, dim=1)
+        latent = self.conditional_key(labels)
+        z_mean, z_log_var = latent[:, 0, :], latent[:, 1, :]
+        print(f"Encoded label for key to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def decode(self, z, y_embed):
@@ -801,6 +826,16 @@ class TwoC2E1D(nn.Module):
         zy_mu, zy_logvar = self.encode_label_for_x(y)
         zkey_mu, zkey_logvar = self.encode_key(keys, y)
         zykey_mu, zykey_logvar = self.encode_label_for_key(y)
+
+        # -- Ensure latent dimensions are correct before reparameterization
+        assert zx_mu.size(1) == zy_mu.size(1) == self.latent_dim_x, "Latent dimension mismatch for x encoders"
+        assert zx_logvar.size(1) == zy_logvar.size(1) == self.latent_dim_x, "Latent dimension mismatch for x encoders"
+        assert zkey_mu.size(1) == zykey_mu.size(1) == self.latent_dim_key, "Latent dimension mismatch for key encoders"
+        assert zkey_logvar.size(1) == zykey_logvar.size(1) == self.latent_dim_key, "Latent dimension mismatch for key encoders"
+        # -- Ensure batch dimensions match across all latent representations
+        batch_size = x.size(0)
+        assert zx_mu.size(0) == zy_mu.size(0) == zkey_mu.size(0) == zykey_mu.size(0) == batch_size, "Batch size mismatch across latent representations"
+        assert zx_logvar.size(0) == zy_logvar.size(0) == zkey_logvar.size(0) == zykey_logvar.size(0) == batch_size, "Batch size mismatch across latent representations"
 
         z_x = self.reparameterize(zx_mu, zx_logvar)
         z_key = self.reparameterize(zkey_mu, zkey_logvar)
