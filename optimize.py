@@ -61,7 +61,7 @@ params_std = torch.tensor(params_std, dtype=torch.float64).to(DEVICE)
 BASE_MODEL_CONFIG = {
     'latent_dim_x': 16,
     'latent_dim_key': 4,
-    'activation': 'gelu',
+    'activation_name': 'gelu',
 }
 
 
@@ -281,6 +281,7 @@ def run_training(MODEL_CONFIG=None):
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
     print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
           )
+    # print(model)
     training(model, epochs=10, savemodel=True, savelosses=True)
     model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
                              epochs=10, datafrac=0.5)

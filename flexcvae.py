@@ -155,7 +155,7 @@ class BaseCoder(nn.Module):
         2) a single sizes list, from which we will infer the in/out features for each layer.
         The number of layers is determined by the length of the sizes list or the in/out features lists, and should be consistent. The use_last_activation flag allows for optionally applying an activation function to the last layer, which can be useful for certain configurations (e.g., if the last layer is not meant to be linear).
         """
-        print(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
+        # print(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
         layers: List[nn.Module] = []
         if sizes is not None and len(sizes) > 0:
             in_f, out_f = _pair_from_sizes(sizes)
@@ -163,7 +163,7 @@ class BaseCoder(nn.Module):
             in_f, out_f = list(in_features), list(out_features)
         if n_layers is None:
             n_layers = len(in_f)
-        print(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
+        # print(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
         assert n_layers == len(in_f) == len(out_f), f"FC spec length mismatch: n_layers={n_layers}, in_f={len(in_f)}, out_f={len(out_f)}"
         # Robust compatibility check: ensure each in_f[i] matches previous output shape
         for i in range(n_layers):
@@ -215,6 +215,7 @@ class BaseCoder(nn.Module):
             import warnings
             warnings.warn(f"CNN spec mismatch: Reducing n_layers from {n_layers} to {min_len} due to parameter list lengths. in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}, dilation={dilation}, pool_kernel_size={pool_kernel_size}")
             n_layers = min_len
+        print(f"Building CNN with n_layers={n_layers}, in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}, dilation={dilation}, pool_kernel_size={pool_kernel_size}, use_last_activation={use_last_activation}")
 
         in_c  = expand(in_channels, n_layers)
         out_c = expand(out_channels, n_layers)
@@ -232,7 +233,7 @@ class BaseCoder(nn.Module):
             layers.append(self.conv_layer(in_c[i], out_c[i], ksz[i], dil[i], pool_size=pool[i], is_last=is_last))
         return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
 
-    def _calculate_cnn_output_size(self, sequence_length=500):
+    def _calculate_cnn_output_size(self, length=500):
         """
         Calculates the output size of the CNN layers given the input
         sequence length and the CNN configuration. This is necessary to determine
@@ -240,28 +241,78 @@ class BaseCoder(nn.Module):
         Works for arbitrary CNN configurations, including varying kernel sizes, 
         dilations, and pooling.
 
+        ::math::
+            L_out = \\left\\lfloor \\frac{L_{in} - (K - 1) \\cdot D - 1}{S} + 1 \\right\\rfloor
+
         Args:
-            sequence_length (int): The input sequence length to CNN layers.
+            length (int): The input length to CNN layers.
 
         Returns:
             int: The size of the flattened CNN output.
         """
-        length = sequence_length
-        for i in range(len(self.cnn_in_channels)):
-            kernel_size = self.cnn_kernel_size[i] if i < len(self.cnn_kernel_size) else self.cnn_kernel_size[-1]
-            dilation = self.cnn_dilation[i] if i < len(self.cnn_dilation) else self.cnn_dilation[-1]
-            pool_size = self.cnn_pool_ks[i] if i < len(self.cnn_pool_ks) else self.cnn_pool_ks[-1] if self.cnn_pool_ks else kernel_size
+        print("Calculating CNN output size with config: ")
+        print(f"Input length: {length}")
+        print(self.cnn_in_channels, self.cnn_out_channels, self.cnn_kernel_size, self.cnn_dilation, self.cnn_pool_ks)
+        for i in range(self.n_layers_cnn):
+            kernel_size = self.cnn_kernel_size[i]
+            dilation = self.cnn_dilation[i]
+            pool_size = self.cnn_pool_ks[i] if self.cnn_pool_ks else kernel_size
             # Calculate the effective kernel size with dilation
             effective_kernel_size = (kernel_size - 1) * dilation + 1
             # Update length after convolution (assuming stride=1 and no padding)
             length = length - effective_kernel_size + 1
             # Update length after pooling
             length = length // pool_size
+            print(f"After CNN layer {i+1}: kernel_size={kernel_size}, dilation={dilation}, pool_size={pool_size}, effective_kernel_size={effective_kernel_size}, output_length={length}")
+        print(f"Final CNN output length: {length}")
         final_out_channels = self.cnn_out_channels[-1] if self.cnn_out_channels else self.cnn_in_channels[-1]
+        print(f"Final CNN output channels: {final_out_channels}")
+        print(f"Final CNN output size: {final_out_channels * length}")
         return final_out_channels * length
     
 
-class BaseEncoder(BaseCoder):
+class BaseEncoderDecoder(BaseCoder):
+    """
+    Base class for encoders and decoders. Inherits from BaseCoder which contains the 
+    flexible architecture configuration and layer building logic. This class can be 
+    further extended to implement specific encoder and decoder architectures for CVAE/CAE models, 
+    allowing for dynamic and configurable designs based on the provided hyperparameters.
+    """
+    def __init__(self, **kwargs):
+        super(BaseEncoderDecoder, self).__init__(**kwargs)
+
+        # -- Build layers on the fly based on config (this allows for dynamic architectures)
+        # -- Do this in __init__ so that the layers are registered as part of the module, 
+        # but they will be built based on the config! This allows `model.parameters()` to work 
+        # correctly and include these layers, even though they are built based on the config.
+        if self.has_pre_fc and (self.pre_fc_sizes or self.pre_fc_out_features):
+            pre_fc_in_features = self.input_shape[0] * self.input_shape[1] if self.input_shape else self.pre_fc_in_features[0]
+            pre_fc_out_features = self.pre_fc_out_features[-1] if self.pre_fc_out_features else self.pre_fc_sizes[-1]
+            self.pre_fc_layers = self.fc(pre_fc_in_features, pre_fc_out_features,
+                        n_layers=self.n_layers_pre_fc,
+                        sizes=self.pre_fc_sizes,
+                        use_last_activation=True)
+
+        if self.has_cnn and self.cnn_in_channels and self.cnn_out_channels and self.cnn_kernel_size:
+            self.cnn_layers = self.cnn(self.cnn_in_channels, self.cnn_out_channels, self.cnn_kernel_size, self.cnn_dilation,
+                         pool_kernel_size=self.cnn_pool_ks,
+                         n_layers=self.n_layers_cnn)
+
+        # -- Moved this to children classes --#
+        # if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
+        #     # -- post_fc_in_features[0] should match post_fc_sizes[0], if both are provided!
+        #     # -- Plus we need to make sure that the CNN output size matches the post_fc_in_features[0] if CNN is present. 
+        #     # -- So we have to calculate the CNN output size and use that as post_fc_in_features[0] if CNN is present.
+        #     if self.has_cnn:
+        #         cnn_output_size = self._calculate_cnn_output_size(self.input_shape[0]*self.input_shape[1]) # assuming input_shape is (C, L)
+        #         post_fc_in_features = self.cnn_out_channels[-1] * cnn_output_size
+        #     post_fc_out_features = self.post_fc_out_features[-1] if self.post_fc_out_features else self.post_fc_sizes[-1]
+        #     self.post_fc_layers = self.fc(post_fc_in_features, post_fc_out_features,
+        #                 n_layers=self.n_layers_post_fc,
+        #                 sizes=self.post_fc_sizes,
+        #                 use_last_activation=False)
+
+class BaseEncoder(BaseEncoderDecoder):
     """
     Encoder for the input data to the CVAE/CAE model.
     Has flexible architecture that can include pre-FC layers, CNN layers, and post-FC layers,
@@ -272,26 +323,20 @@ class BaseEncoder(BaseCoder):
     def __init__(self, **kwargs):
         super(BaseEncoder, self).__init__(**kwargs)
 
-        # -- Build layers on the fly based on config (this allows for dynamic architectures)
-        # -- Do this in __init__ so that the layers are registered as part of the module, 
-        # but they will be built based on the config! This allows `model.parameters()` to work correctly and include these layers, even though they are built based on the config.
-        if self.has_pre_fc and (self.pre_fc_sizes or self.pre_fc_out_features):
-            pre_fc_in_features = self.input_shape[0] * self.input_shape[1] if self.input_shape else self.pre_fc_in_features[0]
-            pre_fc_out_features = self.pre_fc_out_features[-1] if self.pre_fc_out_features else self.pre_fc_sizes[-1]
-            self.pre_fc_layers = self.fc(pre_fc_in_features, pre_fc_out_features,
-                        n_layers=self.n_layers_pre_fc,
-                        sizes=self.pre_fc_sizes,
-                        use_last_activation=True)
-
-        if self.has_cnn and self.cnn_in_channels and self.cnn_out_channels and self.cnn_kernel_size:
-            self.cnn_layer = self.cnn(self.cnn_in_channels, self.cnn_out_channels, self.cnn_kernel_size, self.cnn_dilation,
-                         pool_kernel_size=self.cnn_pool_ks,
-                         n_layers=self.n_layers_cnn)
-
         if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
-            post_fc_in_features = self._calculate_cnn_output_size() if self.has_cnn else self.input_shape[0] * self.input_shape[1] if self.input_shape else self.post_fc_in_features[0]
-            post_fc_out_features = self.post_fc_out_features[-1] if self.post_fc_out_features else self.post_fc_sizes[-1]
-            self.post_fc_layers = self.fc(post_fc_in_features, post_fc_out_features,
+            # -- post_fc_in_features[0] should match post_fc_sizes[0], if both are provided!
+            # -- Plus we need to make sure that the CNN output size matches the post_fc_in_features[0] if CNN is present. 
+            # -- So we have to calculate the CNN output size and use that as post_fc_in_features[0] if CNN is present.
+            logging.debug(f"Configuring post-FC layers with post_fc_in_features={self.post_fc_in_features}, post_fc_sizes={self.post_fc_sizes}, and CNN config: in_channels={self.cnn_in_channels}, out_channels={self.cnn_out_channels}, kernel_size={self.cnn_kernel_size}, dilation={self.cnn_dilation}, pool_kernel_size={self.cnn_pool_ks}")
+            if not self.post_fc_sizes[0]==0:
+                logging.warning("post_fc_in_features[0] and post_fc_sizes[0] should both be set to `0` \
+                                to automatically determine the correct input size for post-FC layers based on \
+                                CNN output. If not, we will ignore the value for post_fc_in_features[0] and use \
+                                the calculated CNN output size as the input size for post-FC layers.")
+            cnn_output_size = self._calculate_cnn_output_size(self.input_shape[1]) # assuming input_shape is (C, L)
+            self.post_fc_sizes[0] = cnn_output_size  # update the first size to match the CNN output size
+            logging.info(f"Calculated CNN output size: {cnn_output_size}. Updated post_fc_sizes[0] to match this value.")
+            self.post_fc_layers = self.fc(
                         n_layers=self.n_layers_post_fc,
                         sizes=self.post_fc_sizes,
                         use_last_activation=False)
@@ -303,20 +348,33 @@ class BaseEncoder(BaseCoder):
         else:
             z = x
         # print(f"After pre-FC layers, z shape: {z.shape}")
+        # print(self.n_layers, self.n_layers_cnn, self.n_layers_post_fc)
 
         if self.has_cnn and self.cnn_in_channels and self.cnn_out_channels and self.cnn_kernel_size:
             if self.has_pre_fc:
                 z = z.view(z.size(0), self.cnn_in_channels[0], -1)  # reshape to (B, C, L) for CNN
             else:
-                z = z.view(z.size(0), self.input_shape[0], self.input_shape[1])  # reshape to (B, C, L) for CNN
-            z = self.cnn_layer(z)
+                z = z.view(z.size(0), self.input_shape[0], -1)  # reshape to (B, C, L) for CNN
+            print(f"Before CNN layers, z shape: {z.shape}")
+            z = self.cnn_layers(z)
+            print(f"After CNN layers, z shape: {z.shape}")
             z = z.view(z.size(0), -1)  # flatten CNN output for post-FC layers
+            print(f"After CNN layers, z shape: {z.shape}")
+
+            # TODO: In the original I concatenate labels here and then feed them to post-FC layers. 
+            # But maybe I should concatenate labels before pre-FC layers? Or even have a separate branch 
+            # for labels that merges later? Need to experiment with this. Or not concatenate labels at all 
+            # for the encoder and only feed them to the decoder? Need to experiment with this as well.
 
         if self.has_post_fc:
             z = self.post_fc_layers(z)
-        return z.view(-1, *self.input_shape)
-    
-class BaseDecoder(BaseCoder):
+            print(f"After post-FC layers, z shape: {z.shape}")
+        # -- Keep first `Batch` dim and reshape rest into `latent_dim` for mean and logvar,
+        # -- which was already configured to be 2x the latent_dim in __init__ to account for mean and logvar concatenation.
+        # print(f"Final encoder output shape after view: {z.view(-1, self.latent_dim).shape}")
+        return z.view(-1, self.latent_dim)  # output shape: (B, latent_dim)
+
+class BaseDecoder(BaseEncoderDecoder):
     """
     Decoder for the CVAE/CAE model. Similar flexible architecture as the encoder,
     allowing for pre-FC layers, CNN layers, and post-FC layers with configurable sizes
@@ -326,40 +384,28 @@ class BaseDecoder(BaseCoder):
     def __init__(self, **kwargs):
         super(BaseDecoder, self).__init__(**kwargs)
 
-        if self.has_pre_fc and (self.pre_fc_sizes or self.pre_fc_in_features):
-            self.pre_fc_layers = self.fc(self.pre_fc_in_features, self.pre_fc_out_features,
-                        n_layers=self.n_layers_pre_fc,
-                        sizes=self.pre_fc_sizes)
-
-        if self.has_cnn and self.cnn_in_channels:
-            self.cnn_layers = self.cnn(self.cnn_in_channels, self.cnn_out_channels,
-                         self.cnn_kernel_size, self.cnn_dilation,
-                         pool_kernel_size=self.cnn_pool_ks,
-                         n_layers=self.n_layers_cnn)
-
-        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
-            post_fc_in_features = self._calculate_cnn_output_size() if self.has_cnn else self.input_shape[0] * self.input_shape[1] if self.input_shape else self.post_fc_in_features[0]
-            self.post_fc_layers = self.fc(post_fc_in_features, self.post_fc_out_features,
-                        n_layers=self.n_layers_post_fc,
-                        sizes=self.post_fc_sizes,
-                        use_last_activation=False)
-
     def forward(self, z: torch.Tensor, y: torch.Tensor, y_embed: Optional[torch.Tensor] = None):
         assert z.size(1) == self.latent_dim, "z latent_dim mismatch"
         assert y.size(1) == self.num_classes, "y num_classes mismatch"
         y_cat = y_embed if y_embed is not None else y
+        print(f"DECODER input z shape: {z.shape}, y shape: {y.shape}, y_embed shape: {y_embed.shape if y_embed is not None else 'N/A'}")
         z = torch.cat([z, y_cat], dim=1)
+        print(f"DECODER after concatenating z and y_cat, shape: {z.shape}")
 
         if self.has_pre_fc:
             z = self.pre_fc_layers(z)
+            print(f"DECODER after pre-FC layers, z shape: {z.shape}")
 
         if self.has_cnn and self.cnn_in_channels:
             z = z.view(z.size(0), self.cnn_in_channels[0], -1)
+            print(f"DECODER before CNN layers, reshaped z shape: {z.shape}")
             z = self.cnn_layers(z)
+            print(f"DECODER after CNN layers, z shape: {z.shape}")
             z = z.view(z.size(0), -1)
 
         if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
             z = self.post_fc_layers(z)
+            print(f"DECODER after post-FC layers, z shape: {z.shape}")
         return z.view(-1, *self.input_shape)
     
 class BaseConditional(BaseCoder):
@@ -478,8 +524,8 @@ class TwoC2E1D(nn.Module):
 
         # If MODEL_CONFIG is provided, it should contain all necessary hyperparameters.
         # If not provided, the default values will be used.
-        self.latent_dim_x = latent_dim_x * 2       # latent mean and logvar
-        self.latent_dim_key = latent_dim_key * 2   # latent mean and logvar
+        self.latent_dim_x = latent_dim_x       # latent mean and logvar
+        self.latent_dim_key = latent_dim_key   # latent mean and logvar
         self.input_shape = input_shape
         self.num_classes = num_classes
         self.key_shape = key_shape
@@ -505,31 +551,35 @@ class TwoC2E1D(nn.Module):
                 The model will use the raw labels without normalization.")
 
         # The actual layers will be built in forward() based on the config
-        self.encoder_x = BaseEncoder(latent_dim_x=self.latent_dim_x,
+        self.encoder_x = BaseEncoder(latent_dim=self.latent_dim_x * 2,  # mean and logvar concatenated
                                        input_shape=self.input_shape,
                                        num_classes=self.num_classes,
                                        n_layers=1,
                                        n_layers_cnn=2,
+                                       n_layers_post_fc=3,
                                        has_pre_fc=False,
                                        has_cnn=True,
                                        has_post_fc=True,
                                        activation_name=self.activation_name,
+                                       last_activation=self.activation_name,
                                        cnn_in_channels=[2, 16],
                                        cnn_out_channels=[16, 32],
                                        cnn_kernel_size=[5, 5],
                                        cnn_dilation=[1, 1],
                                        cnn_pool_kernel_size=[4, 4],
-                                       post_fc_sizes=[512, self.latent_dim_x],)
-        self.encoder_key = BaseEncoder(latent_dim_x=self.latent_dim_key,
+                                       post_fc_sizes=[0, 512, 512, self.latent_dim_x * 2],)
+        logging.info(f"Encoder for x configured with latent_dim_x={self.latent_dim_x}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=2, n_layers_post_fc=3, has_pre_fc=False, has_cnn=True, has_post_fc=True, activation_name={self.activation_name}, last_activation={self.activation_name}, cnn_in_channels=[2, 16], cnn_out_channels=[16, 32], cnn_kernel_size=[5, 5], cnn_dilation=[1, 1], cnn_pool_kernel_size=[4, 4], post_fc_sizes=[0, 512, 512, {self.latent_dim_x}]")
+        self.encoder_key = BaseEncoder(latent_dim=self.latent_dim_key * 2,  # mean and logvar concatenated
                                           input_shape=self.key_shape,
                                           num_classes=self.num_classes,
-                                          n_layers = 3,
+                                          n_layers=3,
                                           has_cnn=False,
                                           has_post_fc=False,
                                           activation_name=self.activation_name,
-                                          pre_fc_sizes=[self.key_shape[0] * self.key_shape[1], 64, 64, self.latent_dim_key],
+                                          pre_fc_sizes=[self.key_shape[0] * self.key_shape[1], 64, 64, self.latent_dim_key * 2],
                                           )
-        self.decoder = BaseDecoder(latent_dim=self.latent_dim_x + self.latent_dim_key,  # e.g. z1 + z1prime
+        logging.info(f"Encoder for key configured with latent_dim_key={self.latent_dim_key}, input_shape={self.key_shape}, num_classes={self.num_classes}, n_layers=3, has_cnn=False, has_post_fc=False, activation_name={self.activation_name}, pre_fc_sizes=[{self.key_shape[0] * self.key_shape[1]}, 64, 64, {self.latent_dim_key}]")
+        self.decoder = BaseDecoder(latent_dim=self.latent_dim_x + self.latent_dim_key,  # e.g. z1 + z1prime, latents are reparametrized, so we don't need multiply by 2!
                                    input_shape=self.input_shape,
                                    num_classes=self.num_classes,
                                    n_layers=1,
@@ -546,19 +596,22 @@ class TwoC2E1D(nn.Module):
                                    cnn_pool_kernel_size=[4, 4, 4],
                                    post_fc_sizes=[512, self.input_shape[0] * self.input_shape[1]],
                                    )
+        logging.info(f"Decoder configured with latent_dim={self.latent_dim_x + self.latent_dim_key}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation_name={self.activation_name}, pre_fc_sizes=[{self.latent_dim_x + self.latent_dim_key + self.num_classes}, 512], cnn_in_channels=[64, 32, 16], cnn_out_channels=[32, 16, {self.input_shape[0]}], cnn_kernel_size=[5, 5, 5], cnn_dilation=[1, 1, 1], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
         self.conditional_x = BaseConditional(latent_dim=self.latent_dim_x,  # z1 mean and logvar
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
                                             n_layers=4, 
                                             activation_name=self.activation_name,
                                             pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_x])
+        logging.info(f"Label-conditioned encoder for x configured with latent_dim={self.latent_dim_x}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation_name={self.activation_name}, pre_fc_sizes=[{self.num_classes}, 128, 128, 128, {self.latent_dim_x}]")
         self.conditional_key = BaseConditional(latent_dim=self.latent_dim_key,  # z1prime mean and logvar
                                               input_shape=(self.num_classes,),
                                               num_classes=self.num_classes,
                                               n_layers=4,
                                               activation_name=self.activation_name,
                                               pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_key])
-        
+        logging.info(f"Label-conditioned encoder for key configured with latent_dim={self.latent_dim_key}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation_name={self.activation_name}, pre_fc_sizes=[{self.num_classes}, 128, 128, 128, {self.latent_dim_key}]")
+
     def normalize_labels(self, labels, batchwise=False):
         """
         Normalize labels as: (label - mean) / std, where mean and std are calculated
@@ -612,11 +665,13 @@ class TwoC2E1D(nn.Module):
     def encode_x(self, x, labels):
         h = self.encoder_x(x)
         z_mean, z_log_var = torch.chunk(h, 2, dim=1)
+        print(f"Encoded x to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def encode_key(self, keys, labels):
         h = self.encoder_key(keys)
         z_mean, z_log_var = torch.chunk(h, 2, dim=1)
+        print(f"Encoded key to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def encode_label_for_x(self, labels):
@@ -724,6 +779,8 @@ class TwoC2E1D(nn.Module):
 
         z_x = self.reparameterize(zx_mu, zx_logvar)
         z_key = self.reparameterize(zkey_mu, zkey_logvar)
+        assert z_x.size(1) == self.latent_dim_x, "z_x latent_dim mismatch"
+        assert z_key.size(1) == self.latent_dim_key, "z_key latent_dim mismatch"
 
         # TODO: Can input embeddings for the labels!
         if self.embed_labels_in_decoder:
@@ -825,8 +882,8 @@ class TwoC2E1D(nn.Module):
             'input_shape': self.input_shape,
             'num_classes': self.num_classes,
             'key_shape': self.key_shape,
-            'latent_dim_x': self.latent_dim_x // 2,  # divide by 2 to get original latent dim before doubling for mean and logvar
-            'latent_dim_key': self.latent_dim_key // 2,  # divide by 2 to get original latent dim before doubling for mean and logvar
+            'latent_dim_x': self.latent_dim_x,
+            'latent_dim_key': self.latent_dim_key,
             'labels_mean': getattr(self, 'labels_mean', None),
             'labels_std': getattr(self, 'labels_std', None),
             'paramsnorm': hasattr(self, 'labels_mean') and hasattr(self, 'labels_std'),
