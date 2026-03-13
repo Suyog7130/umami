@@ -922,7 +922,6 @@ class TwoC2E1D(nn.Module):
         # Total loss
         kl_loss = kl_loss_zx + kl_loss_zy + kl_loss_zkey + kl_loss_zykey + ll1 + ll2
         total_loss = recon_loss + self.beta * kl_loss
-        total_loss = torch.tensor(total_loss, dtype=torch.float64)  # ensure total loss is in double precision
         return (total_loss, recon_loss, kl_loss)
     
     def _save_model_config(self, filepath=None, **kwargs):
