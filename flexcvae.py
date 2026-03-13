@@ -384,6 +384,28 @@ class BaseDecoder(BaseEncoderDecoder):
     def __init__(self, **kwargs):
         super(BaseDecoder, self).__init__(**kwargs)
 
+        self.has_pre_fc = True
+        self.has_cnn = True
+        self.has_post_fc = True
+
+        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
+            # -- post_fc_in_features[0] should match post_fc_sizes[0], if both are provided!
+            # -- Plus we need to make sure that the CNN output size matches the post_fc_in_features[0] if CNN is present. 
+            # -- So we have to calculate the CNN output size and use that as post_fc_in_features[0] if CNN is present.
+            logging.debug(f"Configuring post-FC layers with post_fc_in_features={self.post_fc_in_features}, post_fc_sizes={self.post_fc_sizes}, and CNN config: in_channels={self.cnn_in_channels}, out_channels={self.cnn_out_channels}, kernel_size={self.cnn_kernel_size}, dilation={self.cnn_dilation}, pool_kernel_size={self.cnn_pool_ks}")
+            if not self.post_fc_sizes[0]==0:
+                logging.warning("post_fc_in_features[0] and post_fc_sizes[0] should both be set to `0` \
+                                to automatically determine the correct input size for post-FC layers based on \
+                                CNN output. If not, we will ignore the value for post_fc_in_features[0] and use \
+                                the calculated CNN output size as the input size for post-FC layers.")
+            cnn_output_size = self._calculate_cnn_output_size(self.pre_fc_sizes[-1]) # assuming input_shape is (C, L)
+            self.post_fc_sizes[0] = cnn_output_size  # update the first size to match the CNN output size
+            logging.info(f"Calculated CNN output size: {cnn_output_size}. Updated post_fc_sizes[0] to match this value.")
+            self.post_fc_layers = self.fc(
+                        n_layers=self.n_layers_post_fc,
+                        sizes=self.post_fc_sizes,
+                        use_last_activation=False)
+
     def forward(self, z: torch.Tensor, y: torch.Tensor, y_embed: Optional[torch.Tensor] = None):
         assert z.size(1) == self.latent_dim, "z latent_dim mismatch"
         assert y.size(1) == self.num_classes, "y num_classes mismatch"
@@ -404,6 +426,7 @@ class BaseDecoder(BaseEncoderDecoder):
             z = z.view(z.size(0), -1)
 
         if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
+            print(f"DECODER before post-FC layers, z shape: {z.shape}")
             z = self.post_fc_layers(z)
             print(f"DECODER after post-FC layers, z shape: {z.shape}")
         return z.view(-1, *self.input_shape)
@@ -583,20 +606,22 @@ class TwoC2E1D(nn.Module):
                                    input_shape=self.input_shape,
                                    num_classes=self.num_classes,
                                    n_layers=1,
-                                   n_layers_cnn=3,                                   
+                                   n_layers_cnn=3,
+                                   n_layers_post_fc=2,                                  
                                    has_pre_fc=True,
                                    has_cnn=True,
                                    has_post_fc=True,
                                    activation_name=self.activation_name,
+                                   last_activation=None,  # output layer should be linear since we will apply MSE loss and we want the output to be able to take any value
                                    pre_fc_sizes=[self.latent_dim_x + self.latent_dim_key + self.num_classes, 512],
-                                   cnn_in_channels=[64, 32, 16],
-                                   cnn_out_channels=[32, 16, self.input_shape[0]],
-                                   cnn_kernel_size=[5, 5, 5],
-                                   cnn_dilation=[1, 1, 1],
+                                   cnn_in_channels=[1, 32, 64],
+                                   cnn_out_channels=[32, 64, 64],
+                                   cnn_kernel_size=[4, 4, 4],
+                                   cnn_dilation=[1, 2, 2],
                                    cnn_pool_kernel_size=[4, 4, 4],
-                                   post_fc_sizes=[512, self.input_shape[0] * self.input_shape[1]],
+                                   post_fc_sizes=[0, 512, self.input_shape[0] * self.input_shape[1]],
                                    )
-        logging.info(f"Decoder configured with latent_dim={self.latent_dim_x + self.latent_dim_key}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation_name={self.activation_name}, pre_fc_sizes=[{self.latent_dim_x + self.latent_dim_key + self.num_classes}, 512], cnn_in_channels=[64, 32, 16], cnn_out_channels=[32, 16, {self.input_shape[0]}], cnn_kernel_size=[5, 5, 5], cnn_dilation=[1, 1, 1], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
+        logging.info(f"Decoder configured with latent_dim={self.latent_dim_x + self.latent_dim_key}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation_name={self.activation_name}, pre_fc_sizes=[{self.latent_dim_x + self.latent_dim_key + self.num_classes}, 512], cnn_in_channels=[1, 32, 64], cnn_out_channels=[32, 64, 64, {self.input_shape[0]}], cnn_kernel_size=[4, 4, 4], cnn_dilation=[1, 2, 2], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
         self.conditional_x = BaseConditional(latent_dim=self.latent_dim_x,  # z1 mean and logvar
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
