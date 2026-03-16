@@ -118,6 +118,10 @@ class BaseCoder(nn.Module):
         self._last_act = _make_activation(self.last_activation)
         self._drop = nn.Dropout(self.dropout_p) if self.use_dropout else nn.Identity()
 
+        # Default to double precision if not specified, since we are working with physics data where precision can be important. But allow override for flexibility.
+        # However, for devices like "mps" (Apple Silicon) we can use float32 since mps does not support float64 well.
+        self.precision = kwargs.get('precision', 'float64')
+
     # ----- basic bricks -----
     def linear_layer(self, in_features: int, out_features: int,
                      *, is_last: bool = False) -> nn.Sequential:
@@ -127,7 +131,7 @@ class BaseCoder(nn.Module):
         seq.append(self._last_act if is_last else self._act)
         if self.use_dropout and not is_last:
             seq.append(self._drop)
-        return nn.Sequential(*seq).to(torch.float64)  # ensure double precision for all layers
+        return nn.Sequential(*seq).to(getattr(torch, self.precision))  # ensure specified precision for all layers
 
     def conv_layer(self, in_channels: int, out_channels: int,
                    kernel_size: int, dilation: int,
@@ -142,7 +146,7 @@ class BaseCoder(nn.Module):
         seq.append(nn.MaxPool1d(kernel_size=pool_size))
         if self.use_dropout and not is_last:
             seq.append(self._drop)
-        return nn.Sequential(*seq).to(torch.float64)  # ensure double precision for all layers
+        return nn.Sequential(*seq).to(getattr(torch, self.precision))  # ensure specified precision for all layers
 
     # ----- stage builders (backwards-friendly) -----
     def fc(self, in_features: Sequence[int] = None, out_features: Sequence[int] = None, *,
@@ -183,7 +187,7 @@ class BaseCoder(nn.Module):
                 return x
 
         seq = nn.Sequential(AssertInputShape(in_f[0]), *layers)
-        return seq.to(torch.float64)  # ensure double precision for all layers
+        return seq.to(getattr(torch, self.precision))  # ensure specified precision for all layers
 
     def cnn(self,
             in_channels: Sequence[int],
@@ -231,7 +235,7 @@ class BaseCoder(nn.Module):
         for i in range(n_layers):
             is_last = (i == n_layers - 1) and use_last_activation
             layers.append(self.conv_layer(in_c[i], out_c[i], ksz[i], dil[i], pool_size=pool[i], is_last=is_last))
-        return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
+        return nn.Sequential(*layers).to(getattr(torch, self.precision))  # ensure double precision for all layers
 
     def _calculate_cnn_output_size(self, length=500):
         """

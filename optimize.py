@@ -4,6 +4,7 @@ hyper-parameters and number of layers etc.
 """
 
 import os
+import json
 import argparse
 import pandas as pd
 import datetime
@@ -29,10 +30,13 @@ PRESET_ARRAY_SIZE = 8191
 APPROXIMANT = 'SEOBNRv4'
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
+    PRECISION = 'float64'  # Use double precision for CUDA if available
 elif torch.backends.mps.is_available():
     DEVICE = torch.device("mps")
+    PRECISION = 'float32'  # Use float32 for MPS since it does not support float64 well
 else:
     DEVICE = torch.device("cpu")
+    PRECISION = 'float64'  # Use double precision for CPU
 
 datadir = "../data/"
 train_hdf = datadir + 'SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen'
@@ -40,10 +44,10 @@ val_hdf = datadir + "SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen"
 
 logging.info(f'Reading training data from {train_hdf}.hdf')
 train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=False,
-                        hdf_fname=train_hdf, train_device=DEVICE)
+                        hdf_fname=train_hdf, train_device=DEVICE, precision=PRECISION)
 logging.info(f'Reading validation data from {val_hdf}.hdf')
 valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=True,
-                        hdf_fname=val_hdf, train_device=DEVICE)
+                        hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION)
 train_loader = CustomDataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = CustomDataLoader(valid_set, batch_size=BATCH_SIZE, shuffle=False)
 
@@ -55,8 +59,8 @@ params_mean = params_df.mean().values
 params_std = params_df.std().values
 logging.info(f"Labels mean: {params_mean}")
 logging.info(f"Labels std: {params_std}")
-params_mean = torch.tensor(params_mean, dtype=torch.float64).to(DEVICE)
-params_std = torch.tensor(params_std, dtype=torch.float64).to(DEVICE)
+params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION)).to(DEVICE)
+params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION)).to(DEVICE)
 
 BASE_MODEL_CONFIG = {
     'latent_dim_x': 16,
@@ -83,7 +87,7 @@ def training(model: FlexTwoC2E1D,
     logging.info(f"Starting training for {epochs} epochs with data fraction {datafrac}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
-    model = model.to(torch.float64)
+    model = model.to(getattr(torch, PRECISION))
 
     # Check if model parameters contain NaN or Inf before training
     for name, param in model.named_parameters():
@@ -104,6 +108,7 @@ def training(model: FlexTwoC2E1D,
 
     # Train for a few epochs
     rloss_train, rloss_recon, rloss_kl = [], [], []
+    rloss_val, rloss_recon_val, rloss_kl_val = [], [], []
     for epoch in range(epochs):
         model.train()
         train_loss = 0.0
@@ -124,21 +129,25 @@ def training(model: FlexTwoC2E1D,
         logging.info(f"Epoch {epoch+1}, Train Loss: {avg_train_loss:.4f}")
         scheduler.step(avg_train_loss)
 
-    # Evaluate on validation set
-    model.eval()
-    val_loss = 0.0
-    rloss_val, rloss_recon_val, rloss_kl_val = [], [], []
-    with torch.no_grad():
-        for x, target, labels, keys, strains in val_loader:
-            x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
-            x_recon, zvars = model(x, labels, keys)
-            loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
-            val_loss += loss.item()
-            rloss_val.append(loss.item())
-            rloss_recon_val.append(recon_loss.item())
-            rloss_kl_val.append(kl_loss.item())
-    avg_val_loss = val_loss / len(val_loader)
-    logging.info(f"Validation Loss: {avg_val_loss:.4f}")
+        # Save model checkpoint at every epoch as backup
+        backup_model_path = f'../trained-models/model-backup-{NOW}epoch{epoch}.pt'
+        torch.save(model.state_dict(), backup_model_path)
+        logging.info(f"Model backup saved at {backup_model_path}")
+
+        # Evaluate on validation set
+        model.eval()
+        val_loss = 0.0
+        with torch.no_grad():
+            for x, target, labels, keys, strains in val_loader:
+                x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
+                x_recon, zvars = model(x, labels, keys)
+                loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
+                val_loss += loss.item()
+                rloss_val.append(loss.item())
+                rloss_recon_val.append(recon_loss.item())
+                rloss_kl_val.append(kl_loss.item())
+        avg_val_loss = val_loss / len(val_loader)
+        logging.info(f"Validation Loss: {avg_val_loss:.4f}")
 
     if savemodel:
         model_path = f'../trained-models/model-flexcvae-{NOW}.pt'
@@ -262,10 +271,11 @@ def run_optuna():
     joblib.dump(study, f"optuna_{args.model_type}_study_{NOW}.pkl")
 
 
-def run_training(MODEL_CONFIG=None):
+def run_training(configpath=None):
     logging.info("Starting training with specified hyperparameters")
-    if MODEL_CONFIG is not None:
-        logging.info(f"Using MODEL_CONFIG: {MODEL_CONFIG}")
+    if configpath is not None:
+        logging.info(f"Using MODEL_CONFIG: {configpath}")
+        MODEL_CONFIG = json.load(open(configpath, 'r'))
     else:
         logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
         MODEL_CONFIG = BASE_MODEL_CONFIG
@@ -282,9 +292,9 @@ def run_training(MODEL_CONFIG=None):
     print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
           )
     # print(model)
-    training(model, epochs=10, savemodel=True, savelosses=True)
     model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
                              epochs=10, datafrac=0.5)
+    training(model, epochs=10, savemodel=True, savelosses=True)
 
 
 if __name__ == "__main__":
@@ -298,6 +308,9 @@ if __name__ == "__main__":
                         help="Number of Optuna trials to run")
     parser.add_argument('--train', action='store_true', 
                         help="Run training with specified hyperparameters")
+    parser.add_argument('--model_config', type=str, default=None,
+                        help="Path to JSON file containing model configuration for training")
+
     parser.add_argument('-v', '--verbose', action='store_true',
                         help="Enable verbose logging")
     parser.add_argument('-d', '--debug', action='store_true',
@@ -329,4 +342,4 @@ if __name__ == "__main__":
     if args.optuna:
         run_optuna()
     if args.train:
-        run_training()
+        run_training(configpath=args.model_config)

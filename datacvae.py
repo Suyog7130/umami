@@ -1382,6 +1382,7 @@ class CustomDataset(Dataset):
         self.hdf_fname = hdf_fname
         self.returnattr = kwargs.get('returnattr', False)
         self.unnorm_target = kwargs.get('unnorm_target', False)
+        self.precision = kwargs.get('precision', 'float64')
 
         self.forwhat = forwhat
         if hdf_fname is None:
@@ -1520,9 +1521,9 @@ class CustomDataset(Dataset):
         logging.debug(f"Strains shape: {strains.shape}")
         logging.debug(f"Type of strains: {type(strains)}, Type of strains[0]: {type(strains[0])}, Type of strains[0][0]: {type(strains[0][0])}")
         # use `torch.float64` dtype b'cuz mps only supports that!
-        sample = torch.from_numpy(strains).to(device=self.train_device, dtype=torch.float64)
-        label = torch.from_numpy(labels).to(device=self.train_device, dtype=torch.float64)
-        keys = torch.from_numpy(keys).to(device=self.train_device, dtype=torch.float64)
+        sample = torch.from_numpy(strains).to(device=self.train_device, dtype=getattr(torch, self.precision))
+        label = torch.from_numpy(labels).to(device=self.train_device, dtype=getattr(torch, self.precision))
+        keys = torch.from_numpy(keys).to(device=self.train_device, dtype=getattr(torch, self.precision))
         return (sample, label, keys)
     
     # TODO: This function should not be necessary, if I have the correct length
@@ -1567,11 +1568,11 @@ class CustomDataset(Dataset):
         freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
         phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc, remove_start_phase=False)
 
-        hp = np.array(hp, dtype=np.float64)
-        hc = np.array(hc, dtype=np.float64)
-        amp = np.array(amp.data, dtype=np.float64)
-        phase = np.array(phase.data, dtype=np.float64)
-        freq = np.array(freq.data, dtype=np.float64)
+        hp = np.array(hp, dtype=getattr(np, self.precision))
+        hc = np.array(hc, dtype=getattr(np, self.precision))
+        amp = np.array(amp.data, dtype=getattr(np, self.precision))
+        phase = np.array(phase.data, dtype=getattr(np, self.precision))
+        freq = np.array(freq.data, dtype=getattr(np, self.precision))
 
         if write_access:
             data.attrs['f_lower'] = wfkwargs['f_lower']
@@ -1691,12 +1692,12 @@ class CustomDataset(Dataset):
             amp = (amp - np.mean(amp)) / np.std(amp)
             freq = (freq - np.mean(freq)) / np.std(freq)
 
-            out_normed = np.vstack((amp, freq)).astype(np.float64)
-            out_unnormed = np.vstack((unnorm_amp, unnorm_freq)).astype(np.float64)
-            out_labels = np.array(labels).astype(np.float64)
-            out_keys = np.array([amp_keys, freq_keys]).astype(np.float64)
-            out_phase = np.array(phase).astype(np.float64)
-            out_strains = np.vstack((hp, hc)).astype(np.float64)
+            out_normed = np.vstack((amp, freq)).astype(getattr(np, self.precision))
+            out_unnormed = np.vstack((unnorm_amp, unnorm_freq)).astype(getattr(np, self.precision))
+            out_labels = np.array(labels).astype(getattr(np, self.precision))
+            out_keys = np.array([amp_keys, freq_keys]).astype(getattr(np, self.precision))
+            out_phase = np.array(phase).astype(getattr(np, self.precision))
+            out_strains = np.vstack((hp, hc)).astype(getattr(np, self.precision))
             out_attr = data.attrs if type(data) is not dict else data.get('attrs', {})
             out_attr = dict(out_attr)  # Convert HDF5 attributes to a regular dictionary for easier handling
                         
@@ -1770,12 +1771,12 @@ class CustomDataset(Dataset):
 
             # Append tags to their respective lists
             for i, tag in enumerate(tags):
-                tag = torch.tensor(tag, device=self.train_device, dtype=torch.float64)
+                tag = torch.tensor(tag, device=self.train_device, dtype=getattr(torch, self.precision))
                 tag_batches[i].append(tag)
 
         # Convert lists of tags to tensors
         for i in range(len(tag_batches)):
-            tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=torch.float64)
+            tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=getattr(torch, self.precision))
 
         # Ensure all tensors are of the same shape
         if self.forwhat=='test' or self.returnattr:
