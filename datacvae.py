@@ -1383,6 +1383,7 @@ class CustomDataset(Dataset):
         self.returnattr = kwargs.get('returnattr', False)
         self.unnorm_target = kwargs.get('unnorm_target', False)
         self.precision = kwargs.get('precision', 'float64')
+        self.phase_target = kwargs.get('phase_target', False)
 
         self.forwhat = forwhat
         if hdf_fname is None:
@@ -1721,6 +1722,14 @@ class CustomDataset(Dataset):
             if self.unnorm_target:
                 return (out_normed, 
                         out_unnormed, 
+                        out_labels, 
+                        out_keys,
+                        out_strains)
+            if self.phase_target:
+                logging.debug("Returning normalized amp and freq as input, and phase as target since `phase_target` is True.")
+                out_amp_phase = np.vstack((amp, phase)).astype(getattr(np, self.precision))
+                return (out_amp_phase, 
+                        out_amp_phase, # -- target is phase.
                         out_labels, 
                         out_keys,
                         out_strains)

@@ -44,10 +44,12 @@ val_hdf = datadir + "SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen"
 
 logging.info(f'Reading training data from {train_hdf}.hdf')
 train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=False,
-                        hdf_fname=train_hdf, train_device=DEVICE, precision=PRECISION)
+                        hdf_fname=train_hdf, train_device=DEVICE, precision=PRECISION,
+                        phase_target=True)
 logging.info(f'Reading validation data from {val_hdf}.hdf')
-valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=True,
-                        hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION)
+valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=False,
+                        hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION, 
+                        phase_target=True)
 train_loader = CustomDataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = CustomDataLoader(valid_set, batch_size=BATCH_SIZE, shuffle=False)
 
