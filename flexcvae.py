@@ -4,6 +4,7 @@ Works for both CVAE and CAE configurations, with 2 encoders or 1 encoder.
 """
 
 import os
+import json
 import logging
 import torch
 import torch.nn as nn
@@ -546,6 +547,7 @@ class TwoC2E1D(nn.Module):
         # Override hyperparameters with MODEL_CONFIG values if provided
         # This allows for flexible model configuration while maintaining default values.
         if MODEL_CONFIG is not None:
+            logging.info(f"MODEL_CONFIG provided. Using hyperparameters from MODEL_CONFIG: {MODEL_CONFIG}")
             self.MODEL_CONFIG = MODEL_CONFIG
             input_shape = MODEL_CONFIG.get('input_shape', input_shape)
             num_classes = MODEL_CONFIG.get('num_classes', num_classes)
@@ -559,7 +561,6 @@ class TwoC2E1D(nn.Module):
             self.beta = MODEL_CONFIG.get('beta', 0.1)  # default beta value for KL divergence loss
             self.decoder_input_type = MODEL_CONFIG.get('decoder_input_type', 'concat')
             self.embed_labels_in_decoder = MODEL_CONFIG.get('embed_labels_in_decoder', False)
-            logging.info(f"MODEL_CONFIG provided. Using hyperparameters from MODEL_CONFIG: {MODEL_CONFIG}")
         else:
             logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
 
@@ -939,41 +940,43 @@ class TwoC2E1D(nn.Module):
             filepath += '.json'
         if not hasattr(self, 'MODEL_CONFIG'):
             logging.warning("MODEL_CONFIG attribute not found. Creating a new MODEL_CONFIG dictionary to save hyperparameters.")
-            self.MODEL_CONFIG = {}
+            configfile = {}
+        else:
+            # Change the MODEL_CONFIG attribute to a dictionary if it's not already a dictionary, to ensure we can save the hyperparameters properly.
+            if not isinstance(self.MODEL_CONFIG, dict):
+                logging.warning("MODEL_CONFIG attribute is not a dictionary. Converting it to a dictionary to save hyperparameters.")
+                self.MODEL_CONFIG = vars(self)
+            configfile = self.MODEL_CONFIG
         # Add additional hyperparameters to MODEL_CONFIG before saving
-        self.MODEL_CONFIG.update({
+        configfile.update({
             'input_shape': self.input_shape,
             'num_classes': self.num_classes,
             'key_shape': self.key_shape,
             'latent_dim_x': self.latent_dim_x,
             'latent_dim_key': self.latent_dim_key,
-            'labels_mean': getattr(self, 'labels_mean', None),
-            'labels_std': getattr(self, 'labels_std', None),
-            'paramsnorm': hasattr(self, 'labels_mean') and hasattr(self, 'labels_std'),
             'activation': self.activation_name,
             'beta': self.beta,
             'decoder_input_type': self.decoder_input_type,
             'embed_labels_in_decoder': self.embed_labels_in_decoder,
-            'n_layers': {
-                'pre_fc': self.n_layers_pre_fc,
-                'cnn': self.n_layers_cnn,
-                'post_fc': self.n_layers_post_fc
-            },
-            'pre_fc_sizes': self.pre_fc_sizes,
-            'cnn_in_channels': self.cnn_in_channels,
-            'cnn_out_channels': self.cnn_out_channels,
-            'cnn_kernel_size': self.cnn_kernel_size,
-            'cnn_dilation': self.cnn_dilation,
-            'cnn_pool_ks': self.cnn_pool_ks,
+            'model_class': self.__class__.__name__,
+            'model_module': self.__class__.__module__,
+            'model_file': __file__,
+            'model_architecture': str(self),
         })
         # Update config with model architecture and parameters details
-        self.MODEL_CONFIG.update({
+        configfile.update({
             'model_architecture': str(self),
             'total_parameters': sum(p.numel() for p in self.parameters()),
             'trainable_parameters': sum(p.numel() for p in self.parameters() if p.requires_grad)
         })
         # Save other supplied kwargs to MODEL_CONFIG
-        self.MODEL_CONFIG.update(kwargs)
-        torch.save(self.MODEL_CONFIG, filepath)
+        configfile.update(kwargs)
+        # Convert any non-serializable objects in configfile to strings for JSON serialization
+        for key, value in configfile.items():
+            if not isinstance(value, (str, int, float, bool, type(None))):
+                configfile[key] = str(value)
+        with open(filepath, 'w') as f:
+            json.dump(configfile, f, indent=4)
+        print(configfile)
         logging.info(f"Model configuration saved to {filepath}")
         

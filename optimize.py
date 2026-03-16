@@ -17,7 +17,7 @@ import torch
 import torch.nn.functional as F
 
 from datacvae import CustomDataset, CustomDataLoader
-from multicvae import TwoC2E1D
+# from multicvae import TwoC2E1D
 from flexcvae import TwoC2E1D as FlexTwoC2E1D
 
 
