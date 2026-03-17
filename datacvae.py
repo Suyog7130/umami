@@ -1381,9 +1381,8 @@ class CustomDataset(Dataset):
         self.nokeys = nokeys
         self.hdf_fname = hdf_fname
         self.returnattr = kwargs.get('returnattr', False)
-        self.unnorm_target = kwargs.get('unnorm_target', False)
         self.precision = kwargs.get('precision', 'float64')
-        self.phase_target = kwargs.get('phase_target', False)
+        self.target = kwargs.get('target', None)  # by default return normed amp-freq as target
 
         self.forwhat = forwhat
         if hdf_fname is None:
@@ -1719,17 +1718,33 @@ class CustomDataset(Dataset):
                             out_keys,
                             out_strains,
                             out_attr)
-            if self.unnorm_target:
+            if self.target=='unnorm_ampfreq':
                 return (out_normed, 
                         out_unnormed, 
                         out_labels, 
                         out_keys,
                         out_strains)
-            if self.phase_target:
+            if self.target=='logamp_freq':
+                logging.debug("Returning normalized log-amp and freq as input, and log-amp as target since `logamp_target` is True.")
+                out_logamp_freq = np.vstack((np.log(amp), freq)).astype(getattr(np, self.precision))
+                return (out_logamp_freq, 
+                        out_logamp_freq, # -- target is log-amp.
+                        out_labels, 
+                        out_keys,
+                        out_strains)
+            if self.target=='amp_phase':
                 logging.debug("Returning normalized amp and freq as input, and phase as target since `phase_target` is True.")
                 out_amp_phase = np.vstack((amp, phase)).astype(getattr(np, self.precision))
                 return (out_amp_phase, 
                         out_amp_phase, # -- target is phase.
+                        out_labels, 
+                        out_keys,
+                        out_strains)
+            if self.target=='logamp_phase':
+                logging.debug("Returning normalized log-amp and freq as input, and phase as target since `logamp_phase_target` is True.")
+                out_logamp_phase = np.vstack((np.log(amp), phase)).astype(getattr(np, self.precision))
+                return (out_logamp_phase, 
+                        out_logamp_phase, # -- target is phase.
                         out_labels, 
                         out_keys,
                         out_strains)
