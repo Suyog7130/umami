@@ -557,7 +557,7 @@ class TwoC2E1D(nn.Module):
             labels_mean = MODEL_CONFIG.get('labels_mean', labels_mean)
             labels_std = MODEL_CONFIG.get('labels_std', labels_std)
             paramsnorm = MODEL_CONFIG.get('paramsnorm', paramsnorm)
-            self.activation_name = MODEL_CONFIG.get('activation', 'relu')
+            self.activation_name = MODEL_CONFIG.get('activation_name', 'relu')
             self.beta = MODEL_CONFIG.get('beta', 0.1)  # default beta value for KL divergence loss
             self.decoder_input_type = MODEL_CONFIG.get('decoder_input_type', 'concat')
             self.embed_labels_in_decoder = MODEL_CONFIG.get('embed_labels_in_decoder', False)

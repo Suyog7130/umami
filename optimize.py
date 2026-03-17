@@ -11,6 +11,8 @@ import datetime
 import logging
 import joblib
 
+from tqdm import tqdm
+
 import optuna
 
 import torch
@@ -25,6 +27,8 @@ TODAY = datetime.date.today().strftime("%Y%m%d")
 TIME = datetime.datetime.now().strftime("%H%M%S")
 NOW = TODAY + '-' + TIME
 
+DATAFRAC = 0.1  # Fraction of training data to use for quick training during Optuna optimization
+EPOCHS = 10
 BATCH_SIZE = 64
 PRESET_ARRAY_SIZE = 8191
 APPROXIMANT = 'SEOBNRv4'
@@ -37,6 +41,7 @@ elif torch.backends.mps.is_available():
 else:
     DEVICE = torch.device("cpu")
     PRECISION = 'float64'  # Use double precision for CPU
+logging.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
 datadir = "../data/"
 train_hdf = datadir + 'SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen'
@@ -111,10 +116,10 @@ def training(model: FlexTwoC2E1D,
     # Train for a few epochs
     rloss_train, rloss_recon, rloss_kl = [], [], []
     rloss_val, rloss_recon_val, rloss_kl_val = [], [], []
-    for epoch in range(epochs):
+    for epoch in tqdm(range(epochs)):
         model.train()
         train_loss = 0.0
-        for batch_idx, (x, target, labels, keys, strains) in enumerate(train_loader):
+        for batch_idx, (x, target, labels, keys, strains) in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
             if batch_idx >= num_train_batches:
                 break
             x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
@@ -140,7 +145,7 @@ def training(model: FlexTwoC2E1D,
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for x, target, labels, keys, strains in val_loader:
+            for x, target, labels, keys, strains in tqdm(val_loader, ncols=80, desc="Val-steps"):
                 x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
                 x_recon, zvars = model(x, labels, keys)
                 loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
@@ -155,16 +160,20 @@ def training(model: FlexTwoC2E1D,
         model_path = f'../trained-models/model-flexcvae-{NOW}.pt'
         torch.save(model.state_dict(), model_path)
     if savelosses:
+
         # Save losses to pandas dataframe and then to csv
-        losses_df = pd.DataFrame({
+        train_losses_df = pd.DataFrame({
             'train_loss': rloss_train,
             'recon_loss': rloss_recon,
             'kl_loss': rloss_kl,
+        })
+        val_losses_df = pd.DataFrame({
             'val_loss': rloss_val,
             'val_recon_loss': rloss_recon_val,
             'val_kl_loss': rloss_kl_val,
         })
-        losses_df.to_csv(f'../trained-models/losses-flexcvae-{NOW}.csv', index=False)
+        train_losses_df.to_csv(f'../trained-models/losses-flexcvae-train-{NOW}.csv', index=False)
+        val_losses_df.to_csv(f'../trained-models/losses-flexcvae-val-{NOW}.csv', index=False)
     return avg_val_loss
 
 
@@ -273,7 +282,7 @@ def run_optuna():
     joblib.dump(study, f"optuna_{args.model_type}_study_{NOW}.pkl")
 
 
-def run_training(configpath=None):
+def run_training(configpath=None, epochs=EPOCHS, datafrac=DATAFRAC):
     logging.info("Starting training with specified hyperparameters")
     if configpath is not None:
         logging.info(f"Using MODEL_CONFIG: {configpath}")
@@ -295,8 +304,8 @@ def run_training(configpath=None):
           )
     # print(model)
     model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
-                             epochs=10, datafrac=0.5)
-    training(model, epochs=10, savemodel=True, savelosses=True)
+                             epochs=epochs, datafrac=datafrac)
+    training(model, epochs=epochs, datafrac=datafrac, savemodel=True, savelosses=True)
 
 
 if __name__ == "__main__":
@@ -344,4 +353,5 @@ if __name__ == "__main__":
     if args.optuna:
         run_optuna()
     if args.train:
-        run_training(configpath=args.model_config)
+        run_training(configpath=args.model_config,
+                     epochs=15, datafrac=1.0)
