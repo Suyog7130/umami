@@ -41,7 +41,13 @@ elif torch.backends.mps.is_available():
 else:
     DEVICE = torch.device("cpu")
     PRECISION = 'float64'  # Use double precision for CPU
-logging.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
+print(f"Using device: {DEVICE}, with precision: {PRECISION}")
+
+BASE_MODEL_CONFIG = {
+    'latent_dim_x': 16,
+    'latent_dim_key': 4,
+    'activation_name': 'gelu',
+}
 
 datadir = "../data/"
 train_hdf = datadir + 'SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen'
@@ -55,9 +61,6 @@ logging.info(f'Reading validation data from {val_hdf}.hdf')
 valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=False,
                         hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION, 
                         target=None)
-train_loader = CustomDataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
-val_loader = CustomDataLoader(valid_set, batch_size=BATCH_SIZE, shuffle=False)
-
 
 # -- get mean and std of labels for normalization
 params_fname = '../data/params-' + APPROXIMANT + '-train-100000-fcutoff-uniform-aligned-regen'
@@ -69,14 +72,14 @@ logging.info(f"Labels std: {params_std}")
 params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION)).to(DEVICE)
 params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION)).to(DEVICE)
 
-BASE_MODEL_CONFIG = {
-    'latent_dim_x': 16,
-    'latent_dim_key': 4,
-    'activation_name': 'gelu',
-}
 
+def set_dataloaders(batch_size=BATCH_SIZE):
+    train_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
+    val_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=False)
+    return train_loader, val_loader
 
 def training(model: FlexTwoC2E1D, 
+             train_loader=None, val_loader=None,
              epochs: int = 5, 
              datafrac: float = 0.1,
              savemodel=False, savelosses=False):
@@ -91,6 +94,9 @@ def training(model: FlexTwoC2E1D,
         savemodel: Whether to save the trained model (default False)
         savelosses: Whether to save training and validation losses (default False)
     """
+    if train_loader is None or val_loader is None:
+        logging.info("Setting up dataloaders since they were not provided.")
+        train_loader, val_loader = set_dataloaders()
     logging.info(f"Starting training for {epochs} epochs with data fraction {datafrac}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
@@ -160,7 +166,6 @@ def training(model: FlexTwoC2E1D,
         model_path = f'../trained-models/model-flexcvae-{NOW}.pt'
         torch.save(model.state_dict(), model_path)
     if savelosses:
-
         # Save losses to pandas dataframe and then to csv
         train_losses_df = pd.DataFrame({
             'train_loss': rloss_train,
@@ -177,112 +182,112 @@ def training(model: FlexTwoC2E1D,
     return avg_val_loss
 
 
-def objective(trial):
-    """
-    For a 2C2E1D model, suggest hyperparameters, build the model,
-    train for a few epochs, and return validation loss.
-    The number of CNN and FC layers are optimized, along with number
-    of hidden layers in each FC block, base number of CNN channels, etc.
-    Along with these the following parameters are also optimized:
-        - latent_dim
-        - dropout_p
-        - use_batchnorm
-        - activation function
-        - n_cnn / n_fc
-        - n_cnn_enc / n_cnn_dec
-        - n_fc_pre / n_fc_post
-        - base_cnn_channels
-        - pre_fc_sizes / post_fc_sizes
-        - cnn_in_channels / cnn_out_channels
-        - cnn_kernel_size / cnn_dilation / cnn_pool_kernel_size
+# def objective(trial):
+#     """
+#     For a 2C2E1D model, suggest hyperparameters, build the model,
+#     train for a few epochs, and return validation loss.
+#     The number of CNN and FC layers are optimized, along with number
+#     of hidden layers in each FC block, base number of CNN channels, etc.
+#     Along with these the following parameters are also optimized:
+#         - latent_dim
+#         - dropout_p
+#         - use_batchnorm
+#         - activation function
+#         - n_cnn / n_fc
+#         - n_cnn_enc / n_cnn_dec
+#         - n_fc_pre / n_fc_post
+#         - base_cnn_channels
+#         - pre_fc_sizes / post_fc_sizes
+#         - cnn_in_channels / cnn_out_channels
+#         - cnn_kernel_size / cnn_dilation / cnn_pool_kernel_size
 
-    Using a fixed number of trials, the validation loss is minimized.
-    """
-    logging.info("Starting new trial")
+#     Using a fixed number of trials, the validation loss is minimized.
+#     """
+#     logging.info("Starting new trial")
 
-    # Suggest hyperparameters
-    input_dim = 2 * PRESET_ARRAY_SIZE  # Assuming input is a flattened array of shape (2, PRESET_ARRAY_SIZE)
-    num_classes = 4  # Set according to your dataset
-    latent_dim_x = trial.suggest_int("latent_dim_x", 8, 100)
-    latent_dim_key = trial.suggest_int("latent_dim_key", 2, 4)
-    activation = trial.suggest_categorical("activation", ["relu", "silu", "gelu"])
+#     # Suggest hyperparameters
+#     input_dim = 2 * PRESET_ARRAY_SIZE  # Assuming input is a flattened array of shape (2, PRESET_ARRAY_SIZE)
+#     num_classes = 4  # Set according to your dataset
+#     latent_dim_x = trial.suggest_int("latent_dim_x", 8, 100)
+#     latent_dim_key = trial.suggest_int("latent_dim_key", 2, 4)
+#     activation = trial.suggest_categorical("activation", ["relu", "silu", "gelu"])
 
-    dropout_p = trial.suggest_float("dropout_p", 0.1, 0.5)
-    n_cnn_enc = trial.suggest_int("n_cnn_enc", 2, 5)
-    n_cnn_dec = trial.suggest_int("n_cnn_dec", 2, 5)
-    n_fc_pre = trial.suggest_int("n_fc_pre", 1, 3)
-    n_fc_post = trial.suggest_int("n_fc_post", 1, 3)
-    base_cnn_channels = trial.suggest_int("base_cnn_channels", 16, 64)
+#     dropout_p = trial.suggest_float("dropout_p", 0.1, 0.5)
+#     n_cnn_enc = trial.suggest_int("n_cnn_enc", 2, 5)
+#     n_cnn_dec = trial.suggest_int("n_cnn_dec", 2, 5)
+#     n_fc_pre = trial.suggest_int("n_fc_pre", 1, 3)
+#     n_fc_post = trial.suggest_int("n_fc_post", 1, 3)
+#     base_cnn_channels = trial.suggest_int("base_cnn_channels", 16, 64)
 
-    # Suggest only hidden layers, then build full sizes list
-    pre_fc_hidden = trial.suggest_categorical("pre_fc_hidden", [(256,), (512, 256)])
-    # Build pre_fc_sizes and check compatibility
-    pre_fc_sizes_raw = [input_dim] + list(pre_fc_hidden) + [latent_dim_x * 2]
-    # Check for consecutive sizes compatibility
-    pre_fc_sizes = tuple(pre_fc_sizes_raw)
-    n_fc_pre = len(pre_fc_sizes) - 1
-    for i in range(n_fc_pre):
-        if pre_fc_sizes[i] is None or pre_fc_sizes[i+1] is None:
-            import warnings
-            warnings.warn(f"pre_fc_sizes contains None at position {i}: {pre_fc_sizes}")
-        # You could add more checks here for compatibility if needed
+#     # Suggest only hidden layers, then build full sizes list
+#     pre_fc_hidden = trial.suggest_categorical("pre_fc_hidden", [(256,), (512, 256)])
+#     # Build pre_fc_sizes and check compatibility
+#     pre_fc_sizes_raw = [input_dim] + list(pre_fc_hidden) + [latent_dim_x * 2]
+#     # Check for consecutive sizes compatibility
+#     pre_fc_sizes = tuple(pre_fc_sizes_raw)
+#     n_fc_pre = len(pre_fc_sizes) - 1
+#     for i in range(n_fc_pre):
+#         if pre_fc_sizes[i] is None or pre_fc_sizes[i+1] is None:
+#             import warnings
+#             warnings.warn(f"pre_fc_sizes contains None at position {i}: {pre_fc_sizes}")
+#         # You could add more checks here for compatibility if needed
 
-    post_fc_hidden = trial.suggest_categorical("post_fc_hidden", [(128,), (256, 128), (512, 256, 128)])
-    # Set previous layer output to last hidden size plus num_classes for FC block compatibility
-    post_fc_input_size = post_fc_hidden[-1] + num_classes
-    post_fc_sizes_raw = [post_fc_input_size] + list(post_fc_hidden) + [latent_dim_x * 2]
-    post_fc_sizes = tuple(post_fc_sizes_raw)
-    n_fc_post = len(post_fc_sizes) - 1
-    for i in range(n_fc_post):
-        if post_fc_sizes[i] is None or post_fc_sizes[i+1] is None:
-            import warnings
-            warnings.warn(f"post_fc_sizes contains None at position {i}: {post_fc_sizes}")
-        # You could add more checks here for compatibility if needed
+#     post_fc_hidden = trial.suggest_categorical("post_fc_hidden", [(128,), (256, 128), (512, 256, 128)])
+#     # Set previous layer output to last hidden size plus num_classes for FC block compatibility
+#     post_fc_input_size = post_fc_hidden[-1] + num_classes
+#     post_fc_sizes_raw = [post_fc_input_size] + list(post_fc_hidden) + [latent_dim_x * 2]
+#     post_fc_sizes = tuple(post_fc_sizes_raw)
+#     n_fc_post = len(post_fc_sizes) - 1
+#     for i in range(n_fc_post):
+#         if post_fc_sizes[i] is None or post_fc_sizes[i+1] is None:
+#             import warnings
+#             warnings.warn(f"post_fc_sizes contains None at position {i}: {post_fc_sizes}")
+#         # You could add more checks here for compatibility if needed
 
-    first_in_channel = trial.suggest_categorical("cnn_first_in_channel", [1, 2])
-    cnn_out_channels = list(trial.suggest_categorical("cnn_out_channels", [(16, 32), (32, 64), (64, 128)]))
-    cnn_in_channels = [first_in_channel] + cnn_out_channels[:-1]
-    cnn_kernel_size = list(trial.suggest_categorical("cnn_kernel_size", [(3, 3), (5, 3), (3, 5)]))
-    cnn_dilation = list(trial.suggest_categorical("cnn_dilation", [(1, 1), (2, 1), (1, 2)]))
-    cnn_pool_kernel_size = list(trial.suggest_categorical("cnn_pool_kernel_size", [(2, 2), (2, 1), (1, 2)]))
+#     first_in_channel = trial.suggest_categorical("cnn_first_in_channel", [1, 2])
+#     cnn_out_channels = list(trial.suggest_categorical("cnn_out_channels", [(16, 32), (32, 64), (64, 128)]))
+#     cnn_in_channels = [first_in_channel] + cnn_out_channels[:-1]
+#     cnn_kernel_size = list(trial.suggest_categorical("cnn_kernel_size", [(3, 3), (5, 3), (3, 5)]))
+#     cnn_dilation = list(trial.suggest_categorical("cnn_dilation", [(1, 1), (2, 1), (1, 2)]))
+#     cnn_pool_kernel_size = list(trial.suggest_categorical("cnn_pool_kernel_size", [(2, 2), (2, 1), (1, 2)]))
 
-    # Build model with suggested hyperparameters
-    model = TwoC2E1D(
-        labels_mean=params_mean,
-        labels_std=params_std,
-        input_shape=(2, PRESET_ARRAY_SIZE),
-        num_classes=num_classes,
-        encoder_latent_dims=[latent_dim_x, latent_dim_key],
-        cond_dim=[latent_dim_x, latent_dim_key],
-        dropout_p=dropout_p,
-        use_batchnorm=False,
-        activation=activation,
-        n_layers_cnn_encoder=n_cnn_enc,
-        n_layers_cnn_decoder=n_cnn_dec,
-        n_layers_pre_fc=n_fc_pre,
-        n_layers_post_fc=n_fc_post,
-        base_cnn_channels=base_cnn_channels,
-        pre_fc_sizes=pre_fc_sizes,
-        post_fc_sizes=post_fc_sizes,
-        cnn_in_channels=cnn_in_channels,
-        cnn_out_channels=cnn_out_channels,
-        cnn_kernel_size=cnn_kernel_size,
-        cnn_dilation=cnn_dilation,
-        cnn_pool_kernel_size=cnn_pool_kernel_size
-    )
+#     # Build model with suggested hyperparameters
+#     model = TwoC2E1D(
+#         labels_mean=params_mean,
+#         labels_std=params_std,
+#         input_shape=(2, PRESET_ARRAY_SIZE),
+#         num_classes=num_classes,
+#         encoder_latent_dims=[latent_dim_x, latent_dim_key],
+#         cond_dim=[latent_dim_x, latent_dim_key],
+#         dropout_p=dropout_p,
+#         use_batchnorm=False,
+#         activation=activation,
+#         n_layers_cnn_encoder=n_cnn_enc,
+#         n_layers_cnn_decoder=n_cnn_dec,
+#         n_layers_pre_fc=n_fc_pre,
+#         n_layers_post_fc=n_fc_post,
+#         base_cnn_channels=base_cnn_channels,
+#         pre_fc_sizes=pre_fc_sizes,
+#         post_fc_sizes=post_fc_sizes,
+#         cnn_in_channels=cnn_in_channels,
+#         cnn_out_channels=cnn_out_channels,
+#         cnn_kernel_size=cnn_kernel_size,
+#         cnn_dilation=cnn_dilation,
+#         cnn_pool_kernel_size=cnn_pool_kernel_size
+#     )
 
-    logging.info(f"Trial hyperparameters: {trial.params}")
-    val_loss = training(model, epochs=5)
-    return val_loss
+#     logging.info(f"Trial hyperparameters: {trial.params}")
+#     val_loss = training(model, epochs=5)
+#     return val_loss
 
 def run_optuna():
     study = optuna.create_study(direction="minimize")
-    study.optimize(objective, n_trials=args.trials)
+    study.optimize(run_training, n_trials=args.trials)
     print("Best trial:", study.best_trial.params)
     joblib.dump(study, f"optuna_{args.model_type}_study_{NOW}.pkl")
 
 
-def run_training(configpath=None, epochs=EPOCHS, datafrac=DATAFRAC):
+def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac=DATAFRAC):
     logging.info("Starting training with specified hyperparameters")
     if configpath is not None:
         logging.info(f"Using MODEL_CONFIG: {configpath}")
@@ -305,7 +310,16 @@ def run_training(configpath=None, epochs=EPOCHS, datafrac=DATAFRAC):
     # print(model)
     model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
                              epochs=epochs, datafrac=datafrac)
-    training(model, epochs=epochs, datafrac=datafrac, savemodel=True, savelosses=True)
+    train_loader, val_loader = set_dataloaders(batch_size=batch_size)
+    training(model, epochs=epochs, datafrac=datafrac, 
+             train_loader=train_loader, val_loader=val_loader,
+             savemodel=True, savelosses=True)
+    
+
+def optuna_objective(trial):
+    logging.info("Starting new Optuna trial with hyperparameters:")
+    logging.info(trial.params)
+    return run_training(configpath=None, epochs=EPOCHS, datafrac=DATAFRAC)
 
 
 if __name__ == "__main__":
@@ -340,7 +354,7 @@ if __name__ == "__main__":
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, logfname)
     logging.basicConfig(
-        format='%(levelname)s | %(asctime)s: %(message)s',
+        format='%(levelsize)s | %(asctime)s: %(message)s',
         level=log_level,
         datefmt='%y-%m-%d %H:%M:%S',
         force=True,
@@ -349,6 +363,11 @@ if __name__ == "__main__":
             logging.FileHandler(log_file)  # Log to file
         ]
     )
+    
+    # Set FileHandler to always be at least INFO level
+    for handler in logging.root.handlers:
+        if isinstance(handler, logging.FileHandler):
+            handler.setLevel(max(handler.level, logging.INFO))
 
     if args.optuna:
         run_optuna()

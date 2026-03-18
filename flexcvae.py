@@ -909,7 +909,7 @@ class TwoC2E1D(nn.Module):
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         # TODO: What is the `reduction` thing doing here?
         recon_loss = F.mse_loss(x_recon, x, reduction='mean')
-        logging.info(f"Reconstruction Loss: {recon_loss.item()}")
+        logging.debug(f"Reconstruction Loss: {recon_loss.item()}")
 
         # KL divergence for each latent space
         kl_loss_zx = self.latent_loss(zx_mu, zx_logvar)
@@ -917,7 +917,7 @@ class TwoC2E1D(nn.Module):
         kl_loss_zkey = self.latent_loss(zkey_mu, zkey_logvar)
         kl_loss_zykey = self.latent_loss(zykey_mu, zykey_logvar)
         # logging.debug KL divergence losses for debugging
-        logging.info(f"KL Loss zx: {kl_loss_zx.item()}, KL Loss zy: {kl_loss_zy.item()}, "
+        logging.debug(f"KL Loss zx: {kl_loss_zx.item()}, KL Loss zy: {kl_loss_zy.item()}, "
             f"KL Loss zkey: {kl_loss_zkey.item()}, KL Loss zykey: {kl_loss_zykey.item()}")
 
         # Latent loss between encoders
