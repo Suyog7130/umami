@@ -47,6 +47,7 @@ BASE_MODEL_CONFIG = {
     'latent_dim_x': 16,
     'latent_dim_key': 4,
     'activation_name': 'gelu',
+    'target': 'logamp_phase',  # default target is normed amp-freq, but can be set to 'logamp_phase' for log-amp and phase target
 }
 
 datadir = "../data/"
@@ -56,11 +57,11 @@ val_hdf = datadir + "SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen"
 logging.info(f'Reading training data from {train_hdf}.hdf')
 train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=False,
                         hdf_fname=train_hdf, train_device=DEVICE, precision=PRECISION,
-                        target=None)
+                        target=BASE_MODEL_CONFIG['target'])
 logging.info(f'Reading validation data from {val_hdf}.hdf')
 valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=False,
                         hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION, 
-                        target=None)
+                        target=BASE_MODEL_CONFIG['target'])
 
 # -- get mean and std of labels for normalization
 params_fname = '../data/params-' + APPROXIMANT + '-train-100000-fcutoff-uniform-aligned-regen'
