@@ -47,7 +47,7 @@ BASE_MODEL_CONFIG = {
     'latent_dim_x': 16,
     'latent_dim_key': 4,
     'activation_name': 'gelu',
-    'target': 'logamp_phase',  # default target is normed amp-freq, but can be set to 'logamp_phase' for log-amp and phase target
+    'target': 'amp_phase',  # default target is normed amp-freq, but can be set to 'logamp_phase' for log-amp and phase target
 }
 
 datadir = "../data/"
