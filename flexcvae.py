@@ -608,7 +608,7 @@ class TwoC2E1D(nn.Module):
                                        cnn_out_channels=[self.MODEL_CONFIG.get('enc_cnn_in', 16), self.MODEL_CONFIG.get('enc_cnn_out', 32)],  # default to [16, 32] if not specified in MODEL_CONFIG
                                        cnn_kernel_size=[self.MODEL_CONFIG.get('enc_cnn_kernel', 5), self.MODEL_CONFIG.get('enc_cnn_kernel', 5)],  # default to [5, 5] if not specified in MODEL_CONFIG
                                        cnn_dilation=[self.MODEL_CONFIG.get('enc_cnn_dilation', 1), self.MODEL_CONFIG.get('enc_cnn_dilation', 1)],  # default to [1, 1] if not specified in MODEL_CONFIG
-                                       cnn_pool_kernel_size=[4, 4],
+                                       cnn_pool_kernel_size=[self.MODEL_CONFIG.get('enc_pool_kernel', 4), self.MODEL_CONFIG.get('enc_pool_kernel', 4)],  # default to [4, 4] if not specified in MODEL_CONFIG
                                        post_fc_sizes=[0, self.MODEL_CONFIG.get('enc_postfc_hidden', 512), self.MODEL_CONFIG.get('enc_postfc_hidden', 512), self.latent_dim_x * 2],)
         logging.info(f"Encoder for x configured with latent_dim_x={self.latent_dim_x}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=2, n_layers_post_fc=3, has_pre_fc=False, has_cnn=True, has_post_fc=True, activation={self.activation}, last_activation={self.activation}, cnn_in_channels=[2, 16], cnn_out_channels=[16, 32], cnn_kernel_size=[5, 5], cnn_dilation=[1, 1], cnn_pool_kernel_size=[4, 4], post_fc_sizes=[0, 512, 512, {self.latent_dim_x}]")
         self.encoder_key = BaseEncoder(latent_dim=self.latent_dim_key,  # mean and logvar are output in two channels
@@ -633,21 +633,21 @@ class TwoC2E1D(nn.Module):
                                    activation=self.activation,
                                    last_activation=None,  # output layer should be linear since we will apply MSE loss and we want the output to be able to take any value
                                    pre_fc_sizes=[self.latent_dim_x + self.latent_dim_key + self.num_classes, 512],
-                                   cnn_in_channels=[1, 32, 64],
-                                   cnn_out_channels=[32, 64, 64],
-                                   cnn_kernel_size=[4, 4, 4],
-                                   cnn_dilation=[1, 2, 2],
-                                   cnn_pool_kernel_size=[4, 4, 4],
-                                   post_fc_sizes=[0, 512, self.input_shape[0] * self.input_shape[1]],
+                                   cnn_in_channels=[1, self.MODEL_CONFIG.get('dec_cnn_in', 32) // 2, self.MODEL_CONFIG.get('dec_cnn_in', 32)],  # default to [1, 16, 32] if not specified in MODEL_CONFIG
+                                   cnn_out_channels=[self.MODEL_CONFIG.get('dec_cnn_in', 32) // 2, self.MODEL_CONFIG.get('dec_cnn_out', 32), self.MODEL_CONFIG.get('dec_cnn_out', 32)],  # default to [16, 32, 32] if not specified in MODEL_CONFIG
+                                   cnn_kernel_size=[self.MODEL_CONFIG.get('dec_cnn_kernel', 4), self.MODEL_CONFIG.get('dec_cnn_kernel', 4), self.MODEL_CONFIG.get('dec_cnn_kernel', 4)],  # default to [4, 4, 4] if not specified in MODEL_CONFIG
+                                   cnn_dilation=[self.MODEL_CONFIG.get('dec_cnn_dilation', 1), self.MODEL_CONFIG.get('dec_cnn_dilation', 2), self.MODEL_CONFIG.get('dec_cnn_dilation', 2)],  # default to [1, 2, 2] if not specified in MODEL_CONFIG
+                                   cnn_pool_kernel_size=[self.MODEL_CONFIG.get('dec_pool_kernel', 4), self.MODEL_CONFIG.get('dec_pool_kernel', 4), self.MODEL_CONFIG.get('dec_pool_kernel', 4)],  # default to [4, 4, 4] if not specified in MODEL_CONFIG
+                                   post_fc_sizes=[0, self.MODEL_CONFIG.get('dec_postfc_hidden', 512), self.input_shape[0] * self.input_shape[1]], # default to [0, 512, input_shape[0] * input_shape[1]] if not specified in MODEL_CONFIG
                                    )
-        logging.info(f"Decoder configured with latent_dim={self.latent_dim_x + self.latent_dim_key}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation={self.activation}, pre_fc_sizes=[{self.latent_dim_x + self.latent_dim_key + self.num_classes}, 512], cnn_in_channels=[1, 32, 64], cnn_out_channels=[32, 64, 64, {self.input_shape[0]}], cnn_kernel_size=[4, 4, 4], cnn_dilation=[1, 2, 2], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
+        logging.info(f"Decoder configured with latent_dim={self.latent_dim_x + self.latent_dim_key}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation={self.activation}, pre_fc_sizes=[{self.latent_dim_x + self.latent_dim_key + self.num_classes}, 512], cnn_in_channels=[1, {self.MODEL_CONFIG.get('dec_cnn_in', 32) // 2}, {self.MODEL_CONFIG.get('dec_cnn_in', 32)}], cnn_out_channels=[{self.MODEL_CONFIG.get('dec_cnn_out', 32) // 2}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}], cnn_kernel_size=[4, 4, 4], cnn_dilation=[1, 2, 2], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
         self.conditional_x = BaseConditional(latent_dim=self.latent_dim_x,  # z1 mean and logvar
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
                                             n_layers=4, 
                                             activation=self.activation,
-                                            pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_x * 2])
-        logging.info(f"Label-conditioned encoder for x configured with latent_dim={self.latent_dim_x}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation={self.activation}, pre_fc_sizes=[{self.num_classes}, 128, 128, 128, {self.latent_dim_x}]")
+                                            pre_fc_sizes=[self.num_classes, 128, self.MODEL_CONFIG.get('cond_fc_max', 512), 128, self.latent_dim_x * 2])
+        logging.info(f"Label-conditioned encoder for x configured with latent_dim={self.latent_dim_x}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation={self.activation}, pre_fc_sizes=[{self.num_classes}, 128, {self.MODEL_CONFIG.get('cond_fc_max', 512)}, 128, {self.latent_dim_x}]")
         self.conditional_key = BaseConditional(latent_dim=self.latent_dim_key,  # z1prime mean and logvar
                                               input_shape=(self.num_classes,),
                                               num_classes=self.num_classes,

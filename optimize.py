@@ -331,7 +331,15 @@ def optuna_objective(trial):
         'enc_cnn_out': trial.suggest_categorical("enc_cnn_out", [32, 64, 128]),
         'enc_cnn_kernel': trial.suggest_categorical("enc_cnn_kernel", [3, 4, 5, 6, 7, 8]),
         'enc_cnn_dilation': trial.suggest_categorical("enc_cnn_dilation", [1, 2, 3, 4]),
+        'enc_pool_kernel': trial.suggest_categorical("enc_pool_kernel", [2, 3, 4]),
         'enc_postfc_hidden': trial.suggest_categorical("enc_postfc_hidden", [128, 256, 512, 1024]),
+        'dec_cnn_in': trial.suggest_categorical("dec_cnn_in", [32, 64, 128]),
+        'dec_cnn_out': trial.suggest_categorical("dec_cnn_out", [64, 128, 256]),
+        'dec_cnn_kernel': trial.suggest_categorical("dec_cnn_kernel", [3, 4, 5, 6, 7, 8]),
+        'dec_cnn_dilation': trial.suggest_categorical("dec_cnn_dilation", [1, 2, 3, 4]),
+        'dec_pool_kernel': trial.suggest_categorical("dec_pool_kernel", [2, 3, 4]),
+        'dec_postfc_hidden': trial.suggest_categorical("dec_postfc_hidden", [128, 256, 512, 1024]),
+        'cond_fc_max': trial.suggest_categorical("cond_fc_max", [128, 256, 512, 1024]),
     })
 
     model = FlexTwoC2E1D(
@@ -342,7 +350,7 @@ def optuna_objective(trial):
         labels_std=params_std,
         paramsnorm=True,
     )
-    # print(model)
+    print(model)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
     print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
           )
