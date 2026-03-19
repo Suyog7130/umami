@@ -46,7 +46,7 @@ print(f"Using device: {DEVICE}, with precision: {PRECISION}")
 BASE_MODEL_CONFIG = {
     'latent_dim_x': 16,
     'latent_dim_key': 4,
-    'activation_name': 'gelu',
+    'activation': 'gelu',
     'target': 'amp_phase',  # default target is normed amp-freq, but can be set to 'logamp_phase' for log-amp and phase target
 }
 
@@ -82,7 +82,7 @@ def set_dataloaders(batch_size=BATCH_SIZE):
 def training(model: FlexTwoC2E1D, 
              train_loader=None, val_loader=None,
              epochs: int = 5, 
-             datafrac: float = 0.1,
+             databatchfrac: float = 0.1,
              savemodel=False, savelosses=False,
              savedir='../trained_models/'):
     """
@@ -92,7 +92,7 @@ def training(model: FlexTwoC2E1D,
     Arguments:
         model: The model to be trained.
         epochs: Number of epochs to train for.
-        datafrac: Fraction of training data to use for quick training (default 0.1)
+        databatchfrac: Fraction of training data to use for quick training (default 0.1)
         savemodel: Whether to save the trained model (default False)
         savelosses: Whether to save training and validation losses (default False)
     """
@@ -100,7 +100,7 @@ def training(model: FlexTwoC2E1D,
     if train_loader is None or val_loader is None:
         logging.info("Setting up dataloaders since they were not provided.")
         train_loader, val_loader = set_dataloaders()
-    logging.info(f"Starting training for {epochs} epochs with data fraction {datafrac}")
+    logging.info(f"Starting training for {epochs} epochs with data fraction {databatchfrac}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     model = model.to(getattr(torch, PRECISION))
@@ -120,7 +120,7 @@ def training(model: FlexTwoC2E1D,
                 factor=0.5, 
                 patience=2, 
                 threshold=1e-7)
-    num_train_batches = int(len(train_loader) * datafrac)
+    num_train_batches = int(len(train_loader) * databatchfrac)
 
     # Train for a few epochs
     rloss_train, rloss_recon, rloss_kl = [], [], []
@@ -128,8 +128,8 @@ def training(model: FlexTwoC2E1D,
     for epoch in tqdm(range(epochs)):
         model.train()
         train_loss = 0.0
-        for batch_idx, (x, target, labels, keys, strains) in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
-            if batch_idx >= num_train_batches:
+        for idx, (x, target, labels, keys, strains) in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
+            if idx >= num_train_batches:
                 break
             x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
             optimizer.zero_grad()
@@ -142,7 +142,7 @@ def training(model: FlexTwoC2E1D,
             rloss_recon.append(recon_loss.item())
             rloss_kl.append(kl_loss.item())
         avg_train_loss = train_loss / num_train_batches
-        logging.info(f"Epoch {epoch+1}, Train Loss: {avg_train_loss:.4f}")
+        logging.info(f"Epoch {epoch+1}, Batch Avg Train Loss: {avg_train_loss:.4f}")
         scheduler.step(avg_train_loss)
 
         # Save model checkpoint at every epoch as backup
@@ -154,7 +154,9 @@ def training(model: FlexTwoC2E1D,
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
-            for x, target, labels, keys, strains in tqdm(val_loader, ncols=80, desc="Val-steps"):
+            for idx, (x, target, labels, keys, strains) in enumerate(tqdm(val_loader, ncols=80, desc="Val-steps")):
+                if idx >= num_train_batches:  # Use same number of batches for validation for quick evaluation
+                    break
                 x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
                 x_recon, zvars = model(x, labels, keys)
                 loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
@@ -162,8 +164,8 @@ def training(model: FlexTwoC2E1D,
                 rloss_val.append(loss.item())
                 rloss_recon_val.append(recon_loss.item())
                 rloss_kl_val.append(kl_loss.item())
-        avg_val_loss = val_loss / len(val_loader)
-        logging.info(f"Validation Loss: {avg_val_loss:.4f}")
+        avg_val_loss = val_loss / num_train_batches
+        logging.info(f"Epoch {epoch+1}, Batch Avg Validation Loss: {avg_val_loss:.4f}")
 
     if savemodel:
         model_path = savedir+f'model-flexcvae-{NOW}.pt'
@@ -283,12 +285,6 @@ def training(model: FlexTwoC2E1D,
 #     val_loss = training(model, epochs=5)
 #     return val_loss
 
-def run_optuna():
-    study = optuna.create_study(direction="minimize")
-    study.optimize(run_training, n_trials=args.trials)
-    print("Best trial:", study.best_trial.params)
-    joblib.dump(study, f"optuna_{args.model_type}_study_{NOW}.pkl")
-
 
 def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac=DATAFRAC):
     logging.info("Starting training with specified hyperparameters")
@@ -320,15 +316,22 @@ def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac
     
 
 def optuna_objective(trial):
+    logging.info("Starting new Optuna trial")
     MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
     # Suggest hyperparameters
     MODEL_CONFIG.update({
-        'epochs': 5,
-        'datafrac': 0.5,
+        'epochs': 1,
+        'databatchfrac': 0.01,
         'batch_size': trial.suggest_categorical("batch_size", [32, 64, 128]),
         'latent_dim_x': trial.suggest_int("latent_dim_x", 8, 128),
         'latent_dim_key': trial.suggest_int("latent_dim_key", 2, 4),
-        'activation_name': trial.suggest_categorical("activation_name", ["silu", "gelu"]),
+        'activation': trial.suggest_categorical("activation", ["silu", "gelu"]),
+        # some encoder hyperparameters with fixed n_layers for simplicity
+        'enc_cnn_in': trial.suggest_categorical("enc_cnn_in", [16, 32, 64]),
+        'enc_cnn_out': trial.suggest_categorical("enc_cnn_out", [32, 64, 128]),
+        'enc_cnn_kernel': trial.suggest_categorical("enc_cnn_kernel", [3, 4, 5, 6, 7, 8]),
+        'enc_cnn_dilation': trial.suggest_categorical("enc_cnn_dilation", [1, 2, 3, 4]),
+        'enc_postfc_hidden': trial.suggest_categorical("enc_postfc_hidden", [128, 256, 512, 1024]),
     })
 
     model = FlexTwoC2E1D(
@@ -347,12 +350,21 @@ def optuna_objective(trial):
     savedir = '../trained-models/optuna/'
     os.makedirs(savedir, exist_ok=True)
     model._save_model_config(filepath=savedir+f'modelconfig-flexcvae-{NOW}.json',
-                             epochs=MODEL_CONFIG['epochs'], datafrac=MODEL_CONFIG['datafrac'])
+                             epochs=MODEL_CONFIG['epochs'], databatchfrac=MODEL_CONFIG['databatchfrac'])
     train_loader, val_loader = set_dataloaders(batch_size=MODEL_CONFIG['batch_size'])
-    final_val_loss = training(model, epochs=MODEL_CONFIG['epochs'], datafrac=MODEL_CONFIG['datafrac'], 
+    final_val_loss = training(model, epochs=MODEL_CONFIG['epochs'], databatchfrac=MODEL_CONFIG['databatchfrac'], 
                 train_loader=train_loader, val_loader=val_loader,
                 savemodel=True, savelosses=True, savedir=savedir)
+    logging.info(f"Trial completed with validation loss: {final_val_loss:.4f}")
     return final_val_loss
+
+
+def run_optuna():
+    study = optuna.create_study(direction="minimize")
+    study.optimize(optuna_objective, n_trials=args.trials)
+    print("Best trial:", study.best_trial.params)
+    joblib.dump(study, f"optuna_{args.model_type}_study_{NOW}.pkl")
+
 
 
 if __name__ == "__main__":
@@ -387,7 +399,7 @@ if __name__ == "__main__":
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, logfname)
     logging.basicConfig(
-        format='%(levelsize)s | %(asctime)s: %(message)s',
+        format='%(asctime)s: %(levelname)s: %(message)s',
         level=log_level,
         datefmt='%y-%m-%d %H:%M:%S',
         force=True,

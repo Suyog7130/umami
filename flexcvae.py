@@ -109,13 +109,13 @@ class BaseCoder(nn.Module):
         self.cnn_pool_ks       = _as_list(kwargs.get('cnn_pool_kernel_size', None))  # default: use kernel_size
 
         # Regularization & activations
-        self.activation_name   = kwargs.get('activation', 'gelu')
+        self.activation   = kwargs.get('activation', 'relu')
         self.last_activation   = kwargs.get('last_activation', None)  # None → Identity
         self.use_batchnorm     = kwargs.get('use_batchnorm', False)
         self.dropout_p         = kwargs.get('dropout_p', 0.0)
         self.use_dropout       = self.dropout_p is not None and self.dropout_p > 0.0
 
-        self._act = _make_activation(self.activation_name)
+        self._act = _make_activation(self.activation)
         self._last_act = _make_activation(self.last_activation)
         self._drop = nn.Dropout(self.dropout_p) if self.use_dropout else nn.Identity()
 
@@ -557,7 +557,7 @@ class TwoC2E1D(nn.Module):
             labels_mean = MODEL_CONFIG.get('labels_mean', labels_mean)
             labels_std = MODEL_CONFIG.get('labels_std', labels_std)
             paramsnorm = MODEL_CONFIG.get('paramsnorm', paramsnorm)
-            self.activation_name = MODEL_CONFIG.get('activation_name', 'relu')
+            self.activation = MODEL_CONFIG.get('activation', 'relu')
             self.beta = MODEL_CONFIG.get('beta', 0.1)  # default beta value for KL divergence loss
             self.decoder_input_type = MODEL_CONFIG.get('decoder_input_type', 'concat')
             self.embed_labels_in_decoder = MODEL_CONFIG.get('embed_labels_in_decoder', False)
@@ -602,25 +602,25 @@ class TwoC2E1D(nn.Module):
                                        has_pre_fc=False,
                                        has_cnn=True,
                                        has_post_fc=True,
-                                       activation_name=self.activation_name,
-                                       last_activation=self.activation_name,
-                                       cnn_in_channels=[2, 16],
-                                       cnn_out_channels=[16, 32],
-                                       cnn_kernel_size=[5, 5],
-                                       cnn_dilation=[1, 1],
+                                       activation=self.activation,
+                                       last_activation=self.activation,
+                                       cnn_in_channels=[2, self.MODEL_CONFIG.get('enc_cnn_in', 16)],  # default to [2, 16] if not specified in MODEL_CONFIG
+                                       cnn_out_channels=[self.MODEL_CONFIG.get('enc_cnn_in', 16), self.MODEL_CONFIG.get('enc_cnn_out', 32)],  # default to [16, 32] if not specified in MODEL_CONFIG
+                                       cnn_kernel_size=[self.MODEL_CONFIG.get('enc_cnn_kernel', 5), self.MODEL_CONFIG.get('enc_cnn_kernel', 5)],  # default to [5, 5] if not specified in MODEL_CONFIG
+                                       cnn_dilation=[self.MODEL_CONFIG.get('enc_cnn_dilation', 1), self.MODEL_CONFIG.get('enc_cnn_dilation', 1)],  # default to [1, 1] if not specified in MODEL_CONFIG
                                        cnn_pool_kernel_size=[4, 4],
-                                       post_fc_sizes=[0, 512, 512, self.latent_dim_x * 2],)
-        logging.info(f"Encoder for x configured with latent_dim_x={self.latent_dim_x}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=2, n_layers_post_fc=3, has_pre_fc=False, has_cnn=True, has_post_fc=True, activation_name={self.activation_name}, last_activation={self.activation_name}, cnn_in_channels=[2, 16], cnn_out_channels=[16, 32], cnn_kernel_size=[5, 5], cnn_dilation=[1, 1], cnn_pool_kernel_size=[4, 4], post_fc_sizes=[0, 512, 512, {self.latent_dim_x}]")
+                                       post_fc_sizes=[0, self.MODEL_CONFIG.get('enc_postfc_hidden', 512), self.MODEL_CONFIG.get('enc_postfc_hidden', 512), self.latent_dim_x * 2],)
+        logging.info(f"Encoder for x configured with latent_dim_x={self.latent_dim_x}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=2, n_layers_post_fc=3, has_pre_fc=False, has_cnn=True, has_post_fc=True, activation={self.activation}, last_activation={self.activation}, cnn_in_channels=[2, 16], cnn_out_channels=[16, 32], cnn_kernel_size=[5, 5], cnn_dilation=[1, 1], cnn_pool_kernel_size=[4, 4], post_fc_sizes=[0, 512, 512, {self.latent_dim_x}]")
         self.encoder_key = BaseEncoder(latent_dim=self.latent_dim_key,  # mean and logvar are output in two channels
                                           input_shape=self.key_shape,
                                           num_classes=self.num_classes,
                                           n_layers=3,
                                           has_cnn=False,
                                           has_post_fc=False,
-                                          activation_name=self.activation_name,
+                                          activation=self.activation,
                                           pre_fc_sizes=[self.key_shape[0] * self.key_shape[1], 64, 64, self.latent_dim_key * 2],
                                           )
-        logging.info(f"Encoder for key configured with latent_dim_key={self.latent_dim_key}, input_shape={self.key_shape}, num_classes={self.num_classes}, n_layers=3, has_cnn=False, has_post_fc=False, activation_name={self.activation_name}, pre_fc_sizes=[{self.key_shape[0] * self.key_shape[1]}, 64, 64, {self.latent_dim_key}]")
+        logging.info(f"Encoder for key configured with latent_dim_key={self.latent_dim_key}, input_shape={self.key_shape}, num_classes={self.num_classes}, n_layers=3, has_cnn=False, has_post_fc=False, activation={self.activation}, pre_fc_sizes=[{self.key_shape[0] * self.key_shape[1]}, 64, 64, {self.latent_dim_key}]")
         self.decoder = BaseDecoder(latent_dim=self.latent_dim_x + self.latent_dim_key,  # e.g. z1 + z1prime, latents are reparametrized, so we don't need multiply by 2!
                                    input_shape=self.input_shape,
                                    num_classes=self.num_classes,
@@ -630,7 +630,7 @@ class TwoC2E1D(nn.Module):
                                    has_pre_fc=True,
                                    has_cnn=True,
                                    has_post_fc=True,
-                                   activation_name=self.activation_name,
+                                   activation=self.activation,
                                    last_activation=None,  # output layer should be linear since we will apply MSE loss and we want the output to be able to take any value
                                    pre_fc_sizes=[self.latent_dim_x + self.latent_dim_key + self.num_classes, 512],
                                    cnn_in_channels=[1, 32, 64],
@@ -640,21 +640,21 @@ class TwoC2E1D(nn.Module):
                                    cnn_pool_kernel_size=[4, 4, 4],
                                    post_fc_sizes=[0, 512, self.input_shape[0] * self.input_shape[1]],
                                    )
-        logging.info(f"Decoder configured with latent_dim={self.latent_dim_x + self.latent_dim_key}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation_name={self.activation_name}, pre_fc_sizes=[{self.latent_dim_x + self.latent_dim_key + self.num_classes}, 512], cnn_in_channels=[1, 32, 64], cnn_out_channels=[32, 64, 64, {self.input_shape[0]}], cnn_kernel_size=[4, 4, 4], cnn_dilation=[1, 2, 2], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
+        logging.info(f"Decoder configured with latent_dim={self.latent_dim_x + self.latent_dim_key}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation={self.activation}, pre_fc_sizes=[{self.latent_dim_x + self.latent_dim_key + self.num_classes}, 512], cnn_in_channels=[1, 32, 64], cnn_out_channels=[32, 64, 64, {self.input_shape[0]}], cnn_kernel_size=[4, 4, 4], cnn_dilation=[1, 2, 2], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
         self.conditional_x = BaseConditional(latent_dim=self.latent_dim_x,  # z1 mean and logvar
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
                                             n_layers=4, 
-                                            activation_name=self.activation_name,
+                                            activation=self.activation,
                                             pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_x * 2])
-        logging.info(f"Label-conditioned encoder for x configured with latent_dim={self.latent_dim_x}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation_name={self.activation_name}, pre_fc_sizes=[{self.num_classes}, 128, 128, 128, {self.latent_dim_x}]")
+        logging.info(f"Label-conditioned encoder for x configured with latent_dim={self.latent_dim_x}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation={self.activation}, pre_fc_sizes=[{self.num_classes}, 128, 128, 128, {self.latent_dim_x}]")
         self.conditional_key = BaseConditional(latent_dim=self.latent_dim_key,  # z1prime mean and logvar
                                               input_shape=(self.num_classes,),
                                               num_classes=self.num_classes,
                                               n_layers=4,
-                                              activation_name=self.activation_name,
+                                              activation=self.activation,
                                               pre_fc_sizes=[self.num_classes, 128, 128, 128, self.latent_dim_key * 2])
-        logging.info(f"Label-conditioned encoder for key configured with latent_dim={self.latent_dim_key}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation_name={self.activation_name}, pre_fc_sizes=[{self.num_classes}, 128, 128, 128, {self.latent_dim_key}]")
+        logging.info(f"Label-conditioned encoder for key configured with latent_dim={self.latent_dim_key}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation={self.activation}, pre_fc_sizes=[{self.num_classes}, 128, 128, 128, {self.latent_dim_key}]")
 
     def normalize_labels(self, labels, batchwise=False):
         """
@@ -954,7 +954,7 @@ class TwoC2E1D(nn.Module):
             'key_shape': self.key_shape,
             'latent_dim_x': self.latent_dim_x,
             'latent_dim_key': self.latent_dim_key,
-            'activation': self.activation_name,
+            'activation': self.activation,
             'beta': self.beta,
             'decoder_input_type': self.decoder_input_type,
             'embed_labels_in_decoder': self.embed_labels_in_decoder,
