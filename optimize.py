@@ -47,7 +47,7 @@ BASE_MODEL_CONFIG = {
     'latent_dim_x': 16,
     'latent_dim_key': 4,
     'activation': 'gelu',
-    'target': 'amp_phase',  # default target is normed amp-freq, but can be set to 'logamp_phase' for log-amp and phase target
+    'target': None, #'amp_phase',  # default target is normed amp-freq, but can be set to 'logamp_phase' for log-amp and phase target
 }
 
 datadir = "../data/"
@@ -358,7 +358,8 @@ def optuna_objective(trial):
     # print(model)
     savedir = '../trained-models/optuna/'
     os.makedirs(savedir, exist_ok=True)
-    model._save_model_config(filepath=savedir+f'modelconfig-flexcvae-{NOW}.json',
+    _now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    model._save_model_config(filepath=savedir+f'modelconfig-flexcvae-{_now}.json',
                              epochs=MODEL_CONFIG['epochs'], datafrac=MODEL_CONFIG['datafrac'])
     train_loader, val_loader = set_dataloaders(batch_size=MODEL_CONFIG['batch_size'])
     final_val_loss = training(model, epochs=MODEL_CONFIG['epochs'], datafrac=MODEL_CONFIG['datafrac'], 
