@@ -83,7 +83,8 @@ def training(model: FlexTwoC2E1D,
              train_loader=None, val_loader=None,
              epochs: int = 5, 
              datafrac: float = 0.1,
-             savemodel=False, savelosses=False):
+             savemodel=False, savelosses=False,
+             savedir='../trained_models/'):
     """
     Using a fraction of training data for quick training and
     trains the model for a few epochs, returning validation loss.
@@ -95,6 +96,7 @@ def training(model: FlexTwoC2E1D,
         savemodel: Whether to save the trained model (default False)
         savelosses: Whether to save training and validation losses (default False)
     """
+    os.makedirs(savedir, exist_ok=True)
     if train_loader is None or val_loader is None:
         logging.info("Setting up dataloaders since they were not provided.")
         train_loader, val_loader = set_dataloaders()
@@ -144,7 +146,7 @@ def training(model: FlexTwoC2E1D,
         scheduler.step(avg_train_loss)
 
         # Save model checkpoint at every epoch as backup
-        backup_model_path = f'../trained-models/model-backup-{NOW}epoch{epoch}.pt'
+        backup_model_path = savedir+f'model-backup-{NOW}epoch{epoch}.pt'
         torch.save(model.state_dict(), backup_model_path)
         logging.info(f"Model backup saved at {backup_model_path}")
 
@@ -164,7 +166,7 @@ def training(model: FlexTwoC2E1D,
         logging.info(f"Validation Loss: {avg_val_loss:.4f}")
 
     if savemodel:
-        model_path = f'../trained-models/model-flexcvae-{NOW}.pt'
+        model_path = savedir+f'model-flexcvae-{NOW}.pt'
         torch.save(model.state_dict(), model_path)
     if savelosses:
         # Save losses to pandas dataframe and then to csv
@@ -178,8 +180,8 @@ def training(model: FlexTwoC2E1D,
             'val_recon_loss': rloss_recon_val,
             'val_kl_loss': rloss_kl_val,
         })
-        train_losses_df.to_csv(f'../trained-models/losses-flexcvae-train-{NOW}.csv', index=False)
-        val_losses_df.to_csv(f'../trained-models/losses-flexcvae-val-{NOW}.csv', index=False)
+        train_losses_df.to_csv(savedir+f'losses-flexcvae-train-{NOW}.csv', index=False)
+        val_losses_df.to_csv(savedir+f'losses-flexcvae-val-{NOW}.csv', index=False)
     return avg_val_loss
 
 
@@ -318,9 +320,39 @@ def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac
     
 
 def optuna_objective(trial):
-    logging.info("Starting new Optuna trial with hyperparameters:")
-    logging.info(trial.params)
-    return run_training(configpath=None, epochs=EPOCHS, datafrac=DATAFRAC)
+    MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
+    # Suggest hyperparameters
+    MODEL_CONFIG.update({
+        'epochs': 5,
+        'datafrac': 0.5,
+        'batch_size': trial.suggest_categorical("batch_size", [32, 64, 128]),
+        'latent_dim_x': trial.suggest_int("latent_dim_x", 8, 128),
+        'latent_dim_key': trial.suggest_int("latent_dim_key", 2, 4),
+        'activation_name': trial.suggest_categorical("activation_name", ["silu", "gelu"]),
+    })
+
+    model = FlexTwoC2E1D(
+        MODEL_CONFIG=MODEL_CONFIG,
+        input_shape=(2, PRESET_ARRAY_SIZE),
+        num_classes=4,
+        labels_mean=params_mean,
+        labels_std=params_std,
+        paramsnorm=True,
+    )
+    # print(model)
+    print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
+    print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
+          )
+    # print(model)
+    savedir = '../trained-models/optuna/'
+    os.makedirs(savedir, exist_ok=True)
+    model._save_model_config(filepath=savedir+f'modelconfig-flexcvae-{NOW}.json',
+                             epochs=MODEL_CONFIG['epochs'], datafrac=MODEL_CONFIG['datafrac'])
+    train_loader, val_loader = set_dataloaders(batch_size=MODEL_CONFIG['batch_size'])
+    final_val_loss = training(model, epochs=MODEL_CONFIG['epochs'], datafrac=MODEL_CONFIG['datafrac'], 
+                train_loader=train_loader, val_loader=val_loader,
+                savemodel=True, savelosses=True, savedir=savedir)
+    return final_val_loss
 
 
 if __name__ == "__main__":

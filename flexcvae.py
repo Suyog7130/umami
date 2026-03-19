@@ -109,7 +109,7 @@ class BaseCoder(nn.Module):
         self.cnn_pool_ks       = _as_list(kwargs.get('cnn_pool_kernel_size', None))  # default: use kernel_size
 
         # Regularization & activations
-        self.activation_name   = kwargs.get('activation', 'relu')
+        self.activation_name   = kwargs.get('activation', 'gelu')
         self.last_activation   = kwargs.get('last_activation', None)  # None → Identity
         self.use_batchnorm     = kwargs.get('use_batchnorm', False)
         self.dropout_p         = kwargs.get('dropout_p', 0.0)
@@ -967,7 +967,9 @@ class TwoC2E1D(nn.Module):
         configfile.update({
             'model_architecture': str(self),
             'total_parameters': sum(p.numel() for p in self.parameters()),
-            'trainable_parameters': sum(p.numel() for p in self.parameters() if p.requires_grad)
+            'trainable_parameters': sum(p.numel() for p in self.parameters() if p.requires_grad),
+            'labels_mean': self.labels_mean.tolist() if hasattr(self, 'labels_mean') else None,
+            'labels_std': self.labels_std.tolist() if hasattr(self, 'labels_std') else None,
         })
         # Save other supplied kwargs to MODEL_CONFIG
         configfile.update(kwargs)
