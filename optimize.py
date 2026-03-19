@@ -82,7 +82,7 @@ def set_dataloaders(batch_size=BATCH_SIZE):
 def training(model: FlexTwoC2E1D, 
              train_loader=None, val_loader=None,
              epochs: int = 5, 
-             databatchfrac: float = 0.1,
+             datafrac: float = 0.1,
              savemodel=False, savelosses=False,
              savedir='../trained_models/'):
     """
@@ -92,7 +92,7 @@ def training(model: FlexTwoC2E1D,
     Arguments:
         model: The model to be trained.
         epochs: Number of epochs to train for.
-        databatchfrac: Fraction of training data to use for quick training (default 0.1)
+        datafrac: Fraction of training data to use for quick training (default 0.1)
         savemodel: Whether to save the trained model (default False)
         savelosses: Whether to save training and validation losses (default False)
     """
@@ -100,11 +100,13 @@ def training(model: FlexTwoC2E1D,
     if train_loader is None or val_loader is None:
         logging.info("Setting up dataloaders since they were not provided.")
         train_loader, val_loader = set_dataloaders()
-    logging.info(f"Starting training for {epochs} epochs with data fraction {databatchfrac}")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     model = model.to(getattr(torch, PRECISION))
 
+    num_train_batches = int(len(train_set) * datafrac) // train_loader.batch_size
+    logging.info(f"Using {num_train_batches} batches for training and validation based on data fraction {datafrac} out of {len(train_set)} data inputs.")
+    
     # Check if model parameters contain NaN or Inf before training
     for name, param in model.named_parameters():
         if torch.isnan(param).any():
@@ -120,8 +122,7 @@ def training(model: FlexTwoC2E1D,
                 factor=0.5, 
                 patience=2, 
                 threshold=1e-7)
-    num_train_batches = int(len(train_loader) * databatchfrac)
-
+    
     # Train for a few epochs
     rloss_train, rloss_recon, rloss_kl = [], [], []
     rloss_val, rloss_recon_val, rloss_kl_val = [], [], []
@@ -320,12 +321,12 @@ def optuna_objective(trial):
     MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
     # Suggest hyperparameters
     MODEL_CONFIG.update({
-        'epochs': 1,
-        'databatchfrac': 0.01,
+        'epochs': 5,  # Keep epochs small for quick Optuna optimization
+        'datafrac': 0.3,  # Use 30% of training data for quick training during Optuna optimization
         'batch_size': trial.suggest_categorical("batch_size", [32, 64, 128]),
         'latent_dim_x': trial.suggest_int("latent_dim_x", 8, 128),
         'latent_dim_key': trial.suggest_int("latent_dim_key", 2, 4),
-        'activation': trial.suggest_categorical("activation", ["silu", "gelu"]),
+        'activation': trial.suggest_categorical("activation", ["silu", "gelu", "relu"]),
         # some encoder hyperparameters with fixed n_layers for simplicity
         'enc_cnn_in': trial.suggest_categorical("enc_cnn_in", [16, 32, 64]),
         'enc_cnn_out': trial.suggest_categorical("enc_cnn_out", [32, 64, 128]),
@@ -358,9 +359,9 @@ def optuna_objective(trial):
     savedir = '../trained-models/optuna/'
     os.makedirs(savedir, exist_ok=True)
     model._save_model_config(filepath=savedir+f'modelconfig-flexcvae-{NOW}.json',
-                             epochs=MODEL_CONFIG['epochs'], databatchfrac=MODEL_CONFIG['databatchfrac'])
+                             epochs=MODEL_CONFIG['epochs'], datafrac=MODEL_CONFIG['datafrac'])
     train_loader, val_loader = set_dataloaders(batch_size=MODEL_CONFIG['batch_size'])
-    final_val_loss = training(model, epochs=MODEL_CONFIG['epochs'], databatchfrac=MODEL_CONFIG['databatchfrac'], 
+    final_val_loss = training(model, epochs=MODEL_CONFIG['epochs'], datafrac=MODEL_CONFIG['datafrac'], 
                 train_loader=train_loader, val_loader=val_loader,
                 savemodel=True, savelosses=True, savedir=savedir)
     logging.info(f"Trial completed with validation loss: {final_val_loss:.4f}")
