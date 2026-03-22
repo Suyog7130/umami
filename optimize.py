@@ -4,6 +4,7 @@ hyper-parameters and number of layers etc.
 """
 
 import os
+import gc
 import json
 import argparse
 import pandas as pd
@@ -321,8 +322,8 @@ def optuna_objective(trial):
     MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
     # Suggest hyperparameters
     MODEL_CONFIG.update({
-        'epochs': 5,  # Keep epochs small for quick Optuna optimization
-        'datafrac': 0.3,  # Use 30% of training data for quick training during Optuna optimization
+        'epochs': 1,  # Keep epochs small for quick Optuna optimization
+        'datafrac': 0.03,  # Use 30% of training data for quick training during Optuna optimization
         'batch_size': trial.suggest_categorical("batch_size", [32, 64, 128]),
         'latent_dim_x': trial.suggest_int("latent_dim_x", 8, 128),
         'latent_dim_key': trial.suggest_int("latent_dim_key", 2, 4),
@@ -366,6 +367,13 @@ def optuna_objective(trial):
                 train_loader=train_loader, val_loader=val_loader,
                 savemodel=True, savelosses=True, savedir=savedir)
     logging.info(f"Trial completed with validation loss: {final_val_loss:.4f}")
+    # CLEANUP to save GPU memory after each trial
+    del model
+    # del optimizer
+    # Force Python's Garbage Collector
+    gc.collect()
+    # Clear PyTorch's GPU Cache
+    torch.cuda.empty_cache()
     return final_val_loss
 
 
