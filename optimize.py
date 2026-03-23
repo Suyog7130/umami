@@ -4,6 +4,7 @@ hyper-parameters and number of layers etc.
 """
 
 import os
+import gc
 import json
 import argparse
 import pandas as pd
@@ -366,6 +367,13 @@ def optuna_objective(trial):
                 train_loader=train_loader, val_loader=val_loader,
                 savemodel=True, savelosses=True, savedir=savedir)
     logging.info(f"Trial completed with validation loss: {final_val_loss:.4f}")
+    # CLEANUP to save GPU memory after each trial
+    del model
+    # del optimizer
+    # Force Python's Garbage Collector
+    gc.collect()
+    # Clear PyTorch's GPU Cache
+    torch.cuda.empty_cache()
     return final_val_loss
 
 
