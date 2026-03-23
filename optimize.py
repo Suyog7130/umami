@@ -83,9 +83,10 @@ def set_dataloaders(batch_size=BATCH_SIZE):
 def training(model: FlexTwoC2E1D, 
              train_loader=None, val_loader=None,
              epochs: int = 5, 
-             datafrac: float = 0.1,
+             datafrac: float = DATAFRAC,
              savemodel=False, savelosses=False,
-             savedir='../trained_models/'):
+             savedir='../trained_models/',
+             save_interim_models=True, now=NOW):
     """
     Using a fraction of training data for quick training and
     trains the model for a few epochs, returning validation loss.
@@ -148,9 +149,10 @@ def training(model: FlexTwoC2E1D,
         scheduler.step(avg_train_loss)
 
         # Save model checkpoint at every epoch as backup
-        backup_model_path = savedir+f'model-backup-{NOW}epoch{epoch}.pt'
-        torch.save(model.state_dict(), backup_model_path)
-        logging.info(f"Model backup saved at {backup_model_path}")
+        if save_interim_models:
+            backup_model_path = savedir+f'model-backup-{now}-epoch{epoch}.pt'
+            torch.save(model.state_dict(), backup_model_path)
+            logging.info(f"Model backup saved at {backup_model_path}")
 
         # Evaluate on validation set
         model.eval()
@@ -170,7 +172,7 @@ def training(model: FlexTwoC2E1D,
         logging.info(f"Epoch {epoch+1}, Batch Avg Validation Loss: {avg_val_loss:.4f}")
 
     if savemodel:
-        model_path = savedir+f'model-flexcvae-{NOW}.pt'
+        model_path = savedir+f'model-flexcvae-{now}.pt'
         torch.save(model.state_dict(), model_path)
     if savelosses:
         # Save losses to pandas dataframe and then to csv
@@ -184,8 +186,8 @@ def training(model: FlexTwoC2E1D,
             'val_recon_loss': rloss_recon_val,
             'val_kl_loss': rloss_kl_val,
         })
-        train_losses_df.to_csv(savedir+f'losses-flexcvae-train-{NOW}.csv', index=False)
-        val_losses_df.to_csv(savedir+f'losses-flexcvae-val-{NOW}.csv', index=False)
+        train_losses_df.to_csv(savedir+f'losses-flexcvae-train-{now}.csv', index=False)
+        val_losses_df.to_csv(savedir+f'losses-flexcvae-val-{now}.csv', index=False)
     return avg_val_loss
 
 
@@ -289,6 +291,9 @@ def training(model: FlexTwoC2E1D,
 
 
 def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac=DATAFRAC):
+    """
+    Runs training with specified hyperparameters for a single model configuration!
+    """
     logging.info("Starting training with specified hyperparameters")
     if configpath is not None:
         logging.info(f"Using MODEL_CONFIG: {configpath}")
@@ -306,8 +311,8 @@ def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac
     )
     # print(model)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
-    print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
-          )
+    print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() \
+                                                       if p.requires_grad)}")
     # print(model)
     model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
                              epochs=epochs, datafrac=datafrac)
@@ -318,6 +323,9 @@ def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac
     
 
 def optuna_objective(trial):
+    """
+    Optuna objective function for hyperparameter optimization of the FlexTwoC2E1D model.
+    """
     logging.info("Starting new Optuna trial")
     MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
     # Suggest hyperparameters
@@ -335,6 +343,7 @@ def optuna_objective(trial):
         'enc_cnn_dilation': trial.suggest_categorical("enc_cnn_dilation", [1, 2, 3, 4]),
         'enc_pool_kernel': trial.suggest_categorical("enc_pool_kernel", [2, 3, 4]),
         'enc_postfc_hidden': trial.suggest_categorical("enc_postfc_hidden", [128, 256, 512, 1024]),
+        # some decoder hyperparameters with fixed n_layers for simplicity
         'dec_cnn_in': trial.suggest_categorical("dec_cnn_in", [32, 64, 128]),
         'dec_cnn_out': trial.suggest_categorical("dec_cnn_out", [64, 128, 256]),
         'dec_cnn_kernel': trial.suggest_categorical("dec_cnn_kernel", [3, 4, 5, 6, 7, 8]),
@@ -354,18 +363,21 @@ def optuna_objective(trial):
     )
     print(model)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
-    print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}"
-          )
+    print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() \
+                                                       if p.requires_grad)}")
     # print(model)
     savedir = '../trained-models/optuna/'
     os.makedirs(savedir, exist_ok=True)
-    _now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    model._save_model_config(filepath=savedir+f'modelconfig-flexcvae-{_now}.json',
-                             epochs=MODEL_CONFIG['epochs'], datafrac=MODEL_CONFIG['datafrac'])
+    now = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    model._save_model_config(filepath=savedir+f'modelconfig-flexcvae-{now}.json',
+                             epochs=MODEL_CONFIG['epochs'], 
+                             datafrac=MODEL_CONFIG['datafrac'])
     train_loader, val_loader = set_dataloaders(batch_size=MODEL_CONFIG['batch_size'])
-    final_val_loss = training(model, epochs=MODEL_CONFIG['epochs'], datafrac=MODEL_CONFIG['datafrac'], 
-                train_loader=train_loader, val_loader=val_loader,
-                savemodel=True, savelosses=True, savedir=savedir)
+    final_val_loss = training(model, epochs=MODEL_CONFIG['epochs'], 
+                              datafrac=MODEL_CONFIG['datafrac'], 
+                            train_loader=train_loader, val_loader=val_loader,
+                            savemodel=True, savelosses=True, savedir=savedir,
+                            save_interim_models=False, now=now)
     logging.info(f"Trial completed with validation loss: {final_val_loss:.4f}")
     # CLEANUP to save GPU memory after each trial
     del model
@@ -381,7 +393,14 @@ def run_optuna():
     study = optuna.create_study(direction="minimize")
     study.optimize(optuna_objective, n_trials=args.trials)
     print("Best trial:", study.best_trial.params)
+    # Save the best hyperparameters to a JSON file for future reference
+    best_params_path = f"optuna_{args.model_type}_bestparams_{NOW}.json"
+    with open(best_params_path, 'w') as f:
+        json.dump(study.best_trial.params, f, indent=4)
+    logging.info(f"Best hyperparameters saved to {best_params_path}")
+    # Save the Optuna study object for future reference
     joblib.dump(study, f"optuna_{args.model_type}_study_{NOW}.pkl")
+    logging.info(f"Optuna study saved as optuna_{args.model_type}_study_{NOW}.pkl")
 
 
 
