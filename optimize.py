@@ -109,8 +109,10 @@ def training(model: FlexTwoC2E1D,
 
     if datafrac == 1.0:
         num_train_batches = len(train_loader)
+        num_val_batches = len(val_loader)
     else:
         num_train_batches = int(len(train_set) * datafrac) // train_loader.batch_size
+        num_val_batches = int(len(valid_set) * datafrac) // val_loader.batch_size
     logging.info(f"Using {num_train_batches} batches for training and validation based on data fraction {datafrac} out of {len(train_set)} data inputs.")
     
     # Check if model parameters contain NaN or Inf before training
@@ -163,7 +165,7 @@ def training(model: FlexTwoC2E1D,
         val_loss = 0.0
         with torch.no_grad():
             for idx, (x, target, labels, keys, strains) in enumerate(tqdm(val_loader, ncols=80, desc="Val-steps")):
-                if idx >= num_train_batches:  # Use same number of batches for validation for quick evaluation
+                if idx >= num_val_batches:
                     break
                 x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
                 x_recon, zvars = model(x, labels, keys)
@@ -172,7 +174,7 @@ def training(model: FlexTwoC2E1D,
                 rloss_val.append(loss.item())
                 rloss_recon_val.append(recon_loss.item())
                 rloss_kl_val.append(kl_loss.item())
-        avg_val_loss = val_loss / num_train_batches
+        avg_val_loss = val_loss / num_val_batches
         logging.info(f"Epoch {epoch+1}, Batch Avg Validation Loss: {avg_val_loss:.4f}")
 
     if savemodel:

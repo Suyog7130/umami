@@ -10,6 +10,7 @@ import pandas as pd
 from scipy.interpolate import griddata
 from matplotlib.colors import LogNorm
 from datetime import datetime
+import matplotlib.ticker as tck
 
 
 DIR = '../results/251225/'
@@ -330,6 +331,47 @@ def plot_rom_opt_mm_hist(fname=None, dir=DIR, time=TIME, fontsize=15, labelsize=
     logging.info(f"ROM and Optimized mismatch histograms saved to {savename}")
 
 
+def plot_timecompare_from_file(fname=None, dir=DIR, time=TIME, fontsize=12, labelsize=10):
+    """
+    Plot the time taken to generate different variants of the SEOBNRv4 waveform
+    versus the base waveform implementation.
+    """
+    approximant = 'SEOBNRv4'
+    dir = '../results/'
+    modeldf = pd.read_csv(dir + '20260228/timecomplexity_results-20260228_031118.csv', skiprows=1,
+                          names=['Nruns', 'modeltimes'])
+    otherdf = pd.read_csv(dir + '20260126/timecomplexity_compare_20260126_031310.csv', skiprows=1,
+                          names=['Nruns', 'basetimes', 'romtimes', 'opttimes'])
+
+    # Plot time taken comparison between model, base, and ROM
+    logging.info("Plotting time complexity comparison between model, base, and ROM.")
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+    ax.plot(otherdf['Nruns'], otherdf['basetimes'], '.', color='black', markersize=10,
+            markeredgewidth=0.5, markeredgecolor='black')
+    ax.plot(modeldf['Nruns'], modeldf['modeltimes'], '*', color='blue', markersize=6,
+            markeredgewidth=0.15, markeredgecolor='black')
+    ax.plot(otherdf['Nruns'], otherdf['romtimes'], '^', color='red', markersize=6,
+            markeredgewidth=0.5, markeredgecolor='black')
+    ax.plot(otherdf['Nruns'], otherdf['opttimes'], 'v', color='green', markersize=6,
+            markeredgewidth=0.5, markeredgecolor='black')
+    ax.legend(['base', 'ml', 'ROM', 'opt'], loc='upper right', fontsize=labelsize, title=approximant, title_fontsize=fontsize)
+    ax.set_xlabel('Number of Waveforms Generated', fontsize=fontsize)
+    ax.set_ylabel('Time (seconds)', fontsize=fontsize)
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.grid(True, which='both', linestyle='--', linewidth=0.5)
+    ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+    ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+    ax.tick_params(which='both', direction='in', top=True, right=True)
+    plt.tight_layout()
+    figname = dir + '20260228/' + 'timecomplexity-compare-long-gpu-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+    plt.savefig(figname+'.png', dpi=300, transparent=True)
+    plt.savefig(figname+'-white.png', dpi=300)
+    plt.show()
+    plt.close()
+    logging.info("Time complexity comparison plot saved.")
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot training and validation loss from a file.")
@@ -356,4 +398,5 @@ if __name__ == "__main__":
 
     # plot_running_loss()
     # mismatch_anal(args)
-    plot_rom_opt_mm_hist()
+    # plot_rom_opt_mm_hist()
+    plot_timecompare_from_file()
