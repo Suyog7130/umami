@@ -18,6 +18,7 @@ import optuna
 
 import torch
 import torch.nn.functional as F
+import numpy as np
 
 from datacvae import CustomDataset, CustomDataLoader
 # from multicvae import TwoC2E1D
@@ -106,7 +107,10 @@ def training(model: FlexTwoC2E1D,
     model = model.to(device)
     model = model.to(getattr(torch, PRECISION))
 
-    num_train_batches = int(len(train_set) * datafrac) // train_loader.batch_size
+    if datafrac == 1.0:
+        num_train_batches = len(train_loader)
+    else:
+        num_train_batches = int(len(train_set) * datafrac) // train_loader.batch_size
     logging.info(f"Using {num_train_batches} batches for training and validation based on data fraction {datafrac} out of {len(train_set)} data inputs.")
     
     # Check if model parameters contain NaN or Inf before training
@@ -296,11 +300,39 @@ def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac
     """
     logging.info("Starting training with specified hyperparameters")
     if configpath is not None:
+        if not configpath.endswith('.json'):
+            configpath += '.json'
+        if not os.path.isfile(configpath):
+            logging.error(f"Provided MODEL_CONFIG path does not exist: {configpath}")
+            raise FileNotFoundError(f"MODEL_CONFIG file not found at {configpath}")
         logging.info(f"Using MODEL_CONFIG: {configpath}")
         MODEL_CONFIG = json.load(open(configpath, 'r'))
     else:
         logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
         MODEL_CONFIG = BASE_MODEL_CONFIG
+
+    # Convert some hyperparameters from str to appropriate types if needed (e.g. lists, tuples)
+    if isinstance(MODEL_CONFIG['labels_mean'], str) and isinstance(MODEL_CONFIG['labels_std'], str):
+        # print(MODEL_CONFIG['labels_std'])
+        # print(MODEL_CONFIG['labels_std'].strip('[]').split(','))
+        # print(float(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
+        # print(type(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
+        logging.info("Converting labels_mean and labels_std from str->lists to numpy arrays for model initialization.")
+        labels_mean = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(','))
+        labels_std = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(','))
+        MODEL_CONFIG['labels_mean'] = labels_mean.astype(torch.float64) if PRECISION == 'float64' else labels_mean.astype(float)
+        MODEL_CONFIG['labels_std'] = labels_std.astype(torch.float64) if PRECISION == 'float64' else labels_std.astype(float)
+    # logging.warning("Will still use predefined global params_mean and params_std for normalization for now.")
+    if isinstance(MODEL_CONFIG['input_shape'], str):
+        logging.info("Converting input_shape from str to tuple for model initialization.")
+        MODEL_CONFIG['input_shape'] = tuple(map(int, MODEL_CONFIG['input_shape'].strip('()').split(',')))
+    if isinstance(MODEL_CONFIG['key_shape'], str):
+        logging.info("Converting key_shape from str to tuple for model initialization.")
+        MODEL_CONFIG['key_shape'] = tuple(map(int, MODEL_CONFIG['key_shape'].strip('()').split(',')))
+    if isinstance(MODEL_CONFIG['target'], str) and MODEL_CONFIG['target'].lower() == 'none':
+        logging.info("Setting target to None for model initialization.")
+        MODEL_CONFIG['target'] = None
+
     model = FlexTwoC2E1D(
         MODEL_CONFIG=MODEL_CONFIG,
         input_shape=(2, PRESET_ARRAY_SIZE),
@@ -311,15 +343,15 @@ def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac
     )
     # print(model)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
-    print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() \
-                                                       if p.requires_grad)}")
+    print(f"Total number of trainable parameters: \
+          {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     # print(model)
-    model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
-                             epochs=epochs, datafrac=datafrac)
     train_loader, val_loader = set_dataloaders(batch_size=batch_size)
     training(model, epochs=epochs, datafrac=datafrac, 
              train_loader=train_loader, val_loader=val_loader,
              savemodel=True, savelosses=True)
+    model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
+                             epochs=epochs, datafrac=datafrac)
     
 
 def optuna_objective(trial):
@@ -363,8 +395,8 @@ def optuna_objective(trial):
     )
     print(model)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
-    print(f"Total number of trainable parameters: {sum(p.numel() for p in model.parameters() \
-                                                       if p.requires_grad)}")
+    print(f"Total number of trainable parameters: \
+          {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     # print(model)
     savedir = '../trained-models/optuna/'
     os.makedirs(savedir, exist_ok=True)
@@ -415,7 +447,7 @@ if __name__ == "__main__":
                         help="Number of Optuna trials to run")
     parser.add_argument('--train', action='store_true', 
                         help="Run training with specified hyperparameters")
-    parser.add_argument('--model_config', type=str, default=None,
+    parser.add_argument('--model-config', type=str, default=None,
                         help="Path to JSON file containing model configuration for training")
 
     parser.add_argument('-v', '--verbose', action='store_true',
