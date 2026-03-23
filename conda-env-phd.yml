@@ -1,24 +1,32 @@
+# -*- coding: utf-8 -*-
+# Copyright (c) 2024, Suyog Garg. All rights reserved.
+# NOTE: All python packages are installed via pip, so that
+# they are compatible with "uv". All other
+# non-python dependencies are installed via conda.
 name: phd
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.10
-  - numpy
-  - scipy
-  - matplotlib
-  - pandas
-  - scikit-learn
-  - jupyterlab
-  - seaborn
-  - statsmodels
-  - astropy
-  - torch
-  - torchvision
-  - torchaudio
-  - pytorch-lightning
-  - pycbc  # -- install after torch to ensure compatibility
+  - python=3.13
   - pip:
     - pdfkit
     - wkhtmltopdf
     - tqdm
+    - optuna
+    - numpy
+    - scipy
+    - matplotlib
+    - pandas
+    - jupyterlab
+    - seaborn
+    - statsmodels
+    - astropy
+    # - setuptools<81  # -- required for pycbc<2.10, can be removed with pycbc>=2.10, since later versions deprecate 'pkg_resources' which is the source of the conflict
+    - pycbc==2.10.0  # -- install after torch to ensure compatibility
+    - scikit-image
+    - scikit-learn
+    - torch
+    # - torchvision
+    # - torchaudio
+    # - pytorch-lightning

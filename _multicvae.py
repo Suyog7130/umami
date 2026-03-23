@@ -10,7 +10,7 @@
 #     * Add Conditioners to embed labels y before concatenation
 #     * Build models by code like "2C2E1D" (= 2 Conditioners, 2 Encoders, 1 Decoder)
 
-from init import *  # expects torch, nn, etc. to be available
+from __init__ import *  # expects torch, nn, etc. to be available
 from utils import *
 from typing import List, Sequence, Optional, Union, Callable
 
@@ -117,7 +117,7 @@ class BaseCoder(nn.Module):
         seq.append(self._last_act if is_last else self._act)
         if self.use_dropout and not is_last:
             seq.append(self._drop)
-        return nn.Sequential(*seq)
+        return nn.Sequential(*seq).to(torch.float64)  # ensure double precision for all layers
 
     def conv_layer(self, in_channels: int, out_channels: int,
                    kernel_size: int, dilation: int,
@@ -132,16 +132,17 @@ class BaseCoder(nn.Module):
         seq.append(nn.MaxPool1d(kernel_size=pool_size))
         if self.use_dropout and not is_last:
             seq.append(self._drop)
-        return nn.Sequential(*seq)
+        return nn.Sequential(*seq).to(torch.float64)  # ensure double precision for all layers
 
     # ----- stage builders (backwards-friendly) -----
-    def fc(self, in_features: Sequence[int], out_features: Sequence[int], *,
+    def fc(self, in_features: Sequence[int] = None, out_features: Sequence[int] = None, *,
            n_layers: Optional[int] = None,
            sizes: Optional[Sequence[int]] = None,
            use_last_activation: bool = False) -> nn.Sequential:
         """Builds an MLP. You may specify either (in_features, out_features)
         or a single `sizes=[in, h1, ..., out]`. The original API is preserved.
         """
+        print(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
         layers: List[nn.Module] = []
         if sizes is not None and len(sizes) > 0:
             in_f, out_f = _pair_from_sizes(sizes)
@@ -149,11 +150,27 @@ class BaseCoder(nn.Module):
             in_f, out_f = list(in_features), list(out_features)
         if n_layers is None:
             n_layers = len(in_f)
-        assert n_layers == len(in_f) == len(out_f), "FC spec length mismatch"
+        print(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
+        assert n_layers == len(in_f) == len(out_f), f"FC spec length mismatch: n_layers={n_layers}, in_f={len(in_f)}, out_f={len(out_f)}"
+        # Robust compatibility check: ensure each in_f[i] matches previous output shape
         for i in range(n_layers):
+            if i > 0 and in_f[i] != out_f[i-1]:
+                raise ValueError(f"FC layer size mismatch at layer {i}: in_features={in_f[i]} does not match previous out_features={out_f[i-1]}. Full sizes: in_f={in_f}, out_f={out_f}, sizes={sizes}")
             is_last = (i == n_layers - 1) and use_last_activation
             layers.append(self.linear_layer(in_f[i], out_f[i], is_last=is_last))
-        return nn.Sequential(*layers)
+
+        # Add runtime assertion for input shape compatibility
+        class AssertInputShape(nn.Module):
+            def __init__(self, expected_in_features):
+                super().__init__()
+                self.expected_in_features = expected_in_features
+            def forward(self, x):
+                if x.shape[-1] != self.expected_in_features:
+                    raise RuntimeError(f"Input tensor last dimension {x.shape[-1]} does not match expected in_features {self.expected_in_features} for FC block.")
+                return x
+
+        seq = nn.Sequential(AssertInputShape(in_f[0]), *layers)
+        return seq.to(torch.float64)  # ensure double precision for all layers
 
     def cnn(self,
             in_channels: Sequence[int],
@@ -164,22 +181,71 @@ class BaseCoder(nn.Module):
             pool_kernel_size: Optional[Sequence[Optional[int]]] = None,
             n_layers: Optional[int] = None,
             use_last_activation: bool = False) -> nn.Sequential:
+        # Defensive: auto-expand single values to lists of n_layers length
+        def expand(val, n):
+            if isinstance(val, (list, tuple)):
+                return list(val)
+            return [val] * n
+
+        # Find the minimum length among all parameter lists
+        param_lengths = [
+            len(in_channels) if isinstance(in_channels, (list, tuple)) else 1,
+            len(out_channels) if isinstance(out_channels, (list, tuple)) else 1,
+            len(kernel_size) if isinstance(kernel_size, (list, tuple)) else 1,
+            len(dilation) if isinstance(dilation, (list, tuple)) else 1,
+            len(pool_kernel_size) if pool_kernel_size and isinstance(pool_kernel_size, (list, tuple)) else 1
+        ]
+        min_len = min(param_lengths)
+        # If n_layers is not set, use min_len; if set, use min(n_layers, min_len)
+        n_layers = n_layers if n_layers is not None else min_len
+        if n_layers > min_len:
+            import warnings
+            warnings.warn(f"CNN spec mismatch: Reducing n_layers from {n_layers} to {min_len} due to parameter list lengths. in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}, dilation={dilation}, pool_kernel_size={pool_kernel_size}")
+            n_layers = min_len
+
+        in_c  = expand(in_channels, n_layers)
+        out_c = expand(out_channels, n_layers)
+        ksz   = expand(kernel_size, n_layers)
+        dil   = expand(dilation, n_layers)
+        pool  = expand(pool_kernel_size if pool_kernel_size is not None else None, n_layers)
+
+        # Validate lengths
+        if not (len(in_c) == len(out_c) == len(ksz) == len(dil) == len(pool) == n_layers):
+            raise ValueError(f"CNN spec length mismatch: in_channels={in_c}, out_channels={out_c}, kernel_size={ksz}, dilation={dil}, pool_kernel_size={pool}, n_layers={n_layers}")
+
         layers: List[nn.Module] = []
-        in_c  = list(in_channels)
-        out_c = list(out_channels)
-        ksz   = list(kernel_size)
-        dil   = list(dilation)
-        if pool_kernel_size is None or len(pool_kernel_size) == 0:
-            pool = [None] * len(in_c)
-        else:
-            pool = list(pool_kernel_size)
-        assert len(in_c) == len(out_c) == len(ksz) == len(dil) == len(pool), "CNN spec length mismatch"
-        if n_layers is None:
-            n_layers = len(in_c)
         for i in range(n_layers):
             is_last = (i == n_layers - 1) and use_last_activation
             layers.append(self.conv_layer(in_c[i], out_c[i], ksz[i], dil[i], pool_size=pool[i], is_last=is_last))
-        return nn.Sequential(*layers)
+        return nn.Sequential(*layers).to(torch.float64)  # ensure double precision for all layers
+
+    def _calculate_cnn_output_size(self, sequence_length=500):
+        """
+        Calculates the output size of the CNN layers given the input
+        sequence length and the CNN configuration. This is necessary to determine
+        the correct input size for the post-FC layers after the CNN layers.
+        Works for arbitrary CNN configurations, including varying kernel sizes, 
+        dilations, and pooling.
+
+        Args:
+            sequence_length (int): The input sequence length to CNN layers.
+
+        Returns:
+            int: The size of the flattened CNN output.
+        """
+        length = sequence_length
+        for i in range(len(self.cnn_in_channels)):
+            kernel_size = self.cnn_kernel_size[i] if i < len(self.cnn_kernel_size) else self.cnn_kernel_size[-1]
+            dilation = self.cnn_dilation[i] if i < len(self.cnn_dilation) else self.cnn_dilation[-1]
+            pool_size = self.cnn_pool_ks[i] if i < len(self.cnn_pool_ks) else self.cnn_pool_ks[-1] if self.cnn_pool_ks else kernel_size
+            # Calculate the effective kernel size with dilation
+            effective_kernel_size = (kernel_size - 1) * dilation + 1
+            # Update length after convolution (assuming stride=1 and no padding)
+            length = length - effective_kernel_size + 1
+            # Update length after pooling
+            length = length // pool_size
+        final_out_channels = self.cnn_out_channels[-1] if self.cnn_out_channels else self.cnn_in_channels[-1]
+        return final_out_channels * length
 
 
 # -----------------
@@ -197,6 +263,13 @@ class BaseEncoder(BaseCoder):
         else:
             x = x.view(x.size(0), -1)
 
+        # # Each encoder will have pre-FC -> CNN -> post-FC,
+        # # such that the first input is the actual input `x`,
+        # # with shape "input_dim", which is already transferred.
+        # # The first layer of the encoder, either pre-FC or CNN,
+        # # will have the `in_features` equal to this input_dim.
+        # self.pre_fc_in_features = self.input_shape if self.has_pre_fc else None
+
         if self.has_pre_fc and (self.pre_fc_sizes or self.pre_fc_in_features):
             x = self.fc(self.pre_fc_in_features, self.pre_fc_out_features,
                         n_layers=self.n_layers_pre_fc,
@@ -213,8 +286,9 @@ class BaseEncoder(BaseCoder):
         if not self.concat_xy_before:
             x = torch.cat([x.view(x.size(0), -1), y_cat], dim=1)
 
-        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_in_features):
-            x = self.fc(self.post_fc_in_features, self.post_fc_out_features,
+        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
+            post_fc_in_features = self._calculate_cnn_output_size() if self.has_cnn else x.size(1)
+            x = self.fc(post_fc_in_features, self.post_fc_out_features,
                         n_layers=self.n_layers_post_fc,
                         sizes=self.post_fc_sizes,
                         use_last_activation=False)(x)
@@ -242,8 +316,9 @@ class BaseDecoder(BaseCoder):
                          n_layers=self.n_layers_cnn)(z)
             z = z.view(z.size(0), -1)
 
-        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_in_features):
-            z = self.fc(self.post_fc_in_features, self.post_fc_out_features,
+        if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
+            post_fc_in_features = self._calculate_cnn_output_size() if self.has_cnn else z.size(1)
+            z = self.fc(post_fc_in_features, self.post_fc_out_features,
                         n_layers=self.n_layers_post_fc,
                         sizes=self.post_fc_sizes,
                         use_last_activation=False)(z)
@@ -255,7 +330,8 @@ class BaseDecoder(BaseCoder):
 # Conditioner (C)
 # ----------------
 class Conditioner(nn.Module):
-    """Embeds labels y to y_embed. Useful when concatenating a compact y.
+    """
+    Encodes the label y into a continuous embedding in the latent space.
 
     Args:
         in_dim: y input dim (usually num_classes)
@@ -333,11 +409,14 @@ class BaseCVAE(nn.Module):
         self.conditioners = nn.ModuleList()
         if self.n_conditioners > 0:
             assert cond_dim is not None, "Provide cond_dim when using Conditioners"
-            for _ in range(self.n_conditioners):
+            if isinstance(cond_dim, int):
+                cond_dim = [cond_dim] * self.n_conditioners
+            assert len(cond_dim) == self.n_conditioners, "cond_dim length must match n_conditioners"
+            for i in range(self.n_conditioners):
                 self.conditioners.append(
                     Conditioner(
                         in_dim=num_classes,
-                        out_dim=cond_dim,
+                        out_dim=cond_dim[i],
                         sizes=conditioner_sizes,
                         activation=conditioner_activation,
                         use_batchnorm=conditioner_use_bn,
@@ -348,6 +427,12 @@ class BaseCVAE(nn.Module):
         # Build encoders/decoders
         enc_kwargs = dict(**kwargs)
         dec_kwargs = dict(**kwargs)
+        
+        # Allow per-encoder latent dimensions
+        encoder_latent_dims = kwargs.get('encoder_latent_dims', None)
+        if encoder_latent_dims is None:
+            encoder_latent_dims = [kwargs.get('latent_dim')] * self.n_encoders
+        
         enc_kwargs.update(dict(
             has_cnn=self.encoder_has_cnn,
             has_pre_fc=self.encoder_has_fc,
@@ -356,6 +441,9 @@ class BaseCVAE(nn.Module):
             n_layers_cnn=self.n_layers_cnn_encoder,
             n_layers_fc=self.n_layers_fc_encoder,
         ))
+        
+        # Store for later use
+        self.encoder_latent_dims = encoder_latent_dims
         dec_kwargs.update(dict(
             has_cnn=self.decoder_has_cnn,
             has_pre_fc=self.decoder_has_fc,
@@ -367,27 +455,33 @@ class BaseCVAE(nn.Module):
 
         self.encoders = nn.ModuleList([BaseEncoder(**enc_kwargs) for _ in range(self.n_encoders)])
         self.decoders = nn.ModuleList([BaseDecoder(**dec_kwargs) for _ in range(self.n_decoders)])
+        # -- make all layers to double precision
+        for m in self.modules():
+            if isinstance(m, (nn.Linear, nn.Conv1d, nn.Conv2d)):
+                m.double()
 
     # ---- helpers to access C/E/D ----
     def condition(self, y: torch.Tensor, idx: int = 0) -> Optional[torch.Tensor]:
+        """
+        This acts as a separate encoder for labels y, which are contatenated with
+        the inputs, but are also separately transformed via Conditioners. So that,
+        later, the inputs can be removed and only the conditioned labels can be used
+        to guide the generation.
+        """
         if self.n_conditioners == 0:
             return None
         return self.conditioners[idx % self.n_conditioners](y)
 
-    def encode(self, x: torch.Tensor, y: torch.Tensor, encoder_idx: int = 0,
-               conditioner_idx: int = 0) -> torch.Tensor:
-        y_emb = self.condition(y, conditioner_idx)
-        return self.encoders[encoder_idx](x, y, y_emb)
+    def encode(self, x: torch.Tensor, y: torch.Tensor, encoder_idx: int = 0) -> torch.Tensor:
+        return self.encoders[encoder_idx](x, y)
 
-    def decode(self, z: torch.Tensor, y: torch.Tensor, decoder_idx: int = 0,
-               conditioner_idx: int = 0) -> torch.Tensor:
-        y_emb = self.condition(y, conditioner_idx)
-        return self.decoders[decoder_idx](z, y, y_emb)
+    def decode(self, z: torch.Tensor, y: torch.Tensor, decoder_idx: int = 0) -> torch.Tensor:
+        return self.decoders[decoder_idx](z, y)
 
     def forward(self, x: torch.Tensor, y: torch.Tensor,
-                encoder_idx: int = 0, decoder_idx: int = 0, conditioner_idx: int = 0):
-        z = self.encode(x, y, encoder_idx, conditioner_idx)
-        out = self.decode(z, y, decoder_idx, conditioner_idx)
+                encoder_idx: int = 0, decoder_idx: int = 0):
+        z = self.encode(x, y, encoder_idx)
+        out = self.decode(z, y, decoder_idx)
         return out
 
 
@@ -448,36 +542,171 @@ def build_model_from_code(code: str, **kwargs) -> BaseCVAE:
     )
 
 
-# ----------------------------------------------------
-# Back-compat examples (same names, upgraded guts)
-# ----------------------------------------------------
-class TwoC2E1D(BaseCVAE):
-    """Concrete: 2 Encoders, 1 Decoder (keeps original spirit).
+class BaseTwoC2E1D(BaseCVAE):
+    """Concrete: 2 Conditioners, 2 Encoders, 1 Decoder (keeps original spirit).
     If you also want 2 Conditioners, call build_model_from_code("2C2E1D", ...).
     """
     def __init__(self, **kwargs):
-        super(TwoC2E1D, self).__init__(n_conditioners=0, n_encoders=2, n_decoders=1, **kwargs)
+        super(BaseTwoC2E1D, self).__init__(n_conditioners=2, n_encoders=2, n_decoders=1, **kwargs)
 
-    def forward(self, x, y):
-        z1 = self.encode(x, y, encoder_idx=0)
-        z2 = self.encode(x, y, encoder_idx=1)
-        z = torch.cat([z1, z2], dim=1)
-        out = self.decode(z, y, decoder_idx=0)
-        return out
+    def __call__(self, x, labels, keys):
+        """
+        Overrides the __call__ method to directly call the forward method.
+        
+        Args:
+            x (Tensor): Input data.
+            labels (Tensor): Conditional labels.
+            keys (Tensor): Key data.
 
+        Returns:
+            Output of the forward method.
+        """
+        # print('__call__')
+        return self.forward(x, labels, keys)
 
-class TwoC2E2D(BaseCVAE):
-    """Concrete: 2 Encoders, 2 Decoders (back-compat)."""
-    def __init__(self, **kwargs):
-        super(TwoC2E2D, self).__init__(n_conditioners=0, n_encoders=2, n_decoders=2, **kwargs)
+    def forward(self, x, labels, keys=None):
+        """
+        Since there are two encoders and two conditioners, we encode the input x and keys separately,
+        and also condition the labels separately for each encoder. Then we concatenate all the latent
+        representations and pass them to the decoder to reconstruct the input. 
+        The method returns the reconstructed output and the latent variables
+        for both encoders and conditioners, which can be used for computing the loss.
 
-    def forward(self, x, y):
-        z1 = self.encode(x, y, encoder_idx=0)
-        z2 = self.encode(x, y, encoder_idx=1)
-        z = torch.cat([z1, z2], dim=1)
-        out1 = self.decode(z, y, decoder_idx=0)
-        out2 = self.decode(z, y, decoder_idx=1)
-        return out1, out2
+        Arguments:
+            x (Tensor): The input data to be encoded and reconstructed.
+            labels (Tensor): The conditional labels that guide the encoding and decoding process.
+            keys (Tensor, optional): Additional input data that can be encoded separately. 
+                Defaults to None.
+
+        Returns:
+            Tuple[Tensor, Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]]:
+                - The first element is the reconstructed output from the decoder.
+                - The second element is a tuple containing mean and log variance of latent variables
+                  for both encoders and conditioners: 
+                    (z1_mean, z1_logvar, z1p_mean, z1p_logvar, z2_mean, z2_logvar, z2p_mean, z2p_logvar).
+        """
+        z1 = self.encode(x, labels, encoder_idx=0)
+        z1_mean, z1_logvar = z1.chunk(2, dim=1)
+        z1p = self.condition(labels, idx=0)
+        z1p_mean, z1p_logvar = z1p.chunk(2, dim=1)
+        z2 = self.encode(keys, labels, encoder_idx=1)
+        z2_mean, z2_logvar = z2.chunk(2, dim=1)
+        z2p = self.condition(labels, idx=1)
+        z2p_mean, z2p_logvar = z2p.chunk(2, dim=1)
+        z = torch.cat([z1, z1p, z2, z2p], dim=1)
+        x_recon = self.decode(z, labels, decoder_idx=0)
+        zvars = (z1_mean, z1_logvar, z1p_mean, z1p_logvar, z2_mean, z2_logvar, z2p_mean, z2p_logvar)
+        return (x_recon, zvars)
+    
+    def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        """Reparameterization trick to sample from N(mu, var) from N(0,1)."""
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+    
+    def latent_loss(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
+        """ 
+        Compute the KL divergence loss between the learned latent distribution
+        and the standard normal distribution.
+        """
+        logvar = torch.clamp(logvar, min=-10.0, max=10.0)
+        kll = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+        return torch.mean(kll)
+    
+    def latent_loss_bet_encoders(self, z1_vars, z1p_vars, z2_vars, z2p_vars):
+        """ 
+        Compute the KL divergence loss between two encoder distributions.
+        """
+        mu1, logvar1 = z1_vars
+        mu2, logvar2 = z2_vars
+        logvar1 = torch.clamp(logvar1, min=-10.0, max=10.0)
+        logvar2 = torch.clamp(logvar2, min=-10.0, max=10.0)
+        kll = 0.5 * torch.sum(
+            logvar2 - logvar1 + 
+            (torch.exp(logvar1) + (mu1 - mu2).pow(2)) / torch.exp(logvar2) - 1,
+            dim=1
+        )
+        return torch.mean(kll)
+    
+    def loss_function(self, x_target, x_recon, zvars, beta=0.1):
+        """ 
+        Loss function combining reconstruction loss and KL divergence.
+        """
+        recon_loss = F.mse_loss(x_recon, x_target, reduction='mean')
+        z1_mean, z1_logvar, z1p_mean, z1p_logvar, z2_mean, z2_logvar, z2p_mean, z2p_logvar = zvars
+        # latent loss between latent and standard normal distribution
+        kl_loss_enc1 = self.latent_loss(z1_mean, z1_logvar)
+        kl_loss_cond1 = self.latent_loss(z1p_mean, z1p_logvar)
+        kl_loss_enc2 = self.latent_loss(z2_mean, z2_logvar)
+        kl_loss_cond2 = self.latent_loss(z2p_mean, z2p_logvar)
+        # latent loss between encoders
+        kll1 = self.latent_loss_bet_encoders(z1_mean, z1_logvar, z2_mean, z2_logvar)
+        # latent loss between conditioners
+        kll2 = self.latent_loss_bet_encoders(z1p_mean, z1p_logvar, z2p_mean, z2p_logvar)
+        kl_loss = kl_loss_enc1 + kl_loss_cond1 + kl_loss_enc2 + kl_loss_cond2 + kll1 + kll2
+        total_loss = recon_loss + beta * kl_loss
+        return (total_loss, recon_loss, kl_loss)
+    
+
+class TwoC2E1D(BaseTwoC2E1D):
+    """
+    Customized 2C2E1D model with my own preprocessing
+    """
+    def __init__(self, labels_mean, labels_std, **kwargs):
+        super(TwoC2E1D, self).__init__(**kwargs)
+
+        self.register_buffer('labels_mean', torch.tensor(labels_mean))
+        self.register_buffer('labels_std', torch.tensor(labels_std))
+
+    
+    def __call__(self, x, labels, keys):
+        """
+        Overrides the __call__ method to directly call the forward method.
+        
+        Args:
+            x (Tensor): Input data.
+            labels (Tensor): Conditional labels.
+            keys (Tensor): Key data.
+
+        Returns:
+            Output of the forward method.
+
+        NOTE: The call function will normalize labels before passing them
+        to the forward function, ensuring that the model receives normalized labels
+        during both training and inference. This normalization is crucial for the model
+        to learn effectively and make accurate predictions based on the labels.
+        """
+        # print('__call__')
+        labels = self.normalize_labels(labels)
+        return self.forward(x, labels, keys)
+
+    def normalize_labels(self, labels, batchwise=False):
+        """
+        Normalize labels as: (label - mean) / std, where mean and std are calculated
+        batch wise. The labels won't necessarily lie between [0,1]
+        Uses the global mean and std calculated from the training data to ensure consistency 
+        between training and inference.
+
+        NOTE: Should never use batchwise normalization for the input parameter
+        labels, because the mean and std will be different for each batch and thus 
+        the model won't learn anything meaningful, although the training loss will
+        decrease. During inference, the model will try to predict outputs based on
+        the normalized labels specific 'to current batch in test set' and thus will,
+        fail miserably in predicting correct outputs. The outputs will mostly resemble
+        random noise-like curves, with slight twists at the merger stage.
+
+        Arguments:
+            labels (Tensor): The labels to be normalized.
+            batchwise (bool): Whether to calculate mean and std for each batch or use global mean and std.
+        """
+        if batchwise:
+            logging.warning("Batchwise normalization is not recommended for labels as it can lead " \
+            "to inconsistent training and inference. Consider using global mean and std for normalization.")
+            batch_mean = labels.mean(dim=0, keepdim=True)
+            batch_std = labels.std(dim=0, keepdim=True) + 1e-8  # Add small value to avoid division by zero
+            return (labels - batch_mean) / batch_std
+        return (labels - self.labels_mean) / self.labels_std
+    
 
 
 # -----------------------------

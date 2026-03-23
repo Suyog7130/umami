@@ -295,6 +295,42 @@ def mismatch_anal(args, cut=0.8):
     logging.info("Mismatch analysis completed.")
 
 
+def plot_rom_opt_mm_hist(fname=None, dir=DIR, time=TIME, fontsize=15, labelsize=13):
+    dir = '../results/20260311/'
+    time = datetime.now().strftime('%Y%m%d_%H%M%S')
+    if fname is None:
+        fname = dir + 'mismatch_comparison_results-20260311_002408.csv'
+    df = pd.read_csv(fname, skiprows=1,
+                     names=['m1', 'm2', 's1', 's2', 'delta_t', 'f_lower', 'mm_rom_hp', 'mm_rom_hc', 'mm_opt_hp', 'mm_opt_hc'])
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+    bins = np.logspace(np.log10(df['mm_rom_hp'].min()+1e-10), np.log10(df['mm_rom_hp'].max()+1e-10), 50)
+    df.hist('mm_rom_hp', bins=bins, ax=axes[0], grid=False, edgecolor='black', color='salmon')
+    df.hist('mm_opt_hp', bins=bins, ax=axes[0], grid=False, edgecolor='black', color='lightgreen', alpha=0.60)
+    df.hist('mm_rom_hc', bins=bins, ax=axes[1], grid=False, edgecolor='black', color='salmon')
+    df.hist('mm_opt_hc', bins=bins, ax=axes[1], grid=False, edgecolor='black', color='lightgreen', alpha=0.60)
+    titles = [ '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
+    for ax, title in zip(axes, titles):
+        ax.set_xscale('log')
+        ax.tick_params(which="both", direction='in', top=True, right=True)
+        ax.tick_params(which='both', direction='in', top=True, right=True)
+        ax.tick_params(labelsize=labelsize)
+        ax.set_xscale('log')
+        ax.set_xlabel('Mismatch', fontsize=fontsize)
+        ax.set_ylabel('Frequency', fontsize=fontsize)
+        ax.legend(['ROM', 'Opt'], fontsize=labelsize)
+        ax.text(0.95, 0.95, title, fontweight='bold',
+                   transform=ax.transAxes, fontsize=fontsize, va='top', ha='right')
+        ax.set_title(None)
+    plt.tight_layout()
+    savename = dir + 'rom_opt_mm_hist'
+    plt.savefig(savename+'-'+time+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(savename+'-white'+'-'+time+'.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    plt.close()
+    logging.info(f"ROM and Optimized mismatch histograms saved to {savename}")
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot training and validation loss from a file.")
     parser.add_argument('--histogram', action='store_true',
@@ -318,5 +354,6 @@ if __name__ == "__main__":
     #                     datefmt='%Y-%m-%d %H:%M:%S')
 
 
-    plot_running_loss()
+    # plot_running_loss()
     # mismatch_anal(args)
+    plot_rom_opt_mm_hist()

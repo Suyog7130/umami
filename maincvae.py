@@ -22,6 +22,7 @@ Working on the minimal working example today!
 """
 
 import os
+import json
 import time
 import argparse
 import h5py
@@ -67,14 +68,21 @@ from plotutils import putils
 
 from datacvae import CustomDataset, CustomDataLoader
 from datacvae import PRESET_ARRAY_SIZE, SAMPLE_RATE, DELTA_T, f_lower, sample_len
-from cvae import CVAE
+from cvae import CVAE, CAE
+
+from utils import polarizations_from_ampfreq, calc_polarization_mismatch
 
 from data import SEOBNRv4
 
 import random
 markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
 
-
+BASE_MODEL_CONFIG = {
+    'modeltype': 'cvae',
+    'latent_dim_x': 8,
+    'latent_dim_key': 3,
+    'paramsmean': False,  # whether to use mean and std of labels for normalization
+}
 
 # def train_one_epoch(training_loader, epoch_index, tb_writer=None):
 #      running_loss = 0.
@@ -138,6 +146,10 @@ def train(args):
         os.makedirs(f'../results/{today}/')
     savedir = f'../results/{today}/'
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    os.makedirs(savedir, exist_ok=True)
+    os.makedirs('../trained-models', exist_ok=True)
+
+    noklloss = True if args.modeltype=='cae' else False
 
     # epoch = 0
     # best_vloss = 1_000_000.
@@ -164,9 +176,14 @@ def train(args):
         validhdf += '-f_cutoff'
     elif args.aligned:
         num_classes = 4  # m1, m2, spin1z, spin2z
-        trainhdf += '-100000-fcutoff-uniform-aligned'
+        trainhdf += '-100000-fcutoff-uniform-aligned-regen'
         # trainhdf += '-4e5-fcutoff-uniform-aligned'
-        validhdf += '-100000-fcutoff-uniform-aligned'
+        validhdf += '-100000-fcutoff-uniform-aligned-regen'
+
+    if args.dummy:
+        # -- use validation set for training, for quick code check!
+        trainhdf = args.datadir+args.approximant+'-val-100000-fcutoff-uniform-aligned-regen'
+        validhdf += '-100000-fcutoff-uniform-aligned-regen'
     
     if not os.path.isfile(trainhdf + '.hdf'):
         raise FileNotFoundError(f"Training data file not found: {trainhdf}.hdf")
@@ -182,20 +199,22 @@ def train(args):
         raise RuntimeError(f"Could not open {trainhdf}.hdf. The file may be corrupted.")
 
     logging.info(f'Reading training data from {trainhdf}.hdf')
-    train_set = CustomDataset(forwhat='train', approximant=args.approximant,
+    train_set = CustomDataset(forwhat='train', approximant=args.approximant, returnattr=True,
                             convert=args.convert, hdf_fname=trainhdf, train_device=args.device)
     logging.info(f'Reading validation data from {validhdf}.hdf')
-    valid_set = CustomDataset(forwhat='valid', approximant=args.approximant,
+    valid_set = CustomDataset(forwhat='valid', approximant=args.approximant, returnattr=True,
                             convert=args.convert, hdf_fname=validhdf, train_device=args.device)
     # logging.info(f"Train set size: {len(train_set)}")
     # logging.info(f"Validation set size: {len(valid_set)}")
-
+            
     # try:
     #     training_loader = CustomDataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     #     validation_loader = CustomDataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
     # except ValueError:
     #     training_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     #     validation_loader = DataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
+
+    # -- data loaders return [inputs, target, labels, keys] list!
     training_loader = CustomDataLoader(train_set, batch_size=args.batch_size, shuffle=True)
     validation_loader = CustomDataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
     logging.info(training_loader.__dict__)
@@ -204,64 +223,168 @@ def train(args):
     logging.info(f'Number of Training batches: {ntbatches}')  # this doesn't return the batchsize!
     logging.info(f'Number of Validationg batches: {nvbatches}')
 
+    # -- get mean and std of labels for normalization
+    params_fname = '../data/params-' + args.approximant + '-train-100000-fcutoff-uniform-aligned-regen'
+    params_df = pd.read_csv(params_fname+'.csv', index_col=0, sep=',')
+    params_mean = params_df.mean().values
+    params_std = params_df.std().values
+    logging.info(f"Labels mean: {params_mean}")
+    logging.info(f"Labels std: {params_std}")
+    params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
+    params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
+
+    MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
+    if not args.use_base_model_config:
+        MODEL_CONFIG['paramsmean'] = False
+        MODEL_CONFIG['labels_mean'] = params_mean
+        MODEL_CONFIG['labels_std'] = params_std
+        MODEL_CONFIG['num_classes'] = num_classes
+        MODEL_CONFIG['latent_dim_x'] = 32
+        MODEL_CONFIG['latent_dim_key'] = 2
+        MODEL_CONFIG['learning_rate'] = 1e-3
+    logging.info(f'Model Config: {MODEL_CONFIG}')
+
     # Initialize Model
     # `num_classes` is the size of the labels.
-    if args.fcutoff or args.aligned:
-        PRESET_ARRAY_SIZE = 8190
-    model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2)).to(args.device)
+    # if args.fcutoff or args.aligned:
+    PRESET_ARRAY_SIZE = 8191
+    if args.modeltype=='cae':
+        logging.info(f'Using model type: CAE with num_classes={num_classes} and preset_array_size={PRESET_ARRAY_SIZE}')
+        model = CAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2),
+                    MODEL_CONFIG=MODEL_CONFIG)
+    else:
+        logging.info(f'Using model type: CVAE with num_classes={num_classes} and preset_array_size={PRESET_ARRAY_SIZE}')
+        model = CVAE(input_shape=(2, PRESET_ARRAY_SIZE), num_classes=num_classes, key_shape=(2,2),
+                    MODEL_CONFIG=MODEL_CONFIG)
+
+    if args.model is not None:
+        model_path = '../trained-models/' + args.model
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        model.load_state_dict(torch.load(model_path, map_location=args.device))
+        logging.info(f"Loaded model from {model_path}")
+
+    # -- move model to device and convert to double precision
+    model.to(device)
+    model.to(torch.float64)
+
     # Add a learning rate scheduler
     # Scheduler will adjust learning rate after every epoch
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=MODEL_CONFIG.get('learning_rate', 1e-4))
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 
+                mode='min', 
+                factor=0.5, 
+                patience=2, 
+                threshold=1e-5)
     logging.info('Model Initialized')
 
     logging.info(f'Starting Training with: {args}')
     train_rloss, valid_rloss = [], []  # running loss every batch
     train_loss, valid_loss = [], [] 
-    netreconloss, netklloss = [], []
+    netreconloss, netklloss, netmmloss = [], [], []
+    netvreconloss, netvklloss, netvmmloss = [], [], []
     for epoch in tqdm(range(args.epochs), desc='Epoch'):
         model.train(True)
         # avg_loss = train_one_epoch(training_loader, epoch)
 
+        # -- Since, I want to rewrite the HDF file in the first epoch,
+        # -- after that is done, changes are only visible to the next
+        # -- epoch if the HDF file is properly closed after writing. 
+        # -- So, for epoch==1, I will first close the training_loader and
+        # -- validation_loader and then reopen them, so that the changes are 
+        # -- visible to the next epoch.
+        if epoch==1 and 'regen' not in trainhdf:
+            del training_loader
+            del validation_loader
+            torch.cuda.empty_cache()  # Clear GPU memory cache to free up memory
+            training_loader = CustomDataLoader(train_set, batch_size=args.batch_size, shuffle=True)
+            validation_loader = CustomDataLoader(valid_set, batch_size=args.batch_size, shuffle=True)
+
         # Train model for one Epoch
-        for x, target, labels, keys in tqdm(training_loader, total=len(training_loader),
-                                    desc='batch'):
+        for x, target, labels, keys, strains, attr in tqdm(training_loader, total=len(training_loader),
+                                            desc='Steps/Batchs'):
             """
             `x` is [freq, amp], `labels` is [m1,m2] etc. and
             `keys` is [[amp-mean,amp-var],[freq-mean,freq-var]]
             """
             x, target, labels, keys = x.to(args.device), target.to(args.device), labels.to(args.device), keys.to(args.device)
+            strains = strains.to(args.device)
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
             
             # TODO: have it such that the training target are unnormalized waveforms!
             # loss, reconloss, klloss = model.loss_function(x, x_recon, zvars)
-            loss, reconloss, klloss = model.loss_function(target, x_recon, zvars)
+            if noklloss:
+                loss, reconloss, mmloss = model.mismatch_nokl_loss_func(target, x_recon, zvars, strains=strains, keys=keys, attr=attr)
+            elif args.usemmloss:
+                loss, reconloss, klloss, mmloss = model.mismatch_loss_func(target, x_recon, zvars, strains=strains, keys=keys, attr=attr)
+            else:
+                loss, reconloss, klloss = model.loss_function(target, x_recon, zvars)
             loss.backward()
+
             train_rloss.append(loss.item())
             netreconloss.append(reconloss.item())
-            netklloss.append(klloss.item())
-        train_loss.append(loss.item())
+            if not noklloss:
+                netklloss.append(klloss.item())
+            if args.usemmloss or noklloss:
+                netmmloss.append(mmloss.item())
 
+            # -- perform optimization per batch/step
+            optimizer.step()
+
+        # -- update learning rate per epoch
+        scheduler.step(loss)
+        logging.info(f"Epoch {epoch+1} completed. Learning rate adjusted to: {scheduler.get_last_lr()[0]:.2e}")
+        logging.debug(f"x shape: {x.shape}, labels shape: {labels.shape}, keys shape: {keys.shape}")
+
+        train_loss.append(loss.item())
+        logging.info(f'Average training loss for epoch {epoch+1}: {loss.item():.4f}')
+
+        # NOTE: Validation is performed after all training batches are done
+        # per epoch, so the validation loss can be lower than the training loss 
+        # for the last batch, since the model has already been updated by the 
+        # last training batch before validation. Training loss at the start of
+        # each epoch will be larger than the validation loss at the end of the 
+        # previous epoch, since the model is updated after validation and before 
+        # the next epoch starts. Thus, we have put the optimizer step after
+        # validation step, so that the training loss and validation loss are more
+        # comparable to each other.
         model.eval()
         with torch.no_grad():  # Disable gradient computation for validation
             # just reconstruct target and calculate diff
-            for vx, target, vlabels, vkeys in tqdm(validation_loader, desc='val-batch'):
+            for vx, target, vlabels, vkeys, vstrains, vattr in tqdm(validation_loader, desc='val-batch'):
                 vx, target, vlabels, vkeys = vx.to(args.device), target.to(args.device), vlabels.to(args.device), vkeys.to(args.device)
                 vx_recon, vzvars = model(vx, vlabels, vkeys)
-                vloss, _reconloss, _klloss = model.loss_function(target, vx_recon, vzvars)
+                if noklloss:
+                    vloss, vreconloss, vmmloss = model.mismatch_nokl_loss_func(target, vx_recon, vzvars, strains=vstrains.to(args.device), keys=vkeys.to(args.device), attr=vattr)
+                elif args.usemmloss:
+                    vloss, vreconloss, vklloss, vmmloss = model.mismatch_loss_func(target, vx_recon, vzvars, strains=vstrains.to(args.device), keys=vkeys.to(args.device), attr=vattr)
+                else:
+                    vloss, vreconloss, vklloss = model.loss_function(target, vx_recon, vzvars)
                 valid_rloss.append(vloss.item())
+                netvreconloss.append(vreconloss.item())
+                if not noklloss:
+                    netvklloss.append(vklloss.item())
+                if args.usemmloss or noklloss:
+                    netvmmloss.append(vmmloss.item())
             valid_loss.append(vloss.item())
         tqdm.write(f'Epoch {epoch+1} : train loss {loss.item()} & valid loss {vloss.item()}')
         
-        optimizer.step()  # Do optimization step after validation
-        scheduler.step()  # Update learning rate
-        logging.debug(f"x shape: {x.shape}, labels shape: {labels.shape}, keys shape: {keys.shape}")
+        # Save model checkpoint at every epoch as backup
+        backup_model_path = f'../trained-models/model-backup-epoch{epoch}-{timestamp}'
+        torch.save(model.state_dict(), backup_model_path)
+        logging.info(f"Model backup saved at {backup_model_path}")
     
     savename = timestamp + '-' + str(args.epochs)
     if not os.path.isdir('../trained-models/'):
         os.makedirs('../trained-models/')
-    model_path = f'../trained-models/model-{savename}'
+    model_path = f'../trained-models/model-'
+    model_path += 'mmloss-' if args.usemmloss else ''
+    model_path += args.modeltype + '-nokll-' if noklloss else ''
+    model_path += savename
+
     if not args.nosave:
         if not os.path.isdir(savedir):
             os.makedirs(savedir)
@@ -276,8 +399,20 @@ def train(args):
         np.savetxt(savedir + f'valid-rloss-{timestamp}.txt', valid_rloss)
         dfnet = pd.DataFrame({
             'netreconloss': netreconloss,
-            'netklloss': netklloss})
-        dfnet.to_csv(savedir + f'net-loss-{timestamp}.csv', index=False)
+            'netklloss': netklloss if not noklloss else [0]*len(netreconloss),
+            'netmmloss': netmmloss if args.usemmloss or noklloss else [0]*len(netreconloss),
+            'netvreconloss': netvreconloss,
+            'netvklloss': netvklloss if not noklloss else [0]*len(netvreconloss),
+            'netvmmloss': netvmmloss if args.usemmloss or noklloss else [0]*len(netvklloss)
+            })
+        savename = args.modeltype + '-nokll-' if noklloss else ''
+        dfnet.to_csv(savedir + f'net-loss-{savename}{timestamp}.csv', index=False)
+
+        # -- Save MODEL_CONFIG to JSON file with same savename for future reference
+        model_config_path = f'../trained-models/model-config-{savename}{timestamp}.json'
+        with open(model_config_path, 'w') as f:
+            json.dump(MODEL_CONFIG, f)
+        logging.info(f"Model config saved at {model_config_path}")
 
     fig, axes = plt.subplots(2, 1, figsize=(5, 10))
     axes[0].plot(np.arange(args.epochs), train_loss, label='training loss')
@@ -288,7 +423,15 @@ def train(args):
     axes[1].plot(np.arange(args.epochs*ntbatches), train_rloss, label='train running loss')
     axes[1].plot(np.arange(args.epochs*nvbatches), valid_rloss, label='valid running loss')
     axes[1].plot(np.arange(args.epochs*ntbatches), netreconloss, label='reconstruction loss')
-    axes[1].plot(np.arange(args.epochs*ntbatches), netklloss, label='latent loss')
+    if not noklloss:
+        axes[1].plot(np.arange(args.epochs*ntbatches), netklloss, label='latent loss')
+    if args.usemmloss or noklloss:
+        axes[1].plot(np.arange(args.epochs*ntbatches), netmmloss, label='mismatch loss')
+    axes[1].plot(np.arange(args.epochs*nvbatches), netvreconloss, label='valid reconstruction loss')
+    if not noklloss:
+        axes[1].plot(np.arange(args.epochs*nvbatches), netvklloss, label='valid latent loss')
+    if args.usemmloss or noklloss:
+        axes[1].plot(np.arange(args.epochs*nvbatches), netvmmloss, label='valid mismatch loss')
     axes[1].set_xlabel('Batch', fontsize=12)
     axes[1].set_yscale('log')  # Set y-axis to logarithmic scale
     axes[1].set_ylabel('Loss', fontsize=12)
@@ -296,7 +439,7 @@ def train(args):
     # putils.beautifyPlot(axes)
     plt.tight_layout()
     if not args.nosave:
-        plt.savefig(savedir + f'epoch-loss-{timestamp}.png', dpi=300)
+        plt.savefig(savedir + f'epoch-loss-{savename}{timestamp}.png', dpi=300)
 
     # if device != 'cpu':
     #      vlabels = vlabels.to('cpu')
@@ -330,6 +473,7 @@ class Test:
             self.testhdf += '-f_cutoff'
         self.batch_size = args.batch_size
         self.device = args.device
+        self.modeltype = args.modeltype
 
         if not args.time_complexity and not args.time_compare:
             self.test_loader = self.setdataloader()
@@ -345,18 +489,62 @@ class Test:
         self.savedir = savedir+f'/{today}/'
 
         self.epochs = 1
-        self.model_path = '../trained-models/' + args.model
-        logging.info('Test DataLoader set up.')
+        if args.model is not None:
+            self.model_path = '../trained-models/' + args.model        
+            logging.info('Test DataLoader set up.')
 
     def _load_model(self):
-        pass
+        """
+        Load the trained model from the specified path.
+        Depending on the model type (CAE or CVAE), initialize the appropriate 
+        model architecture and load the state dictionary.
+        Also, gets the mean and std of labels for normalization, 
+        which are needed to initialize the model.
+        """
+        # Load the trained model
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
+        num_classes = 4 if self.aligned else 2
+
+        # -- get mean and std of labels for normalization
+        params_fname = '../data/params-' + args.approximant + '-train-100000-fcutoff-uniform-aligned-regen'
+        params_df = pd.read_csv(params_fname+'.csv', index_col=0, sep=',')
+        params_mean = params_df.mean().values
+        params_std = params_df.std().values
+        logging.info(f"Labels mean: {params_mean}")
+        logging.info(f"Labels std: {params_std}")
+        params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
+        params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
+
+        MODEL_CONFIG['paramsmean'] = True
+        MODEL_CONFIG['labels_mean'] = params_mean
+        MODEL_CONFIG['labels_std'] = params_std
+        MODEL_CONFIG['num_classes'] = num_classes
+        MODEL_CONFIG['latent_dim_x'] = 32
+        MODEL_CONFIG['latent_dim_key'] = 2
+
+        if self.modeltype=='cae':
+            logging.info(f'Using model type: CAE with num_classes={num_classes} and preset_array_size={preset_array_size}')
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2),
+                        MODEL_CONFIG=MODEL_CONFIG)
+        else:
+            logging.info(f'Using model type: CVAE with num_classes={num_classes} and preset_array_size={preset_array_size}')
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2),
+                        MODEL_CONFIG=MODEL_CONFIG)
+        model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+        model.to(self.device)
+        model.to(torch.float64)
+        model.eval()  # Set model to evaluation mode
+        logging.info(f"Loaded model from {self.model_path}")
+        return model
 
     def setdataloader(self, batch_size=None, custom_batch=None):
         """
         Set up the DataLoader for the test dataset.
         """
         batch_size = batch_size if batch_size is not None else self.batch_size
-        testhdf = self.testhdf + '-100000-fcutoff-uniform-aligned' if self.aligned else self.testhdf
+        testhdf = self.testhdf + '-100000-fcutoff-uniform-aligned-regen' if self.aligned else self.testhdf
+        if not os.path.isfile('../data/' + testhdf + '.hdf'):
+            raise FileNotFoundError(f"Test data file not found: {testhdf}.hdf")
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
                                 convert=self.convert, hdf_fname=testhdf,
                                 returnattr=True, train_device=args.device, 
@@ -372,14 +560,8 @@ class Test:
         TODO: Create a test dir in results in dir and a subfolder with timestamp !!
         """
         logging.info(f"Testing with model: {self.model_path}")
-        # Load the trained model
-        preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
-        num_classes = 4 if self.aligned else 2
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                    key_shape=(2,2)).to(args.device)
-        model.load_state_dict(torch.load(self.model_path, map_location=device))
-        model.to(device)
-        model.eval()
+
+        model = self._load_model()
         logging.info("Model loaded and set to evaluation mode.")
 
         # Initialize dataframe to store mismatch results of whole test set!
@@ -404,16 +586,19 @@ class Test:
             iters += 1
             
             # Move labels to the appropriate device
-            labels = labels.to(device)
+            labels = labels.to(self.device)
 
             # Generate reconstructed data
             with torch.no_grad():
                 # Use the label-conditioned encoders and decoder to generate data
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
-                z1 = model.reparameterize(z1_mean, z1_log_var)
-                z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                reconst = model.decode(z1, z1p, labels)
+                if self.modeltype=='cae':
+                    reconst = model.decode(z1_mean, z1p_mean, labels)
+                else:
+                    z1 = model.reparameterize(z1_mean, z1_log_var)
+                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    reconst = model.decode(z1, z1p, labels)
             logging.debug(f"x shape: {x.shape}, reconst shape: {reconst.shape}, keys shape: {keys.shape}")
             if not self.aligned:
                 logging.info('Test for current batch completed. Removing zero padding if any.')
@@ -651,11 +836,16 @@ class Test:
         Nruns = 1000
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2)).to(args.device)
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
                     key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(torch.float64)
         model.to(device)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
@@ -686,9 +876,12 @@ class Test:
                 # Use the label-conditioned encoders and decoder to generate data
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
-                z1 = model.reparameterize(z1_mean, z1_log_var)
-                z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                reconst = model.decode(z1, z1p, labels)
+                if self.modeltype=='cae':
+                    reconst = model.decode(z1_mean, z1p_mean, labels)
+                else:
+                    z1 = model.reparameterize(z1_mean, z1_log_var)
+                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    reconst = model.decode(z1, z1p, labels)
                 
                 if not self.aligned:
                     logging.info('Test for current batch completed. Removing zero padding if any.')
@@ -747,25 +940,38 @@ class Test:
         plt.close()
         print("All UQ tests completed.")
 
-    def test_timecomplexity(self, num=100):
+    def test_timecomplexity(self, num=int(1e6)):
         """
         Test the time complexity of the model for generating a 1-10e4 ish number of samples.
         This is useful for understanding the efficiency of the model in real-time
         applications.
         """
         # Nruns = [1, 10, 50, 100, 500, 1e3, 5e3, 1e4]
-        Nruns = np.logspace(0, 5, num=num, dtype=int)
+        # Nruns = np.logspace(0, 5, num=num, dtype=int)
         # Nruns = [int(n) for n in [1, 10, 50, 100, 500, 1e3, 5e3, 1e4, 5e4]]
+        Nruns = np.arange(1,num+1)
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                    key_shape=(2,2)).to(args.device)
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2)).to(args.device)
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
         model.to(device)
+        model.to(torch.float64)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
+
+        # -- Open CSV file to save results on the go    
+        import csv
+        csv_fname = self.savedir + 'timecomplexity_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv'
+        csvfile = open(csv_fname, mode='w', newline='')
+        csvfile.write('num_samples,time_seconds\n')  # Write header row
+        logging.info(f"CSV file opened for writing time complexity results: {csv_fname}")
 
         times = []
         for Nr in Nruns:
@@ -778,7 +984,7 @@ class Test:
                 labels = np.vstack((m1, m2, spin1z, spin2z)).T
             else:
                 labels = np.vstack((m1, m2)).T
-            labels = torch.tensor(labels, dtype=torch.float32).to(device)
+            labels = torch.tensor(labels, dtype=torch.float64).to(device)
             logging.info(f'Choosing to test sample size {labels.shape}')
 
             # Measure time taken by model to generate samples
@@ -787,13 +993,27 @@ class Test:
                 # Use the label-conditioned encoders and decoder to generate data
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
-                z1 = model.reparameterize(z1_mean, z1_log_var)
-                z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                reconst = model.decode(z1, z1p, labels)
+                if self.modeltype=='cae':
+                    reconst = model.decode(z1_mean, z1p_mean, labels)
+                else:
+                    z1 = model.reparameterize(z1_mean, z1_log_var)
+                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    reconst = model.decode(z1, z1p, labels)
             end_time = time.time()
             elapsed_time = end_time - start_time
             times.append(elapsed_time)
             logging.info(f'Time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
+            # -- Write the result to CSV file each time, so that if the process is interrupted, 
+            # we still have the results up to that point.
+            csvfile.write(f'{Nr},{elapsed_time}\n')
+
+        # Close the CSV file after writing all results
+        csvfile.close()
+        logging.info(f"Time complexity results saved to CSV file: {csvfile.name}")
+
+        # # Save the time complexity results to a CSV file
+        # df_time = pd.DataFrame({'num_samples': Nruns, 'time_seconds': times})
+        # df_time.to_csv(self.savedir + 'timecomplexity_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv', index=False)
 
         # Plot the time taken v/s number of samples plots
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
@@ -812,6 +1032,7 @@ class Test:
         plt.savefig(figname+'.png', dpi=300, transparent=True)
         plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
+        logging.info("Time complexity test completed and plot saved.")
 
 
     def test_timecomplexity_compare(self, iters=100):
@@ -828,9 +1049,14 @@ class Test:
         logging.info(f"Testing with model: {self.model_path}")
         preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2)).to(args.device)
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
                     key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(torch.float64)
         model.to(device)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
@@ -849,7 +1075,7 @@ class Test:
                 labels = np.vstack((m1, m2, spin1z, spin2z)).T
             else:
                 labels = np.vstack((m1, m2)).T
-            labels = torch.tensor(labels, dtype=torch.float32).to(device)
+            labels = torch.tensor(labels, dtype=torch.float64).to(device)
             logging.info(f'Choosing to test sample size {labels.shape}')
 
             massratios = q
@@ -1096,18 +1322,23 @@ class Test:
         """
         logging.info(f"Generating new samples with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff or self.aligned else PRESET_ARRAY_SIZE
+        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
-        model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                    key_shape=(2,2)).to(args.device)
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2))
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                    key_shape=(2,2))
         model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(torch.float64)
         model.to(device)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
         if labels is not None:
             if not isinstance(labels, torch.Tensor):
-                labels = torch.tensor(labels, dtype=torch.float32)
+                labels = torch.tensor(labels, dtype=torch.float64)
 
             labels = labels.to(device)
             num_samples = labels.shape[0]
@@ -1115,9 +1346,12 @@ class Test:
             with torch.no_grad():
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
-                z1 = model.reparameterize(z1_mean, z1_log_var)
-                z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                generated = model.decode(z1, z1p, labels)
+                if self.modeltype=='cae':
+                    generated = model.decode(z1_mean, z1p_mean, labels)
+                else:
+                    z1 = model.reparameterize(z1_mean, z1_log_var)
+                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    generated = model.decode(z1, z1p, labels)
         else:
             logging.info(f'Generating {num_samples} samples by sampling from latent space.')
             with torch.no_grad():
@@ -1126,11 +1360,11 @@ class Test:
                 if self.aligned:
                     random_labels = torch.tensor(np.random.uniform(
                         [5, 5, -0.9, -0.9], [75, 75, 0.9, 0.9], size=(num_samples, 4)),
-                        dtype=torch.float32).to(device)
+                        dtype=torch.float64).to(device)
                 else:
                     random_labels = torch.tensor(np.random.uniform(
                         [5, 5], [75, 75], size=(num_samples, 2)),
-                        dtype=torch.float32).to(device)
+                        dtype=torch.float64).to(device)
                 generated = model.decode(z1, z1p, random_labels)
         
         if nomismatch:
@@ -1171,6 +1405,148 @@ class Test:
                                         savedir=self.savedir, nobatchwiseplot=False,
                                         num_saved_overplots=0, generating=True)
         return generated
+
+    def test_mismatch_compare(self, test_ml_model=False, get_new_orig_wave=False):
+        """
+        Test the mismatch of ML-generated, ROM and optimized SEOBNRv4 waveforms 
+        against the base SEOBNRv4 waveforms for the same Test dataset.
+        This is useful for understanding the accuracy of the ML model in comparison
+        to the base, ROM and optimized models across a range of parameters.
+
+        The waveform keyargs are read from the HDF file containing the test dataset, 
+        and the same keyargs are used to generate the base, ROM, optimized, and ML 
+        waveforms for comparison. These saved attributes include the masses, spins, 
+        DELTA_T, f_lower, and approximant used for generating the waveforms in the test dataset.
+        """
+        if test_ml_model:
+            raise NotImplementedError("Mismatch comparison for ML-generated waveforms is not implemented yet.")
+
+        # -- load data from testdataset with batchsize=1, so that we can generate waveforms
+        # for each waveform and compare mismatches.
+        test_loader = self.setdataloader(batch_size=1)
+
+        # -- open file to save mismatch comparison results
+        csv_fname = self.savedir + 'mismatch_comparison_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv'
+        csvfile = open(csv_fname, mode='w', newline='')
+        csvfile.write('m1,m2,s1,s2,delta_t,f_lower,mm_rom_hp,mm_rom_hc,mm_opt_hp,mm_opt_hc\n')  # Write header row
+        logging.info(f"CSV file opened for writing mismatch comparison results: {csv_fname}")
+
+        for (x, labels, keys, phases, strains, attr) in tqdm(iter(test_loader)):
+            m1, m2, s1, s2 = labels[0].cpu().numpy()
+            delta_t = attr['delta_t'][0]
+            f_lower = attr['f_lower'][0]
+            logging.info(f"Testing mismatch comparison for waveform with parameters: \
+                         m1={m1}, m2={m2}, s1={s1}, s2={s2}, delta_t={delta_t}, f_lower={f_lower}")
+
+            # -- set waveform generation parameters
+            wfkwargs = {
+                'mass1': m1,
+                'mass2': m2,
+                'spin1z': s1,
+                'spin2z': s2,
+                'delta_t': delta_t,
+                'f_lower': f_lower,
+                'approximant': self.approximant
+            }
+
+            # -- get original base waveforms
+            hp_hdf = strains[0][0].detach().cpu().numpy()
+            hc_hdf = strains[0][1].detach().cpu().numpy()
+            logging.info(f'length of hdf hp and hc: {len(hp_hdf)}, {len(hc_hdf)}')
+            if get_new_orig_wave:
+                hp_orig, hc_orig = pycbc.waveform.get_td_waveform(**wfkwargs)
+                hp_orig = hp_orig.trim_zeros()
+                hc_orig = hc_orig.trim_zeros()
+                logging.info(f'length of original hp and hc after trimming zeros: {len(hp_orig)}, {len(hc_orig)}')
+                if len(hp_orig)>PRESET_ARRAY_SIZE:
+                    diff = len(hp_orig) - PRESET_ARRAY_SIZE
+                    hp_orig = hp_orig[diff:]
+                    hc_orig = hc_orig[diff:]
+                    logging.info(f'Trimmed hdf hp and hc to preset array size: {len(hp_hdf)}, {len(hc_hdf)}')
+                if not args.nosave:
+                    plot_hphc_overplot(hp_orig, hc_orig, hp_hdf, hc_hdf, savename='../results/overplot-hdf', label=labels[0], 
+                                       transparent=False)
+            else:
+                hp_orig = hp_hdf
+                hc_orig = hc_hdf  # -- plot waveforms to see how they look like
+            
+            # -- get SEOBNRv4_ROM waveforms (this is frequency-domain)
+            wfkwargs['approximant'] = 'SEOBNRv4_ROM'
+            hp_rom, hc_rom = pycbc.waveform.get_td_waveform(**wfkwargs)
+            logging.info(f'{type(hp_rom)=}, {type(hc_rom)=}, {hp_rom.shape=}, {hc_rom.shape=}')
+            hp_rom = hp_rom.trim_zeros()
+            hc_rom = hc_rom.trim_zeros()
+            hp_rom = np.asarray(hp_rom, dtype=np.float64)
+            hc_rom = np.asarray(hc_rom, dtype=np.float64)
+            logging.info(f"Original waveform length: {len(hp_orig)}, ROM waveform length: {len(hp_rom)}")
+            if len(hp_orig)<len(hp_rom):
+                # Align merger points and extract matching segment
+                merger_idx_orig = np.argmax(np.abs(hp_orig))
+                merger_idx_rom = np.argmax(np.abs(hp_rom))
+                
+                # Calculate left and right portions relative to merger in original
+                left_len = merger_idx_orig
+                right_len = len(hp_orig) - merger_idx_orig - 1
+                
+                # Extract ROM segment centered at its merger with same left/right lengths
+                rom_start = max(0, merger_idx_rom - left_len)
+                rom_end = min(len(hp_rom), merger_idx_rom + right_len + 1)
+                
+                # Adjust if we hit boundaries
+                if rom_start == 0:
+                    rom_end = min(len(hp_rom), left_len + right_len + 1)
+                elif rom_end == len(hp_rom):
+                    rom_start = max(0, len(hp_rom) - left_len - right_len - 1)
+                
+                hp_rom = hp_rom[rom_start:rom_end]
+                hc_rom = hc_rom[rom_start:rom_end]
+                logging.info(f"Aligned ROM waveform at merger. Original length: {len(hp_orig)}, ROM segment length: {len(hp_rom)}")
+            assert len(hp_orig) == len(hp_rom), "After alignment, original and ROM waveforms should have the same length."
+            assert len(hc_orig) == len(hc_rom), "After alignment, original and ROM waveforms should have the same length."
+
+            # -- plot waveforms to see how they look like
+            if not args.nosave:
+                plot_hphc_overplot(hp_orig, hc_orig, hp_rom, hc_rom, savename='../results/overplot-rom', label=labels[0], 
+                                   transparent=False)
+               
+            # -- calculate mismatches
+            mm_rom_hp = calc_polarization_mismatch(hp_orig, hp_rom, delta_t=delta_t, f_lower=f_lower)
+            mm_rom_hc = calc_polarization_mismatch(hc_orig, hc_rom, delta_t=delta_t, f_lower=f_lower)
+
+            # -- get SEOBNRv4_opt waveforms (this is time-domain)
+            wfkwargs['approximant'] = 'SEOBNRv4_opt'
+            hp_opt, hc_opt = pycbc.waveform.get_td_waveform(**wfkwargs)
+            hp_opt = hp_opt.trim_zeros()
+            hc_opt = hc_opt.trim_zeros()
+            hp_opt = np.asarray(hp_opt, dtype=np.float64)
+            hc_opt = np.asarray(hc_opt, dtype=np.float64)
+            logging.info(f"Original waveform length: {len(hp_orig)}, Optimized waveform length: {len(hp_opt)}")
+            if len(hp_orig)<len(hp_opt):
+                hp_opt = hp_opt[-len(hp_orig):]
+                hc_opt = hc_opt[-len(hc_orig):]
+                logging.info(f"Trimmed Optimized waveform to match original length: {len(hp_opt)}")
+            if len(hp_orig)>len(hp_opt):
+                hp_orig = hp_orig[-len(hp_opt):]
+                hc_orig = hc_orig[-len(hc_opt):]
+                logging.info(f"Trimmed original waveform to match Optimized length: {len(hp_orig)}")
+            assert len(hp_orig) == len(hp_opt), "After trimming, original and Optimized waveforms should have the same length."
+            assert len(hc_orig) == len(hc_opt), "After trimming, original and Optimized waveforms should have the same length."
+
+            # -- plot waveforms to see how they look like
+            if not args.nosave:
+                plot_hphc_overplot(hp_orig, hc_orig, hp_opt, hc_opt, savename='../results/overplot-opt', label=labels[0], transparent=False)
+
+            # -- calculate mismatches
+            mm_opt_hp = calc_polarization_mismatch(hp_orig, hp_opt, delta_t=delta_t, f_lower=f_lower)
+            mm_opt_hc = calc_polarization_mismatch(hc_orig, hc_opt, delta_t=delta_t, f_lower=f_lower)
+            
+            logging.info(f"Calculated mismatches: \
+                         ROM hp mismatch={mm_rom_hp:.4e}, ROM hc mismatch={mm_rom_hc:.4e}, \
+                         Optimized hp mismatch={mm_opt_hp:.4e}, Optimized hc mismatch={mm_opt_hc:.4e}")
+
+            # -- write results to csv file
+            csvfile.write(f'{m1},{m2},{s1},{s2},{delta_t},{f_lower},{mm_rom_hp},{mm_rom_hc},{mm_opt_hp},{mm_opt_hc}\n')
+            logging.info("Mismatch comparison results written to CSV file.")
 
 
 def removezeros(x, reconst, phase, attr):
@@ -1541,6 +1917,10 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
         
         orig_amp, orig_freq = orig_data[0], orig_data[1]
         recon_amp, recon_freq = recon_data[0], recon_data[1]
+
+        # -- Remove first dummy element from frequency array!
+        orig_freq = orig_freq[1:]
+        recon_freq = recon_freq[1:]
         
         # Obtain the keys for normalization
         key = keys[i].reshape([2,2])
@@ -1557,7 +1937,7 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
         # Calculate mismatch
         mismatch_amp[i] = calculate_mismatch(orig_amp, recon_amp)
         mismatch_freq[i] = calculate_mismatch(orig_freq, recon_freq)
-        logging.debug(f"Mismatch for Amplitude: {mismatch_amp[i]}, Frequency: {mismatch_freq[i]}")
+        logging.info(f"Mismatch for Amplitude: {mismatch_amp[i]}, Frequency: {mismatch_freq[i]}")
 
         # Calculate chirp mass
         m1, m2 = labels[i][0], labels[i][1]
@@ -1591,139 +1971,6 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
     return mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios
 
 
-# TODO: f_lower is different for diff waveforms, and that is one
-# of the main features of my code. So, I need to make sure that the f_lower 
-# used in the mismatch calculation is consistent with the one used 
-# in the waveform generation.
-def calc_polarization_mismatch(hp_orig, hp_recon, resample_psd=True, delta_t=DELTA_T, f_lower=20.0):
-    """
-    Calculate the mismatch between the original and reconstructed hplus/hcross waveforms.
-
-    Parameters:
-    -----------
-    hp_orig : np.ndarray or torch.Tensor
-        The original hplus waveform.
-    hp_recon : np.ndarray or torch.Tensor
-        The reconstructed hplus waveform.
-    resample_psd : bool, optional
-        Whether to resample the PSD to match the waveform's delta_f. Default is True.
-    delta_t : float, optional
-        The time step between samples in seconds. Default is DELTA_T.
-    f_lower : float, optional
-        The lower frequency cutoff in Hz. Default is 20.0.
-
-    Returns:
-    --------
-    mismatch : float
-        The mismatch value, 0 means perfect match, 1 means orthogonal.
-    """
-    from pycbc.filter import match as matchfunc
-    from pycbc.psd import aLIGOZeroDetHighPower
-    from pycbc.types import TimeSeries
-
-    if isinstance(hp_orig, torch.Tensor):
-        hp_orig = hp_orig.detach().cpu().numpy()
-    if isinstance(hp_recon, torch.Tensor):
-        hp_recon = hp_recon.detach().cpu().numpy()
-    
-    psd = pycbc.psd.aLIGOZeroDetHighPower(len(hp_orig), delta_f=1/(len(hp_orig)*delta_t), low_freq_cutoff=f_lower)
-    
-    logging.debug(f"PSD delta_f: {1.0/(len(hp_orig)*delta_t)}")
-    # Ensure all arrays are float64 for precision match
-    hp_orig = np.asarray(hp_orig, dtype=np.float64)
-    hp_recon = np.asarray(hp_recon, dtype=np.float64)
-    psd = psd.astype(np.float64)
-    # assert len(hp_orig) == len(hp_recon), "Original and reconstructed waveforms must have the same length."
-    print(f'len(hp_orig), len(hp_recon), len(psd) = {len(hp_orig)}, {len(hp_recon)}, {len(psd)}')
-
-    hp_orig = TimeSeries(hp_orig, delta_t=delta_t)
-    hp_recon = TimeSeries(hp_recon, delta_t=delta_t)
-    logging.debug(f"hp_orig sample rate: {hp_orig.sample_rate}, hp_recon sample rate: {hp_recon.sample_rate}")
-    logging.debug(f"hp_orig delta_f: {hp_orig.delta_f}")
-    logging.debug(f'len(hp_orig)={len(hp_orig)}, len(hp_recon)={len(hp_recon)}, \
-                  len(psd)={len(psd)}')
-    
-    # -- This still gives the same delta_f not matching error --#
-    # Resample PSD at specific frequencies to match `delta_f` of the 
-    # waveforms to the `delta_f` of the PSD. This is necessary for the mismatch calculation.
-    hp_fs = hp_recon.to_frequencyseries(delta_f=hp_orig.delta_f)
-    freqs = hp_fs.sample_frequencies
-    psd_interp = np.interp(freqs, psd.sample_frequencies, psd.data)
-    psd_resampled = pycbc.types.FrequencySeries(psd_interp, delta_f=hp_recon.delta_f, dtype=psd.dtype)
-
-    if resample_psd:
-        logging.debug(f"Resampled PSD delta_f: {psd_resampled.delta_f}")
-        match, i = matchfunc(hp_orig, hp_recon, psd=psd_resampled, low_frequency_cutoff=f_lower)
-    else:
-        match, i = matchfunc(hp_orig, hp_recon, psd=psd, low_frequency_cutoff=f_lower)
-    logging.debug(f"Match value: {match}, Index: {i}")
-    mismatch = 1 - match
-    return mismatch
-
-
-def phase_from_frequency(freq, dt, theta0=0.0):
-    """
-    Compute gravitational-wave phase from a frequency time series.
-
-    Parameters
-    ----------
-    freq : array_like
-        Instantaneous frequency time series (Hz).
-    dt : float
-        Time step between samples (seconds).
-    phi0 : float, optional
-        Initial phase (radians). Default is 0.
-        
-    Returns
-    -------
-    phase : ndarray
-        Phase time series (radians).
-    """
-    from scipy.integrate import cumulative_trapezoid
-    # Integrate frequency using trapezoidal rule
-    theta_integral = cumulative_trapezoid(freq, dx=dt, initial=0.0)
-    # Multiply by 2π and add initial phase
-    return theta0 + 2 * np.pi * theta_integral
-
-
-def _phase_from_freq_intervals(freq, dt, theta0=0.0):
-    """
-    freq: length N-1, interpreted as interval frequency between samples.
-    returns theta: length N
-    """
-    print(f'freq shape: {freq.shape}, dt: {dt}, theta0: {theta0}')
-    dtheta = 2 * np.pi * freq * dt              # length N-1
-    theta = np.empty(freq.size+1, dtype=np.float64)
-    theta[0] = theta0
-    theta[1:] = theta0 + np.cumsum(dtheta)  # length N
-    return theta
-
-def polarizations_from_ampfreq(amp, freq, theta0=0.0):
-    """
-    Convert amplitude and frequency to hplus and hcross polarizations.
-    Phase array will have one element less than the amp, since the freq array
-    is derived from the phase array by differentiation originally!
-    Well, this certainly seems to be a mess now and it would definitely be
-    better that I directly work with the phase and amplitude instead of the frequency.
-    """
-    print(f'amp shape: {amp.shape}, freq shape: {freq.shape}')
-    theta = _phase_from_freq_intervals(freq, dt=1.0/SAMPLE_RATE, theta0=theta0)
-    print(f'amp shape: {amp.shape}, freq shape: {freq.shape}, phase shape: {theta.shape}')
-
-    # NOTE: Unwantedly, I removed the first element from the 'amp' array in the 
-    # `CustomDataset` when I calculated the amp-freq from hp-hc, to have the same
-    # length of amplitude and frequency array as an input to the network.
-    # However, by definition, frequency will have one less element than the phase or
-    # the amplitude, since it is derived from the phase by differentiation. 
-    # So, I need to make sure that the length of the 'amp' array is consistent with 
-    # the length of the 'freq' array when I convert them back to hplus and hcross.
-    if len(amp) != len(theta):
-        # repeat the first element of the 'amp' array to make it the same length as the 'theta' array.
-        amp = np.insert(amp, 0, amp[0])
-        logging.debug(f'After inserting the first element, amp shape: {amp.shape}, theta shape: {theta.shape}')
-    hplus = amp * np.cos(theta)
-    hcross = amp * np.sin(theta)
-    return hplus, hcross
 
 def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
                                reshape2orig=False,
@@ -1763,7 +2010,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
     keys = keys.cpu().numpy() if isinstance(keys, torch.Tensor) else keys
     phases = phases.cpu().numpy() if isinstance(phases, torch.Tensor) else phases
     strains = strains.cpu().numpy() if isinstance(strains, torch.Tensor) else strains
-    print(f"x shape: {x.shape}, reconst shape: {reconst.shape}, phases shape: {phases.shape}, strains shape: {strains.shape}")
+    logging.info(f"x shape: {x.shape}, reconst shape: {reconst.shape}, phases shape: {phases.shape}, strains shape: {strains.shape}")
 
     chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
     totalmasses = np.zeros((labels.shape[0], 1))  # Store total masses for each sample
@@ -1780,7 +2027,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
             chi_eff = (m1 * chi1 + m2 * chi2) / (m1 + m2)
             chieffs[i] = chi_eff
 
-    # iterate over all the samples in one batch
+    # iterate over all the waveforms in one batch
     for i in range(x.shape[0]):
         logging.debug(f"Processing sample {i}")
         if reshape2orig:
@@ -1802,6 +2049,10 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
 
         orig_amp, orig_freq = orig_data[0], orig_data[1]
         recon_amp, recon_freq = recon_data[0], recon_data[1]
+
+        # -- remove first dummy element from frequency array!
+        orig_freq = orig_freq[1:]
+        recon_freq = recon_freq[1:]
         
         # Obtain the keys for normalization
         key = keys[i].reshape([2,2])
@@ -1822,7 +2073,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
 
         # Rescale the reconstructed amplitude to match the original amplitude's maximum value, 
         # to avoid mismatch due to amplitude scaling differences.
-        recon_amp = recon_amp / 10**20
+        # recon_amp = recon_amp / 10**20
 
         # # check length of phase array
         # # NOTE: This happens because of the f-cutoff datacase!
@@ -1836,14 +2087,22 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
         # Combine original Amp/Freq to hplus/hcross
         # hp_orig = orig_amp * np.cos(phase)  # this is original phase
         # hc_orig = orig_amp * np.sin(phase)
-        hp_orig = strains[i][0]
-        hc_orig = strains[i][1]
+        hp_hdf = strains[i][0]
+        hc_hdf = strains[i][1]
         # print(max(hp_orig), max(hc_orig))
-        logging.debug(f"Original hplus shape: {hp_orig.shape}, hcross shape: {hc_orig.shape}")
+        logging.debug(f"Original hplus shape: {hp_hdf.shape}, hcross shape: {hc_hdf.shape}")
+
+        # -- NOTE: what we instead do now to remove the errors and
+        # -- and the possibility of retraining is to have the darn nice,
+        # -- same length amplitude and freq arrays for both the original
+        # -- and the model outputs, by using the shortened amplitude arrays
+        # -- and repeating the first element in them to make them the same
+        # -- length as the frequency arrays, and then use the `_phase_from_freq_intervals`.
+        phase_hdf = np.unwrap(np.arctan2(hp_hdf, hc_hdf))
+        hp_orig, hc_orig = polarizations_from_ampfreq(orig_amp, orig_freq, theta0=phase_hdf[0])
 
         # Calculate hplus/hcross for reconstructed data
-        phase_orig = np.unwrap(np.arctan2(hp_orig, hc_orig))
-        hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq, theta0=phase_orig[0])
+        hp_recon, hc_recon = polarizations_from_ampfreq(recon_amp, recon_freq, theta0=phase_hdf[0])
         if num_saved_overplots is not None:
             if num_saved_overplots <= 10:
                 plot_hphc_overplot(hp_orig, hc_orig, hp_recon, hc_recon, label=labels[i],
@@ -1851,9 +2110,9 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
                 num_saved_overplots += 1
 
         # Calculate mismatch for hplus and hcross
-        mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon, delta_t=delta_t, f_lower=f_lower)
-        mismatch_hcross[i] = calc_polarization_mismatch(hc_orig, hc_recon, delta_t=delta_t, f_lower=f_lower)
-        print(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
+        mismatch_hplus[i] = calc_polarization_mismatch(hp_hdf, hp_recon, delta_t=delta_t, f_lower=f_lower)
+        mismatch_hcross[i] = calc_polarization_mismatch(hc_hdf, hc_recon, delta_t=delta_t, f_lower=f_lower)
+        logging.info(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
 
         # Calculate chirp mass
         m1, m2 = labels[i][0], labels[i][1]
@@ -1931,14 +2190,23 @@ if __name__ == "__main__":
                         help='whether to test time complexity?')
     parser.add_argument('--time-compare', action='store_true', default=False,
                         help='whether to compare time complexity with standard waveform generation?')
+    parser.add_argument('--test-mm-compare', action='store_true', default=False,
+                        help='whether to compare mismatch with standard waveform generation?')
     parser.add_argument('--generate', action='store_true', default=False,
                             help='whether to generate samples from trained model?')
-    parser.add_argument('--model', action='store', default='../trained-models/model-20250526_070915-1',
-                        help='path to already trained model.')
+
+    parser.add_argument('--model', action='store', default=None,
+                        help='name of a pre-trained model.')
+    parser.add_argument('--modeltype', action='store', default='cvae',
+                        help='type of model to use, e.g., cvae or cae (default=%(default)s)')
+    parser.add_argument('--usemmloss', action='store_true', default=False,
+                        help='whether to use mismatch loss during training (default=%(default)s)')
+    parser.add_argument('--use-base-model-config', action='store_true', default=False,
+                        help='Whether to use the base model config for training? (default=%(default)s)')
     
     parser.add_argument('--today', action='store', default=None,
                         help='Date of the model we are currently using, in YYYYMMDD. \
-                            Results will be saved to this folder. (default=%(default)')
+                            Results will be saved to this folder. (default=%(default)s)')
     parser.add_argument('--fname', action='store', default=None,
                         help='Dummy filename argument. (default=%(default)s)')
     parser.add_argument('--savedir', action='store', default=None,
@@ -1948,6 +2216,8 @@ if __name__ == "__main__":
                             help='Do not show output Plot !')
     parser.add_argument('--nosave', action='store_true', default=False,
                             help='Do not save output files and plots!')
+    parser.add_argument('--dummy', action='store_true', default=False,
+                            help='Whether to use dummy data for testing the code. (default=%(default)s')
 
     parser.add_argument('--verbose', '-v', action='store_true', help="Print update messages.")
     parser.add_argument('--debug', action='store_true', help="Show debug messages.")
@@ -2002,13 +2272,15 @@ if __name__ == "__main__":
         if args.test_uq:
             Test(args).test_uq()
         elif args.time_complexity:
-            for n in [100, 500, 1000]:
-                Test(args).test_timecomplexity(n)
+            # for n in [100, 500, 1000]:
+            Test(args).test_timecomplexity()
         elif args.time_compare:
             if args.fname is not None:
                 Test(args).plot_time_complexity_compare(fname=args.fname)
             else:
                 Test(args).test_timecomplexity_compare(iters=100)
+        elif args.test_mm_compare:
+            Test(args).test_mismatch_compare()
         else:
             Test(args).test()
         # except RuntimeError as e:

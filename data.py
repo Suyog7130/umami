@@ -1,3 +1,10 @@
+"""
+2026/02/13
+Module to generate and save gravitational waveforms using different approximants.
+The output is saved in HDF5 format for training/validation/testing datasets.
+However, the exact use happens in `datacvae.py` where the datasets are loaded into
+PyTorch Datasets and DataLoaders and then passed to the training routines and calls.
+"""
 
 import os
 import h5py
