@@ -133,6 +133,7 @@ def training(model: FlexTwoC2E1D,
     
     # Train for a few epochs
     rloss_train, rloss_recon, rloss_kl = [], [], []
+    rloss_train_eval, rloss_recon_eval, rloss_kl_eval = [], [], []
     rloss_val, rloss_recon_val, rloss_kl_val = [], [], []
     for epoch in tqdm(range(epochs)):
         model.train()
@@ -160,8 +161,28 @@ def training(model: FlexTwoC2E1D,
             torch.save(model.state_dict(), backup_model_path)
             logging.info(f"Model backup saved at {backup_model_path}")
 
-        # Evaluate on validation set
+        # -- set model to eval mode for validation
         model.eval()
+
+        # -- Do one cycle training in eval mode with no grad after training is finished,
+        # -- to compare train and validation losses at the same epoch and check for overfitting etc.
+        train_eval_loss = 0.0
+        with torch.no_grad():
+            for idx, (x, target, labels, keys, strains) in enumerate(tqdm(train_loader, ncols=80, desc="Train-eval-steps")):
+                if idx >= num_train_batches:
+                    break
+                x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
+                x_recon, zvars = model(x, labels, keys)
+                loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
+                train_eval_loss += loss.item()
+                rloss_train_eval.append(loss.item())
+                rloss_recon_eval.append(recon_loss.item())
+                rloss_kl_eval.append(kl_loss.item())
+        avg_train_eval_loss = train_eval_loss / num_train_batches
+        logging.info(f"Epoch {epoch+1}, Batch Avg Train Eval Loss: {avg_train_eval_loss:.4f}")
+
+
+        # Evaluate on validation set
         val_loss = 0.0
         with torch.no_grad():
             for idx, (x, target, labels, keys, strains) in enumerate(tqdm(val_loader, ncols=80, desc="Val-steps")):
@@ -186,6 +207,9 @@ def training(model: FlexTwoC2E1D,
             'train_loss': rloss_train,
             'recon_loss': rloss_recon,
             'kl_loss': rloss_kl,
+            'train_eval_loss': rloss_train_eval,
+            'train_eval_recon_loss': rloss_recon_eval,
+            'train_eval_kl_loss': rloss_kl_eval
         })
         val_losses_df = pd.DataFrame({
             'val_loss': rloss_val,
