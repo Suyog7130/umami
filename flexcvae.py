@@ -874,7 +874,6 @@ class TwoC2E1D(nn.Module):
         recon_x = self.decode(z, y_embed)
         zvars = [zx_mu, zx_logvar, zy_mu, zy_logvar, zkey_mu, zkey_logvar, zykey_mu, zykey_logvar]
         return (recon_x, zvars)
-    
 
     def loss_function(self, x, x_recon, zvars) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """

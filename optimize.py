@@ -86,7 +86,7 @@ def training(model: FlexTwoC2E1D,
              epochs: int = 5, 
              datafrac: float = DATAFRAC,
              savemodel=False, savelosses=False,
-             savedir='../trained_models/',
+             savedir='../trained-models/',
              save_interim_models=True, now=NOW):
     """
     Using a fraction of training data for quick training and
