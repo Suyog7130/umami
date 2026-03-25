@@ -50,6 +50,8 @@ BASE_MODEL_CONFIG = {
     'latent_dim_key': 4,
     'activation': 'gelu',
     'target': None, #'amp_phase',  # default target is normed amp-freq, but can be set to 'logamp_phase' for log-amp and phase target
+    'train_device': DEVICE,
+    'model_precision': PRECISION,
 }
 
 datadir = "../data/"

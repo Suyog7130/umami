@@ -472,8 +472,19 @@ class Test:
         if args.fcutoff:
             self.testhdf += '-f_cutoff'
         self.batch_size = args.batch_size
-        self.device = args.device
         self.modeltype = args.modeltype
+
+        # self.device = args.device
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda")
+            self.precision = torch.float64  # Use double precision for CUDA if available
+        elif torch.backends.mps.is_available():
+            self.device = torch.device("mps")
+            self.precision = torch.float32  # Use float32 for MPS since it does not support float64 well
+        else:
+            self.device = torch.device("cpu")
+            self.precision = torch.float64  # Use double precision for CPU
+        logging.info(f"Using device: {self.device}, with precision: {self.precision}")
 
         if not args.time_complexity and not args.time_compare:
             self.test_loader = self.setdataloader()
@@ -512,8 +523,8 @@ class Test:
         params_std = params_df.std().values
         logging.info(f"Labels mean: {params_mean}")
         logging.info(f"Labels std: {params_std}")
-        params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
-        params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
+        params_mean = torch.tensor(params_mean, dtype=self.precision).to(self.device)
+        params_std = torch.tensor(params_std, dtype=self.precision).to(self.device)
 
         MODEL_CONFIG['paramsmean'] = True
         MODEL_CONFIG['labels_mean'] = params_mean
@@ -532,9 +543,75 @@ class Test:
                         MODEL_CONFIG=MODEL_CONFIG)
         model.load_state_dict(torch.load(self.model_path, map_location=self.device))
         model.to(self.device)
-        model.to(torch.float64)
+        model.to(self.precision)
         model.eval()  # Set model to evaluation mode
         logging.info(f"Loaded model from {self.model_path}")
+        return model
+
+    def load_flex_model(self, configpath, model_path):
+        """
+        Load the trained FlexTwoC2E1D model from the specified path.
+        """
+        from flexcvae import TwoC2E1D as FlexTwoC2E1D
+
+        logging.info(f"Loading FlexTwoC2E1D model with config from: {configpath} and model weights from: {model_path}")
+        if configpath is not None:
+            configpath = '../trained-models/' + configpath
+            if not configpath.endswith('.json'):
+                configpath += '.json'
+            if not os.path.isfile(configpath):
+                logging.error(f"Provided MODEL_CONFIG path does not exist: {configpath}")
+                raise FileNotFoundError(f"MODEL_CONFIG file not found at {configpath}")
+            logging.info(f"Using MODEL_CONFIG: {configpath}")
+            MODEL_CONFIG = json.load(open(configpath, 'r'))
+        else:
+            logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
+            MODEL_CONFIG = BASE_MODEL_CONFIG
+
+        # Convert some hyperparameters from str to appropriate types if needed (e.g. lists, tuples)
+        if isinstance(MODEL_CONFIG['labels_mean'], str) and isinstance(MODEL_CONFIG['labels_std'], str):
+            # print(MODEL_CONFIG['labels_std'])
+            # print(MODEL_CONFIG['labels_std'].strip('[]').split(','))
+            # print(float(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
+            # print(type(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
+            logging.info("Converting labels_mean and labels_std from str->lists to numpy arrays for model initialization.")
+            labels_mean = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
+            labels_std = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
+            MODEL_CONFIG['labels_mean'] = torch.tensor(labels_mean, dtype=self.precision).to(self.device)
+            MODEL_CONFIG['labels_std'] = torch.tensor(labels_std, dtype=self.precision).to(self.device)    
+        # logging.warning("Will still use predefined global params_mean and params_std for normalization for now.")
+        if isinstance(MODEL_CONFIG['input_shape'], str):
+            logging.info("Converting input_shape from str to tuple for model initialization.")
+            MODEL_CONFIG['input_shape'] = tuple(map(int, MODEL_CONFIG['input_shape'].strip('()').split(',')))
+        if isinstance(MODEL_CONFIG['key_shape'], str):
+            logging.info("Converting key_shape from str to tuple for model initialization.")
+            MODEL_CONFIG['key_shape'] = tuple(map(int, MODEL_CONFIG['key_shape'].strip('()').split(',')))
+        if isinstance(MODEL_CONFIG['target'], str) and MODEL_CONFIG['target'].lower() == 'none':
+            logging.info("Setting target to None for model initialization.")
+            MODEL_CONFIG['target'] = None
+
+        model = FlexTwoC2E1D(
+            MODEL_CONFIG=MODEL_CONFIG,
+            input_shape=(2, PRESET_ARRAY_SIZE),
+            num_classes=4,
+            paramsnorm=True,
+        )
+        logging.info("Model architecture initialized. Now loading model weights.")
+        if not os.path.isfile(model_path):
+            logging.error(f"Provided model path does not exist: {model_path}")
+            raise FileNotFoundError(f"Model file not found at {model_path}")
+        # -- Check if model weights loaded are of the same precision as our initialized model.
+        # -- If not, then convert loaded model to the correct precision before moving to device.
+        for name, param in model.named_parameters():
+            if param.dtype != self.precision:
+                logging.info(f"Converting model parameter '{name}' from {param.dtype} to {self.precision}")
+                param.data = param.data.to(self.precision)
+        model.load_state_dict(torch.load(model_path, map_location=self.device))
+        logging.info(f"Loaded model from {model_path}")
+        model.to(self.device)
+        model.to(self.precision)
+        model.eval()
+        logging.info("Model loaded, moved to device, converted to appropriate precision, and set to evaluation mode.")
         return model
 
     def setdataloader(self, batch_size=None, custom_batch=None):
@@ -548,6 +625,7 @@ class Test:
         test_set = CustomDataset(forwhat='test', approximant=self.approximant,
                                 convert=self.convert, hdf_fname=testhdf,
                                 returnattr=True, train_device=args.device, 
+                                precision=self.precision,
                                 custom_batch=custom_batch)
         logging.info(f'Reading test data from {testhdf}')
         test_loader = CustomDataLoader(test_set, batch_size=batch_size, shuffle=True)
@@ -559,9 +637,16 @@ class Test:
         Test the trained CVAE model using only labels as input.
         TODO: Create a test dir in results in dir and a subfolder with timestamp !!
         """
+        if not hasattr(self, 'model_path'):
+            self.model_path = '../trained-models/model-flexcvae-20260323-165944.pt'
         logging.info(f"Testing with model: {self.model_path}")
 
-        model = self._load_model()
+        if self.modeltype == 'flexcvae':
+            logging.info("Loading FlexTwoC2E1D model for testing.")
+            model = self.load_flex_model(configpath='modelconfig-flexcvae-20260323-165944.json', 
+                                         model_path=self.model_path)
+        else:
+            model = self._load_model()
         logging.info("Model loaded and set to evaluation mode.")
 
         # Initialize dataframe to store mismatch results of whole test set!
@@ -593,7 +678,13 @@ class Test:
                 # Use the label-conditioned encoders and decoder to generate data
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
-                if self.modeltype=='cae':
+                if self.modeltype == 'flexcvae':
+                    logging.info("Using FlexTwoC2E1D model for reconstruction.")
+                    z1 = model.reparameterize(z1_mean, z1_log_var)
+                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    z = torch.cat((z1, z1p), dim=1)  # Concatenate latent vectors
+                    reconst = model.decode(z, labels)
+                elif self.modeltype=='cae':
                     reconst = model.decode(z1_mean, z1p_mean, labels)
                 else:
                     z1 = model.reparameterize(z1_mean, z1_log_var)
@@ -2197,7 +2288,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--model', action='store', default=None,
                         help='name of a pre-trained model.')
-    parser.add_argument('--modeltype', action='store', default='cvae',
+    parser.add_argument('--modeltype', action='store', default='cvae', choices=['cvae', 'cae', 'flexcvae'],
                         help='type of model to use, e.g., cvae or cae (default=%(default)s)')
     parser.add_argument('--usemmloss', action='store_true', default=False,
                         help='whether to use mismatch loss during training (default=%(default)s)')

@@ -1197,7 +1197,7 @@ class TwoC2E1D(nn.Module):
         return (total_loss, recon_loss, mmloss)
 
 
-class CAE(CVAE):
+class CAE(TwoC2E1D):
     """
     Conditional Autoencoder (CAE) implementation that inherits from CVAE.
     This model is a simplified version of the CVAE, the latent space is not 
