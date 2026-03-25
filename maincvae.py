@@ -474,16 +474,17 @@ class Test:
         self.batch_size = args.batch_size
         self.modeltype = args.modeltype
 
+        # NOTE: Using str values for precision, so that attr are callable for both torch and numpy
         # self.device = args.device
         if torch.cuda.is_available():
             self.device = torch.device("cuda")
-            self.precision = torch.float64  # Use double precision for CUDA if available
+            self.precision = 'float64'  # Use double precision for CUDA if available
         elif torch.backends.mps.is_available():
             self.device = torch.device("mps")
-            self.precision = torch.float32  # Use float32 for MPS since it does not support float64 well
+            self.precision = 'float32'  # Use float32 for MPS since it does not support float64 well
         else:
             self.device = torch.device("cpu")
-            self.precision = torch.float64  # Use double precision for CPU
+            self.precision = 'float64'  # Use double precision for CPU
         logging.info(f"Using device: {self.device}, with precision: {self.precision}")
 
         if not args.time_complexity and not args.time_compare:
@@ -523,8 +524,8 @@ class Test:
         params_std = params_df.std().values
         logging.info(f"Labels mean: {params_mean}")
         logging.info(f"Labels std: {params_std}")
-        params_mean = torch.tensor(params_mean, dtype=self.precision).to(self.device)
-        params_std = torch.tensor(params_std, dtype=self.precision).to(self.device)
+        params_mean = torch.tensor(params_mean, dtype=getattr(torch, self.precision)).to(self.device)
+        params_std = torch.tensor(params_std, dtype=getattr(torch, self.precision)).to(self.device)
 
         MODEL_CONFIG['paramsmean'] = True
         MODEL_CONFIG['labels_mean'] = params_mean
@@ -543,10 +544,11 @@ class Test:
                         MODEL_CONFIG=MODEL_CONFIG)
         model.load_state_dict(torch.load(self.model_path, map_location=self.device))
         model.to(self.device)
-        model.to(self.precision)
+        model.to(getattr(torch, self.precision))
         model.eval()  # Set model to evaluation mode
         logging.info(f"Loaded model from {self.model_path}")
         return model
+
 
     def load_flex_model(self, configpath, model_path):
         """
@@ -577,8 +579,8 @@ class Test:
             logging.info("Converting labels_mean and labels_std from str->lists to numpy arrays for model initialization.")
             labels_mean = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
             labels_std = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
-            MODEL_CONFIG['labels_mean'] = torch.tensor(labels_mean, dtype=self.precision).to(self.device)
-            MODEL_CONFIG['labels_std'] = torch.tensor(labels_std, dtype=self.precision).to(self.device)    
+            MODEL_CONFIG['labels_mean'] = torch.tensor(labels_mean, dtype=getattr(torch, self.precision)).to(self.device)
+            MODEL_CONFIG['labels_std'] = torch.tensor(labels_std, dtype=getattr(torch, self.precision)).to(self.device)    
         # logging.warning("Will still use predefined global params_mean and params_std for normalization for now.")
         if isinstance(MODEL_CONFIG['input_shape'], str):
             logging.info("Converting input_shape from str to tuple for model initialization.")
@@ -603,13 +605,13 @@ class Test:
         # -- Check if model weights loaded are of the same precision as our initialized model.
         # -- If not, then convert loaded model to the correct precision before moving to device.
         for name, param in model.named_parameters():
-            if param.dtype != self.precision:
+            if param.dtype != getattr(torch, self.precision):
                 logging.info(f"Converting model parameter '{name}' from {param.dtype} to {self.precision}")
-                param.data = param.data.to(self.precision)
+                param.data = param.data.to(getattr(torch, self.precision))
         model.load_state_dict(torch.load(model_path, map_location=self.device))
         logging.info(f"Loaded model from {model_path}")
         model.to(self.device)
-        model.to(self.precision)
+        model.to(getattr(torch, self.precision))
         model.eval()
         logging.info("Model loaded, moved to device, converted to appropriate precision, and set to evaluation mode.")
         return model
@@ -680,9 +682,9 @@ class Test:
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
                 if self.modeltype == 'flexcvae':
                     logging.info("Using FlexTwoC2E1D model for reconstruction.")
-                    z1 = model.reparameterize(z1_mean, z1_log_var)
-                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
-                    z = torch.cat((z1, z1p), dim=1)  # Concatenate latent vectors
+                    # z1 = model.reparameterize(z1_mean, z1_log_var)
+                    # z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    z = torch.cat((z1_mean, z1p_mean), dim=1)  # Concatenate latent vectors
                     reconst = model.decode(z, labels)
                 elif self.modeltype=='cae':
                     reconst = model.decode(z1_mean, z1p_mean, labels)
