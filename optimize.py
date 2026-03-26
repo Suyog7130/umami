@@ -160,7 +160,7 @@ def training(model: FlexTwoC2E1D,
         logging.info(f"Epoch {epoch+1}, Batch Avg Train Loss: {avg_train_loss:.4f}")
 
         # -- TODO: This should be after the validation step?
-        scheduler.step(avg_train_loss)
+        scheduler.step()
 
         # Save model checkpoint at every epoch as backup
         if save_interim_models:
