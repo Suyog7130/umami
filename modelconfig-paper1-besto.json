@@ -22,7 +22,7 @@
     "input_shape": "(2, 8191)",
     "num_classes": 4,
     "key_shape": "(2, 2)",
-    "beta": 0.01,
+    "beta": 0.1,  
     "decoder_input_type": "concat",
     "embed_labels_in_decoder": false,
     "model_class": "TwoC2E1D",

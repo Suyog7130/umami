@@ -89,6 +89,7 @@ class BaseCoder(nn.Module):
         self.has_pre_fc  = kwargs.get('has_pre_fc', True)
         self.has_cnn     = kwargs.get('has_cnn', True)
         self.has_post_fc = kwargs.get('has_post_fc', True)
+        self.concat_labels = kwargs.get('concat_labels', False)  # whether to concatenate labels to input for pre-FC or post-FC layers.
 
         # Layer counts
         self.n_layers            = kwargs.get('n_layers', 1)
@@ -294,7 +295,7 @@ class BaseEncoderDecoder(BaseCoder):
     """
     def __init__(self, **kwargs):
         super(BaseEncoderDecoder, self).__init__(**kwargs)
-
+        
         # -- Build layers on the fly based on config (this allows for dynamic architectures)
         # -- Do this in __init__ so that the layers are registered as part of the module, 
         # but they will be built based on the config! This allows `model.parameters()` to work 
@@ -302,6 +303,9 @@ class BaseEncoderDecoder(BaseCoder):
         if self.has_pre_fc and (self.pre_fc_sizes or self.pre_fc_out_features):
             pre_fc_in_features = self.input_shape[0] * self.input_shape[1] if self.input_shape else self.pre_fc_in_features[0]
             pre_fc_out_features = self.pre_fc_out_features[-1] if self.pre_fc_out_features else self.pre_fc_sizes[-1]
+            if self.concat_labels and self.num_classes:
+                pre_fc_in_features += self.num_classes  # concatenate labels to input for pre-FC layers
+                self.pre_fc_sizes[0] = pre_fc_in_features  # update the first size to match the new input size after concatenation
             self.pre_fc_layers = self.fc(pre_fc_in_features, pre_fc_out_features,
                         n_layers=self.n_layers_pre_fc,
                         sizes=self.pre_fc_sizes,
@@ -350,6 +354,9 @@ class BaseEncoder(BaseEncoderDecoder):
             cnn_output_size = self._calculate_cnn_output_size(self.input_shape[1]) # assuming input_shape is (C, L)
             self.post_fc_sizes[0] = cnn_output_size  # update the first size to match the CNN output size
             logging.info(f"Calculated CNN output size: {cnn_output_size}. Updated post_fc_sizes[0] to match this value.")
+            if self.concat_labels and self.num_classes:
+                self.post_fc_sizes[0] += self.num_classes  # concatenate labels to CNN output for post-FC layers
+                logging.info(f"After accounting for label concatenation, updated post_fc_sizes[0]: {self.post_fc_sizes[0]}")
             self.post_fc_layers = self.fc(
                         n_layers=self.n_layers_post_fc,
                         sizes=self.post_fc_sizes,
@@ -677,6 +684,7 @@ class TwoC2E1D(nn.Module):
         self.encoder_x = BaseEncoder(latent_dim=self.latent_dim_x,  # mean and logvar are output in two channels
                                        input_shape=self.input_shape,
                                        num_classes=self.num_classes,
+                                       concat_labels=True,  # concatenate labels to output of CNN for post-FC layers
                                        n_layers=1,
                                        n_layers_cnn=2,
                                        n_layers_post_fc=3,
@@ -695,6 +703,7 @@ class TwoC2E1D(nn.Module):
         self.encoder_key = BaseEncoder(latent_dim=self.latent_dim_key,  # mean and logvar are output in two channels
                                           input_shape=self.key_shape,
                                           num_classes=self.num_classes,
+                                          concat_labels=True,  # concatenate labels to input of pre-FC layers
                                           n_layers=3,
                                           has_cnn=False,
                                           has_post_fc=False,
@@ -998,6 +1007,8 @@ class TwoC2E1D(nn.Module):
         })
         # Save other supplied kwargs to MODEL_CONFIG
         configfile.update(kwargs)
+        # Save all other class attributes to the configfile, for completeness!
+        configfile.update({k: str(v) for k, v in self.__dict__.items() if k not in configfile})
         # Convert any non-serializable objects in configfile to strings for JSON serialization
         for key, value in configfile.items():
             if not isinstance(value, (str, int, float, bool, type(None))):
