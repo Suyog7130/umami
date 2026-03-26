@@ -519,4 +519,4 @@ if __name__ == "__main__":
         run_optuna()
     if args.train:
         run_training(configpath=args.model_config,
-                     epochs=15, datafrac=1.0)
+                     epochs=10, datafrac=1.0)

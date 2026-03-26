@@ -355,9 +355,14 @@ class BaseEncoder(BaseEncoderDecoder):
                         sizes=self.post_fc_sizes,
                         use_last_activation=False)
 
-    def forward(self, x):
+    def forward(self, x, y=None):
         if self.has_pre_fc:
             z = x.view(x.size(0), -1)  # flatten input for FC layers
+            # -- concatenate labels for the KeyEncoder
+            if y is not None and not self.has_post_fc:
+                y_cat = y.view(y.size(0), -1)  # flatten labels
+                z = torch.cat([z, y_cat], dim=1)  # concatenate labels to input for pre-FC layers
+                logging.debug(f"After concatenating input and labels, z shape: {z.shape}")
             z = self.pre_fc_layers(z)
         else:
             z = x
@@ -379,6 +384,10 @@ class BaseEncoder(BaseEncoderDecoder):
             # But maybe I should concatenate labels before pre-FC layers? Or even have a separate branch 
             # for labels that merges later? Need to experiment with this. Or not concatenate labels at all 
             # for the encoder and only feed them to the decoder? Need to experiment with this as well.
+            if y is not None:
+                y_cat = y.view(y.size(0), -1)  # flatten labels
+                z = torch.cat([z, y_cat], dim=1)  # concatenate labels to CNN output for post-FC layers
+                logging.debug(f"After concatenating CNN output and labels, z shape: {z.shape}")
 
         if self.has_post_fc:
             assert self.post_fc_sizes[-1] == self.latent_dim * 2, f"post_fc_sizes[-1] should be {self.latent_dim * 2} to account for mean and logvar channels, but got {self.post_fc_sizes[-1]}"
@@ -788,13 +797,13 @@ class TwoC2E1D(nn.Module):
         Shape of latent space : (B, 2, latent_dim), 
         where the second dimension of size 2 corresponds to mean and log variance channels.
         """
-        latent = self.encoder_x(x)
+        latent = self.encoder_x(x, labels)
         z_mean, z_log_var = latent[:, 0, :], latent[:, 1, :]
         logging.debug(f"Encoded x to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def encode_key(self, keys, labels):
-        latent = self.encoder_key(keys)
+        latent = self.encoder_key(keys, labels)
         z_mean, z_log_var = latent[:, 0, :], latent[:, 1, :]
         logging.debug(f"Encoded key to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
