@@ -125,13 +125,16 @@ def training(model: FlexTwoC2E1D,
             logging.warning(f"Parameter {name} contains Inf values before training.")
         # logging.info(f"Parameter {name} - min: {param.min().item()}, max: {param.max().item()}, mean: {param.mean().item()}")
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)    
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, 
-                mode='min', 
-                factor=0.5, 
-                patience=2, 
-                threshold=1e-7)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4) 
+    # -- NOTE: ReduceLROnPlateau is not ideal for our use, since it
+    # -- reduces the darn LR too quickly and then we don't get much training done.
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    #             optimizer, 
+    #             mode='min', 
+    #             factor=0.5, 
+    #             patience=2, 
+    #             threshold=1e-7)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
     
     # Train for a few epochs
     rloss_train, rloss_recon, rloss_kl = [], [], []
@@ -155,6 +158,7 @@ def training(model: FlexTwoC2E1D,
             rloss_kl.append(kl_loss.item())
         avg_train_loss = train_loss / num_train_batches
         logging.info(f"Epoch {epoch+1}, Batch Avg Train Loss: {avg_train_loss:.4f}")
+
         scheduler.step(avg_train_loss)
 
         # Save model checkpoint at every epoch as backup
