@@ -915,7 +915,7 @@ class Test:
         plt.close()
 
 
-    def test_uq(self):
+    def test_uq(self, batch_size=1):
         """
         Test the uncertainty quantification (UQ) of the model for 1000 random
         sample generation corresponding the same input parameters. The output
@@ -925,11 +925,23 @@ class Test:
 
         TODO: Have a dataloader such that it can load specific values from the
         test dataset. Perhaps, need to modify the test dataset classes.
+
+        For batch_size > 1, we will check the mismatch of a random waveform in the batch 
+        against the mismatches of all the other waveforms in the batch. This value should 
+        be pretty close to zero, although the mismatch values across diff batches is expected
+        to differ by a large amount! This was suggested by the reviewer!
+
+        Arguments
+        ---------
+        
+        batch_size: int, optional
+            The batch size to use for loading the test data. Default is 1, since we
+            want to test the same input parameters for multiple generations to evaluate UQ.
         """
         Nruns = 1000
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
+        preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
         if self.modeltype=='cae':
             model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
@@ -938,32 +950,54 @@ class Test:
             model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
                     key_shape=(2,2)).to(args.device)
         model.load_state_dict(torch.load(self.model_path, map_location=device))
-        model.to(torch.float64)
-        model.to(device)
+        model.to(getattr(torch, self.precision))
+        model.to(self.device)
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
         fig, axes = plt.subplots(1, 2, figsize=(10,5))
 
+        test_loader = self.setdataloader(batch_size=batch_size)
         # `batch_size`=1, so that we can directly send the full batch for test!
         # Check if the specific value exists in labels
         # if the value is not found, then just take the last sample in the batch!
         specific_value = [10, 10, -0.5, 0.5]  # Replace with the desired label value
-        test_loader = self.setdataloader(batch_size=1)
-        for batch in iter(test_loader):
-            x, labels, keys, phases, attr = batch
-            if any((labels == torch.tensor(specific_value, device=device)).all(dim=1)):
-                idx = (labels == torch.tensor(specific_value, device=device)).all(dim=1).nonzero(as_tuple=True)[0].item()
-                x, labels, keys, phases, attr = x[idx], labels[idx], keys[idx], phases[idx], attr
-                print(f"Found specific value {specific_value} in the test set.")
-                break
+        if batch_size==1:
+            for batch in iter(test_loader):
+                x, labels, keys, phases, strains, attr = batch
+                if any((labels == torch.tensor(specific_value, device=device)).all(dim=1)):
+                    idx = (labels == torch.tensor(specific_value, device=device)).all(dim=1).nonzero(as_tuple=True)[0].item()
+                    x, labels, keys, phases, strains, attr = x[idx], labels[idx], keys[idx], phases[idx], strains[idx], attr
+                    print(f"Found specific value {specific_value} in the test set.")
+                    break
+        else:
+            logging.info(f"Batch size is {batch_size}, so taking the first batch for testing UQ. \
+                         We will check UQ by comparing mismatch of a random waveform in the batch, against the \
+                         mismatches of all the other waveforms in the batch. This value should be pretty close to \
+                         zero, although the mismatch values across diff batches is expected to differ by a large amount!")
 
-        # Move labels to the appropriate device
-        labels = labels.to(device)
-        logging.info(f'Choosing to test sample {labels}')
+
         mmtot_amp, mmtot_freq = [], []
         mmtot_hplus, mmtot_hcross = [], []
         for i in range(Nruns):
+
+            # If batch_size > 1, choose a batch from the dataloader
+            if batch_size > 1:
+                try:
+                    x, labels, keys, phases, strains, attr = next(iter(test_loader))
+                    labels = labels.to(device)
+                    # logging.debug(f'Batch {i}: Testing on batch with labels {labels}')
+                except StopIteration:
+                    logging.warning("Reached end of test dataloader while testing UQ. Restarting dataloader.")
+                    test_loader = self.setdataloader(batch_size=batch_size)
+                    x, labels, keys, phases, strains, attr = next(iter(test_loader))
+                    labels = labels.to(device)
+                    # logging.debug(f'Batch {i}: Testing on batch with labels {labels}')
+
+            # Move labels to the appropriate device
+            labels = labels.to(device)
+            logging.info(f'Choosing to test sample {labels}')
+
             with torch.no_grad():
                 logging.debug(f'Testing run: {i}')
                 # Use the label-conditioned encoders and decoder to generate data
@@ -981,12 +1015,13 @@ class Test:
                     x, reconst, phases = removezeros(x, reconst, phases, attr)
                     logging.debug(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}, phases: {phases.shape}')
                 
+                # NOTE: These returned mismatch arrays constain values for the whole batch!
                 mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
                     = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
                 logging.debug("Amplitude and Frequency mismatch calculated for current batch.")
                 logging.debug("Calculating hplus/hcross mismatch for current batch.")
                 mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
-                    = plot_polarization_mismatch(x, reconst, labels, keys, phases, 
+                    = plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
                                                 savedir=self.savedir, nobatchwiseplot=True,
                                                 num_saved_overplots=None)
                 axes[0].plot(i, mismatch_amp.flatten(), '.', color='grey',
@@ -997,10 +1032,44 @@ class Test:
                         markersize=4, markeredgewidth=0.25, markeredgecolor='black')
                 axes[1].plot(i, mismatch_hcross.flatten(), 'x', color='grey',
                         markersize=4, markeredgewidth=0.25, markeredgecolor='black')
-                mmtot_amp.append(mismatch_amp.flatten()[0])
-                mmtot_freq.append(mismatch_freq.flatten()[0])
-                mmtot_hplus.append(mismatch_hplus.flatten()[0])
-                mmtot_hcross.append(mismatch_hcross.flatten()[0])
+                
+                if batch_size > 1:
+                    # Check UQ by comparing mismatch of a random waveform in the batch, against the mismatches of 
+                    # all the other waveforms in the batch. We do this by assuming the selected random mismatch to
+                    # be the "true" mismatch for that batch, and then calculating the mean of absolute differences of all the 
+                    # other mismatches in the batch with this "true" mismatch.
+                    # TODO: Check if `flatten` is required here!
+                    random_idx = np.random.randint(0, batch_size)
+                    random_mismatch_amp = mismatch_amp[random_idx].flatten()[0]
+                    random_mismatch_freq = mismatch_freq[random_idx].flatten()[0]
+                    random_mismatch_hplus = mismatch_hplus[random_idx].flatten()[0]
+                    random_mismatch_hcross = mismatch_hcross[random_idx].flatten()[0]
+                    batch_mismatch_amp = mismatch_amp.flatten()
+                    batch_mismatch_freq = mismatch_freq.flatten()
+                    batch_mismatch_hplus = mismatch_hplus.flatten()
+                    batch_mismatch_hcross = mismatch_hcross.flatten()
+                    amp_uq = np.mean(np.abs(batch_mismatch_amp - random_mismatch_amp))
+                    freq_uq = np.mean(np.abs(batch_mismatch_freq - random_mismatch_freq))
+                    hplus_uq = np.mean(np.abs(batch_mismatch_hplus - random_mismatch_hplus))
+                    hcross_uq = np.mean(np.abs(batch_mismatch_hcross - random_mismatch_hcross))
+                    logging.info(f'Batch {i}: UQ (mean abs diff) for Amplitude Mismatch: {amp_uq:.2e}')
+                    logging.info(f'Batch {i}: UQ (mean abs diff) for Frequency Mismatch: {freq_uq:.2e}')
+                    logging.info(f'Batch {i}: UQ (mean abs diff) for hplus Mismatch: {hplus_uq:.2e}')
+                    logging.info(f'Batch {i}: UQ (mean abs diff) for hcross Mismatch: {hcross_uq:.2e}')
+                    # -- append these UQ values to the total mismatch lists, instead of the actual mismatch values, 
+                    # -- since we want to evaluate the UQ of the model across different generations for the same input parameters, 
+                    # -- rather than the actual mismatch values which are expected to differ across different generations for the 
+                    # -- same input parameters due to the stochastic nature of the model! (as suggested by the reviewer)
+                    mmtot_amp.append(amp_uq)
+                    mmtot_freq.append(freq_uq)
+                    mmtot_hplus.append(hplus_uq)
+                    mmtot_hcross.append(hcross_uq)
+                else:
+                    mmtot_amp.append(mismatch_amp.flatten()[0])
+                    mmtot_freq.append(mismatch_freq.flatten()[0])
+                    mmtot_hplus.append(mismatch_hplus.flatten()[0])
+                    mmtot_hcross.append(mismatch_hcross.flatten()[0])
+
         axes[0].legend(['Amplitude', 'Frequency'], loc='upper right')
         axes[1].legend(['$h_{+}$', '$h_{\\times}$'], loc='upper right')
         label = f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}, $\\chi_1$={labels[0][2]:.2f}, $\\chi_2$={labels[0][3]:.2f}' \
@@ -1027,11 +1096,13 @@ class Test:
         axes[1].text(0.05, 0.05, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}' + ', ' +
                     '$|\\delta h_{\\times}|$='+f'{mu_hcross:.2e}', transform=axes[1].transAxes, ha='left', fontsize=12)
         plt.tight_layout()
-        figname = f'{self.savedir}/uq-test-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+        figname = f'{self.savedir}/uq-test-' + 'mean-abs-diff-' if batch_size > 1 else ''
+        figname += datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(figname+'.png', dpi=300, transparent=True)
         plt.savefig(figname+'-white.png', dpi=300)
         plt.close()
         print("All UQ tests completed.")
+
 
     def test_timecomplexity(self, num=int(1e6)):
         """
@@ -2026,6 +2097,17 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
         # De-normalize the reconstructed data!
         recon_amp = (recon_amp * amp_std) + amp_mean
         recon_freq = (recon_freq * freq_std) + freq_mean
+
+        try:
+            assert len(orig_amp) == len(recon_amp), f"Original and reconstructed amplitude arrays must have the same length. Got {len(orig_amp)} and {len(recon_amp)}"
+            assert len(orig_freq) == len(recon_freq), f"Original and reconstructed frequency arrays must have the same length. Got {len(orig_freq)} and {len(recon_freq)}"
+        except AssertionError as e:
+            logging.error(f"Length mismatch between original and reconstructed data for sample {i}: {e}")
+            logging.debug(f"Original amplitude length: {len(orig_amp)}, Reconstructed amplitude length: {len(recon_amp)}")
+            logging.warning("Removing first element from original amplitude and frequency arrays to match reconstructed data length.")
+            orig_amp = orig_amp[1:]
+            orig_freq = orig_freq[1:]
+            logging.debug(f"After removing first element, Original amplitude length: {len(orig_amp)}, Reconstructed amplitude length: {len(recon_amp)}")
         
         # Calculate mismatch
         mismatch_amp[i] = calculate_mismatch(orig_amp, recon_amp)
@@ -2363,7 +2445,7 @@ if __name__ == "__main__":
     if args.test:
         # try:
         if args.test_uq:
-            Test(args).test_uq()
+            Test(args).test_uq(batch_size=args.batch_size)
         elif args.time_complexity:
             # for n in [100, 500, 1000]:
             Test(args).test_timecomplexity()

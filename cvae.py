@@ -62,7 +62,7 @@ class XEncoder(nn.Module):
         Returns:
             int: The size of the flattened CNN output.
         """
-        logging.info(f'sequence_length={sequence_length}')
+        logging.debug(f'sequence_length={sequence_length}')
         # First CNN layer
         sequence_length = ((sequence_length - (16 - 1) - 1) // 1 + 1)  # Conv1
         sequence_length = (sequence_length - 4) // 4 + 1  # Pool1
