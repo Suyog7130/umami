@@ -327,9 +327,10 @@ def training(model: FlexTwoC2E1D,
 #     return val_loss
 
 
-def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac=DATAFRAC):
+
+def load_flex_model(configpath=None, model_path=None):
     """
-    Runs training with specified hyperparameters for a single model configuration!
+    Load the trained FlexTwoC2E1D model from the specified path.
     """
     logging.info("Starting training with specified hyperparameters")
     if configpath is not None:
@@ -342,7 +343,7 @@ def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac
         MODEL_CONFIG = json.load(open(configpath, 'r'))
     else:
         logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
-        MODEL_CONFIG = BASE_MODEL_CONFIG
+        MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
 
     # Convert some hyperparameters from str to appropriate types if needed (e.g. lists, tuples)
     if isinstance(MODEL_CONFIG['labels_mean'], str) and isinstance(MODEL_CONFIG['labels_std'], str):
@@ -351,10 +352,10 @@ def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac
         # print(float(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
         # print(type(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
         logging.info("Converting labels_mean and labels_std from str->lists to numpy arrays for model initialization.")
-        labels_mean = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(','))
-        labels_std = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(','))
-        MODEL_CONFIG['labels_mean'] = labels_mean.astype(torch.float64) if PRECISION == 'float64' else labels_mean.astype(float)
-        MODEL_CONFIG['labels_std'] = labels_std.astype(torch.float64) if PRECISION == 'float64' else labels_std.astype(float)
+        labels_mean = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
+        labels_std = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
+        MODEL_CONFIG['labels_mean'] = torch.tensor(labels_mean, dtype=getattr(torch, PRECISION)).to(DEVICE)
+        MODEL_CONFIG['labels_std'] = torch.tensor(labels_std, dtype=getattr(torch, PRECISION)).to(DEVICE)
     # logging.warning("Will still use predefined global params_mean and params_std for normalization for now.")
     if isinstance(MODEL_CONFIG['input_shape'], str):
         logging.info("Converting input_shape from str to tuple for model initialization.")
@@ -370,15 +371,40 @@ def run_training(configpath=None, batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac
         MODEL_CONFIG=MODEL_CONFIG,
         input_shape=(2, PRESET_ARRAY_SIZE),
         num_classes=4,
-        labels_mean=params_mean,
-        labels_std=params_std,
         paramsnorm=True,
     )
+
+    logging.info("Model architecture initialized. Now loading model weights.")
     # print(model)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
     print(f"Total number of trainable parameters: \
           {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
-    # print(model)
+    
+    if model_path is None:
+        logging.info("No model path provided. Model will be initialized with random weights.")
+    else:
+        if not os.path.isfile(model_path):
+            logging.error(f"Provided model path does not exist: {model_path}")
+            raise FileNotFoundError(f"Model file not found at {model_path}")
+        # -- Check if model weights loaded are of the same precision as our initialized model.
+        # -- If not, then convert loaded model to the correct precision before moving to device.
+        for name, param in model.named_parameters():
+            if param.dtype != getattr(torch, PRECISION):
+                logging.info(f"Converting model parameter '{name}' from {param.dtype} to {getattr(torch, PRECISION)} for consistency with initialized model precision.")
+                param.data = param.data.to(getattr(torch, PRECISION))
+        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+        logging.info(f"Loaded model from {model_path}")
+    # NOTE: Model is moved to desired device and precision during training!
+    return model
+
+
+def run_training(configpath=None, model_path=None,
+                 batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac=DATAFRAC):
+    """
+    Runs training with specified hyperparameters for a single model configuration!
+    """
+    model = load_flex_model(configpath=configpath, model_path=model_path)
+    print(model)
     train_loader, val_loader = set_dataloaders(batch_size=batch_size)
     training(model, epochs=epochs, datafrac=datafrac, 
              train_loader=train_loader, val_loader=val_loader,
@@ -482,6 +508,8 @@ if __name__ == "__main__":
                         help="Run training with specified hyperparameters")
     parser.add_argument('--model-config', type=str, default=None,
                         help="Path to JSON file containing model configuration for training")
+    parser.add_argument('--model-path', type=str, default=None,
+                        help="Path to pre-trained model checkpoint")
 
     parser.add_argument('-v', '--verbose', action='store_true',
                         help="Enable verbose logging")
@@ -520,4 +548,5 @@ if __name__ == "__main__":
         run_optuna()
     if args.train:
         run_training(configpath=args.model_config,
+                     model_path=args.model_path,
                      epochs=10, datafrac=1.0)
