@@ -2,7 +2,7 @@
     "batch_size": 32,
     "latent_dim_x": 128,
     "latent_dim_key": 4,
-    "activation": "silu",
+    "activation": "relu",
     "target": "None",
     "epochs": 1,
     "databatchfrac": 0.01,
@@ -19,14 +19,14 @@
     "dec_pool_kernel": 4,
     "dec_postfc_hidden": 512,
     "cond_fc_max": 512,
-    "input_shape": "(2, 8191)",
+    "input_shape": [2, 8191],
     "num_classes": 4,
-    "key_shape": "(2, 2)",
+    "key_shape": [2, 2],
     "beta": 0.1,  
     "decoder_input_type": "concat",
     "embed_labels_in_decoder": false,
     "model_class": "TwoC2E1D",
     "model_module": "flexcvae",
-    "labels_mean": "[39.704825003521, 40.194912630157674, -0.0011827315800837304, -0.0016673074533429424]",
-    "labels_std": "[20.135274679931168, 20.062604877390218, 0.5786656265889926, 0.5750800946410196]"
+    "labels_mean": [39.704825003521, 40.194912630157674, -0.0011827315800837304, -0.0016673074533429424],
+    "labels_std": [20.135274679931168, 20.062604877390218, 0.5786656265889926, 0.5750800946410196]
 }

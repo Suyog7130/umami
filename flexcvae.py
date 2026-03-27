@@ -1009,10 +1009,32 @@ class TwoC2E1D(nn.Module):
         configfile.update(kwargs)
         # Save all other class attributes to the configfile, for completeness!
         configfile.update({k: str(v) for k, v in self.__dict__.items() if k not in configfile})
+        
         # Convert any non-serializable objects in configfile to strings for JSON serialization
         for key, value in configfile.items():
-            if not isinstance(value, (str, int, float, bool, type(None))):
+            if isinstance(value, torch.Tensor):
+                configfile[key] = value.tolist()  # Convert tensors to lists for JSON serialization
+            elif isinstance(value, np.ndarray):
+                configfile[key] = value.tolist()  # Convert numpy arrays to lists for JSON serialization
+            elif isinstance(value, (list, dict)):
+                # Recursively convert any tensors or numpy arrays in lists or dicts to lists
+                def convert_to_serializable(obj):
+                    if isinstance(obj, torch.Tensor):
+                        return obj.tolist()
+                    elif isinstance(obj, np.ndarray):
+                        return obj.tolist()
+                    elif isinstance(obj, list):
+                        return [convert_to_serializable(item) for item in obj]
+                    elif isinstance(obj, dict):
+                        return {k: convert_to_serializable(v) for k, v in obj.items()}
+                    else:
+                        return obj
+                configfile[key] = convert_to_serializable(value)
+            elif isinstance(value, tuple):
+                configfile[key] = list(value)  # Convert tuples to lists for JSON serialization
+            elif not isinstance(value, (str, int, float, bool, type(None))):
                 configfile[key] = str(value)
+
         with open(filepath, 'w') as f:
             json.dump(configfile, f, indent=4)
         print(configfile)
