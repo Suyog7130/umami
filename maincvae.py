@@ -915,7 +915,7 @@ class Test:
         plt.close()
 
 
-    def test_uq(self, batch_size=1):
+    def test_uq(self, batch_size=1, Nruns=1000):
         """
         Test the uncertainty quantification (UQ) of the model for 1000 random
         sample generation corresponding the same input parameters. The output
@@ -938,7 +938,6 @@ class Test:
             The batch size to use for loading the test data. Default is 1, since we
             want to test the same input parameters for multiple generations to evaluate UQ.
         """
-        Nruns = 1000
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
         preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
@@ -996,10 +995,10 @@ class Test:
 
             # Move labels to the appropriate device
             labels = labels.to(device)
-            logging.info(f'Choosing to test sample {labels}')
+            # logging.info(f'Choosing to test sample {labels}')
 
             with torch.no_grad():
-                logging.debug(f'Testing run: {i}')
+                logging.info(f'Testing run: {i}')
                 # Use the label-conditioned encoders and decoder to generate data
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
                 z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
@@ -1024,14 +1023,6 @@ class Test:
                     = plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
                                                 savedir=self.savedir, nobatchwiseplot=True,
                                                 num_saved_overplots=None)
-                axes[0].plot(i, mismatch_amp.flatten(), '.', color='grey',
-                        markersize=4, markeredgewidth=0.25, markeredgecolor='black')
-                axes[0].plot(i, mismatch_freq.flatten(), 'x', color='grey',
-                        markersize=4, markeredgewidth=0.25, markeredgecolor='black')
-                axes[1].plot(i, mismatch_hplus.flatten(), '.', color='grey',
-                        markersize=4, markeredgewidth=0.25, markeredgecolor='black')
-                axes[1].plot(i, mismatch_hcross.flatten(), 'x', color='grey',
-                        markersize=4, markeredgewidth=0.25, markeredgecolor='black')
                 
                 if batch_size > 1:
                     # Check UQ by comparing mismatch of a random waveform in the batch, against the mismatches of 
@@ -1064,16 +1055,36 @@ class Test:
                     mmtot_freq.append(freq_uq)
                     mmtot_hplus.append(hplus_uq)
                     mmtot_hcross.append(hcross_uq)
+                    axes[0].plot(i, amp_uq, 'o', color='blue',
+                            markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                    axes[0].plot(i, freq_uq, 'x', color='orange',
+                            markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                    axes[1].plot(i, hplus_uq, 'o', color='blue',
+                            markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                    # axes[1].plot(i, hcross_uq, 'x', color='orange',
+                    #         markersize=4, markeredgewidth=0.25, markeredgecolor='black')
                 else:
                     mmtot_amp.append(mismatch_amp.flatten()[0])
                     mmtot_freq.append(mismatch_freq.flatten()[0])
                     mmtot_hplus.append(mismatch_hplus.flatten()[0])
                     mmtot_hcross.append(mismatch_hcross.flatten()[0])
+                    axes[0].plot(i, mismatch_amp.flatten(), '.', color='grey',
+                            markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                    axes[0].plot(i, mismatch_freq.flatten(), 'x', color='grey',
+                            markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                    axes[1].plot(i, mismatch_hplus.flatten(), '.', color='grey',
+                            markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                    axes[1].plot(i, mismatch_hcross.flatten(), 'x', color='grey',
+                            markersize=4, markeredgewidth=0.25, markeredgecolor='black')
 
-        axes[0].legend(['Amplitude', 'Frequency'], loc='upper right')
-        axes[1].legend(['$h_{+}$', '$h_{\\times}$'], loc='upper right')
-        label = f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}, $\\chi_1$={labels[0][2]:.2f}, $\\chi_2$={labels[0][3]:.2f}' \
-            if self.aligned else f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}'
+        mu_amp, std_amp = np.mean(mmtot_amp), np.std(mmtot_amp)
+        mu_freq, std_freq = np.mean(mmtot_freq), np.std(mmtot_freq)
+        mu_hplus, std_hplus = np.mean(mmtot_hplus), np.std(mmtot_hplus)
+        mu_hcross, std_hcross = np.mean(mmtot_hcross), np.std(mmtot_hcross)
+        print(f'Mean Frequency Mismatch: {mu_freq:.2e} ± {std_freq:.2e}')
+        print(f'Mean Amplitude Mismatch: {mu_amp:.2e} ± {std_amp:.2e}')
+        print(f'Mean hplus Mismatch: {mu_hplus:.2e} ± {std_hplus:.2e}')
+        print(f'Mean hcross Mismatch: {mu_hcross:.2e} ± {std_hcross:.2e}')
         for ax in [axes[0], axes[1]]:
             ax.set_yscale('log')
             ax.set_xlabel('Iteration', fontsize=12)
@@ -1081,25 +1092,29 @@ class Test:
             ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
             ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
             ax.tick_params(which='both', direction='in', top=True, right=True)
-        axes[0].text(0.05, 0.025, label, transform=axes[0].transAxes, ha='left', fontsize=12)
-        axes[1].text(0.05, 0.10, label, transform=axes[1].transAxes, ha='left', fontsize=12)
-        mu_amp, std_amp = np.mean(mmtot_amp), np.std(mmtot_amp)
-        mu_freq, std_freq = np.mean(mmtot_freq), np.std(mmtot_freq)
-        mu_hplus, std_hplus = np.mean(mmtot_hplus), np.std(mmtot_hplus)
-        mu_hcross, std_hcross = np.mean(mmtot_hcross), np.std(mmtot_hcross)
-        logging.info(f'Mean Frequency Mismatch: {mu_freq:.2e} ± {std_freq:.2e}')
-        logging.info(f'Mean Amplitude Mismatch: {mu_amp:.2e} ± {std_amp:.2e}')
-        logging.info(f'Mean hplus Mismatch: {mu_hplus:.2e} ± {std_hplus:.2e}')
-        logging.info(f'Mean hcross Mismatch: {mu_hcross:.2e} ± {std_hcross:.2e}')
-        axes[0].text(0.05, 0.03,  f'$|\\delta A|$={mu_amp:.2e}' + ', ' +
-                    f'$|\\delta f|$={mu_freq:.2e}\n', transform=axes[0].transAxes, ha='left', fontsize=12)
-        axes[1].text(0.05, 0.05, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}' + ', ' +
-                    '$|\\delta h_{\\times}|$='+f'{mu_hcross:.2e}', transform=axes[1].transAxes, ha='left', fontsize=12)
+        axes[0].legend(['Amplitude', 'Frequency'], loc='upper right')
+        if batch_size == 1:
+            label = f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}, $\\chi_1$={labels[0][2]:.2f}, $\\chi_2$={labels[0][3]:.2f}' \
+                if self.aligned else f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}'
+            axes[0].text(0.05, 0.025, label, transform=axes[0].transAxes, ha='left', fontsize=12)
+            axes[1].text(0.05, 0.10, label, transform=axes[1].transAxes, ha='left', fontsize=12)
+            axes[0].text(0.05, 0.03,  f'$|\\delta A|$={mu_amp:.2e}' + ', ' +
+                        f'$|\\delta f|$={mu_freq:.2e}\n', transform=axes[0].transAxes, ha='left', fontsize=12)
+            axes[1].text(0.05, 0.05, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}' + ', ' +
+                        '$|\\delta h_{\\times}|$='+f'{mu_hcross:.2e}', transform=axes[1].transAxes, ha='left', fontsize=12)
+            axes[1].legend(['$h_{+}$', '$h_{\\times}$'], loc='upper right')
+        else:
+            axes[1].set_ylim(bottom=1e-2)
+            axes[0].text(0.05, 0.85,  '$|\\delta A|$='+f'{mu_amp:.2e}'+
+                        '\n$|\\delta f|$='+f'{mu_freq:.2e}\n', transform=axes[0].transAxes, ha='left', fontsize=12)
+            axes[1].text(0.05, 0.05, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}', transform=axes[1].transAxes, ha='left', fontsize=12)
+            axes[1].legend(['$h_{+}$'], loc='upper right')
         plt.tight_layout()
-        figname = f'{self.savedir}/uq-test-' + 'mean-abs-diff-' if batch_size > 1 else ''
+        figname = f'{self.savedir}/uq-test-' + f'mean-abs-diff-{Nruns}' if batch_size > 1 else ''
         figname += datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(figname+'.png', dpi=300, transparent=True)
         plt.savefig(figname+'-white.png', dpi=300)
+        plt.show()
         plt.close()
         print("All UQ tests completed.")
 
@@ -2102,9 +2117,9 @@ def plot_mismatch(x, reconst, labels, keys, reshape2orig=False, savedir='../resu
             assert len(orig_amp) == len(recon_amp), f"Original and reconstructed amplitude arrays must have the same length. Got {len(orig_amp)} and {len(recon_amp)}"
             assert len(orig_freq) == len(recon_freq), f"Original and reconstructed frequency arrays must have the same length. Got {len(orig_freq)} and {len(recon_freq)}"
         except AssertionError as e:
-            logging.error(f"Length mismatch between original and reconstructed data for sample {i}: {e}")
+            # logging.error(f"Length mismatch between original and reconstructed data for sample {i}: {e}")
             logging.debug(f"Original amplitude length: {len(orig_amp)}, Reconstructed amplitude length: {len(recon_amp)}")
-            logging.warning("Removing first element from original amplitude and frequency arrays to match reconstructed data length.")
+            # logging.warning("Removing first element from original amplitude and frequency arrays to match reconstructed data length.")
             orig_amp = orig_amp[1:]
             orig_freq = orig_freq[1:]
             logging.debug(f"After removing first element, Original amplitude length: {len(orig_amp)}, Reconstructed amplitude length: {len(recon_amp)}")
@@ -2284,9 +2299,21 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
                                 savename=savedir+'overplot-hphc')
                 num_saved_overplots += 1
 
+        try:
+            assert hp_orig.shape == hp_recon.shape, f"Original and reconstructed hplus waveforms must have the same shape. Got {hp_orig.shape} and {hp_recon.shape}"
+            assert hc_orig.shape == hc_recon.shape, f"Original and reconstructed hcross waveforms must have the same shape. Got {hc_orig.shape} and {hc_recon.shape}"
+        except AssertionError as e:
+            # logging.error(f"Shape mismatch between original and reconstructed hplus/hcross for sample {i}: {e}")
+            logging.debug(f"Original hplus shape: {hp_orig.shape}, Reconstructed hplus shape: {hp_recon.shape}")
+            # logging.warning("Removing first element of the orig array to make them equal length")
+            hp_orig = hp_orig[1:]
+            hc_orig = hc_orig[1:]
+            
+
         # Calculate mismatch for hplus and hcross
-        mismatch_hplus[i] = calc_polarization_mismatch(hp_hdf, hp_recon, delta_t=delta_t, f_lower=f_lower)
-        mismatch_hcross[i] = calc_polarization_mismatch(hc_hdf, hc_recon, delta_t=delta_t, f_lower=f_lower)
+        # NOTE: Can use `hp_hdf` and `hc_hdf` for this!
+        mismatch_hplus[i] = calc_polarization_mismatch(hp_orig, hp_recon, delta_t=delta_t, f_lower=f_lower)
+        mismatch_hcross[i] = calc_polarization_mismatch(hc_orig, hc_recon, delta_t=delta_t, f_lower=f_lower)
         logging.info(f"Mismatch for hplus: {mismatch_hplus[i]}, hcross: {mismatch_hcross[i]}")
 
         # Calculate chirp mass
@@ -2445,7 +2472,7 @@ if __name__ == "__main__":
     if args.test:
         # try:
         if args.test_uq:
-            Test(args).test_uq(batch_size=args.batch_size)
+            Test(args).test_uq(batch_size=args.batch_size, Nruns=500)
         elif args.time_complexity:
             # for n in [100, 500, 1000]:
             Test(args).test_timecomplexity()
