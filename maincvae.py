@@ -474,6 +474,16 @@ class Test:
         self.batch_size = args.batch_size
         self.modeltype = args.modeltype
 
+        if args.fix_random_seed:
+            random_seed = 42  # -- TODO: make this configurable!
+            random.seed(random_seed)
+            np.random.seed(random_seed)
+            torch.manual_seed(random_seed)
+            torch.cuda.manual_seed_all(random_seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+            logging.info(f"Random seed fixed to {random_seed} for reproducibility.")
+
         # NOTE: Using str values for precision, so that attr are callable for both torch and numpy
         # self.device = args.device
         if torch.cuda.is_available():
@@ -2420,6 +2430,8 @@ if __name__ == "__main__":
                             help='Do not save output files and plots!')
     parser.add_argument('--dummy', action='store_true', default=False,
                             help='Whether to use dummy data for testing the code. (default=%(default)s')
+    parser.add_argument('--fix-random-seed', action='store_true', default=False,
+                            help='Whether to fix random seed for reproducibility? (default=%(default)s)')
 
     parser.add_argument('--verbose', '-v', action='store_true', help="Print update messages.")
     parser.add_argument('--debug', action='store_true', help="Show debug messages.")

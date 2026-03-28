@@ -565,8 +565,6 @@ class CVAE(nn.Module):
     def reparameterize(self, z_mean, z_log_var):
         # This is the variational part of the VAE
         std = torch.exp(0.5 * z_log_var)
-        # -- TODO: set random seed for reproducibility
-        # torch.manual_seed(42)
         eps = torch.randn_like(std)
         return z_mean + eps * std
 

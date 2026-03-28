@@ -1,6 +1,6 @@
 {
     "batch_size": 32,
-    "latent_dim_x": 128,
+    "latent_dim_x": 32,
     "latent_dim_key": 4,
     "activation": "relu",
     "target": "None",
