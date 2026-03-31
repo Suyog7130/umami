@@ -64,6 +64,19 @@ def _make_activation(name: Optional[str]) -> nn.Module:
     raise ValueError(f"Unknown activation: {name}")
 
 
+# Recursively convert any tensors or numpy arrays in lists or dicts to lists
+def convert_to_serializable(obj):
+    if isinstance(obj, torch.Tensor):
+        return obj.tolist()
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, list):
+        return [convert_to_serializable(item) for item in obj]
+    elif isinstance(obj, dict):
+        return {k: convert_to_serializable(v) for k, v in obj.items()}
+    else:
+        return obj
+
 # -------------------------
 # Define Base Coder classes
 # -------------------------
@@ -1009,15 +1022,15 @@ class TwoC2E1D(nn.Module):
         configfile.update(kwargs)
 
         # Save all other class attributes to the configfile, for completeness!
-        configfile.update({k: str(v) for k, v in self.__dict__.items() if k not in configfile and k!='MODEL_CONFIG'})
+        configfile.update({k: convert_to_serializable(v) for k, v in self.__dict__.items() if k not in configfile and k!='MODEL_CONFIG'})
         
-        # Save attibutes of the encoder, decoder, and conditional networks to the config file for better reproducibility and understanding of the model architecture.
+        # Save attibutes of the encoder, decoder, and conditional networks to the config file.
         configfile.update({
-            'encoder_x_config': self.encoder_x.__dict__,
-            'encoder_key_config': self.encoder_key.__dict__,
-            'decoder_config': self.decoder.__dict__,
-            'conditional_x_config': self.conditional_x.__dict__,
-            'conditional_key_config': self.conditional_key.__dict__,
+            'encoder_x_config': {k: convert_to_serializable(v) for k, v in self.encoder_x.__dict__.items()},
+            'encoder_key_config': {k: convert_to_serializable(v) for k, v in self.encoder_key.__dict__.items()},
+            'decoder_config': {k: convert_to_serializable(v) for k, v in self.decoder.__dict__.items()},
+            'conditional_x_config': {k: convert_to_serializable(v) for k, v in self.conditional_x.__dict__.items()},
+            'conditional_key_config': {k: convert_to_serializable(v) for k, v in self.conditional_key.__dict__.items()},
         })
 
         # Convert any non-serializable objects in configfile to strings for JSON serialization
@@ -1027,18 +1040,6 @@ class TwoC2E1D(nn.Module):
             elif isinstance(value, np.ndarray):
                 configfile[key] = value.tolist()  # Convert numpy arrays to lists for JSON serialization
             elif isinstance(value, (list, dict)):
-                # Recursively convert any tensors or numpy arrays in lists or dicts to lists
-                def convert_to_serializable(obj):
-                    if isinstance(obj, torch.Tensor):
-                        return obj.tolist()
-                    elif isinstance(obj, np.ndarray):
-                        return obj.tolist()
-                    elif isinstance(obj, list):
-                        return [convert_to_serializable(item) for item in obj]
-                    elif isinstance(obj, dict):
-                        return {k: convert_to_serializable(v) for k, v in obj.items()}
-                    else:
-                        return obj
                 configfile[key] = convert_to_serializable(value)
             elif isinstance(value, tuple):
                 configfile[key] = list(value)  # Convert tuples to lists for JSON serialization
