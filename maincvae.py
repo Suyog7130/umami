@@ -475,7 +475,7 @@ class Test:
         self.modeltype = args.modeltype
 
         if args.fix_random_seed:
-            random_seed = 42  # -- TODO: make this configurable!
+            random_seed = args.random_seed  # -- TODO: make this configurable!
             random.seed(random_seed)
             np.random.seed(random_seed)
             torch.manual_seed(random_seed)
@@ -1098,7 +1098,7 @@ class Test:
         for ax in [axes[0], axes[1]]:
             ax.set_yscale('log')
             ax.set_xlabel('Iteration', fontsize=12)
-            ax.set_ylabel('Mismatch', fontsize=12)
+            ax.set_ylabel('Mismatch Uncertainty', fontsize=12)
             ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
             ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
             ax.tick_params(which='both', direction='in', top=True, right=True)
@@ -2432,6 +2432,8 @@ if __name__ == "__main__":
                             help='Whether to use dummy data for testing the code. (default=%(default)s')
     parser.add_argument('--fix-random-seed', action='store_true', default=False,
                             help='Whether to fix random seed for reproducibility? (default=%(default)s)')
+    parser.add_argument('--random-seed', action='store', default=42, type=int,
+                            help='Random seed value (default=%(default)s)')
 
     parser.add_argument('--verbose', '-v', action='store_true', help="Print update messages.")
     parser.add_argument('--debug', action='store_true', help="Show debug messages.")
