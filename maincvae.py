@@ -1129,7 +1129,7 @@ class Test:
         print("All UQ tests completed.")
 
 
-    def test_timecomplexity(self, num=int(1e6)):
+    def test_timecomplexity(self, num=int(1e4)):
         """
         Test the time complexity of the model for generating a 1-10e4 ish number of samples.
         This is useful for understanding the efficiency of the model in real-time
@@ -1141,23 +1141,22 @@ class Test:
         Nruns = np.arange(1,num+1)
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
-        preset_array_size = 8190 if args.fcutoff else PRESET_ARRAY_SIZE
+        preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
         if self.modeltype=='cae':
             model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                        key_shape=(2,2)).to(args.device)
+                        key_shape=(2,2)).to(self.device)
         else:
             model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
-                        key_shape=(2,2)).to(args.device)
-        model.load_state_dict(torch.load(self.model_path, map_location=device))
-        model.to(device)
-        model.to(torch.float64)
+                        key_shape=(2,2)).to(self.device)
+        model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+        model.to(self.device)
+        model.to(getattr(torch, self.precision))
         model.eval()
         logging.info("Model loaded and set to evaluation mode.")
 
-        # -- Open CSV file to save results on the go    
-        import csv
-        csv_fname = self.savedir + 'timecomplexity_results-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv'
+        # -- Open CSV file to save results on the go
+        csv_fname = self.savedir + 'timecomplexity_results-' + str(self.device) + '-' + datetime.now().strftime('%Y%m%d_%H%M%S') + '.csv'
         csvfile = open(csv_fname, mode='w', newline='')
         csvfile.write('num_samples,time_seconds\n')  # Write header row
         logging.info(f"CSV file opened for writing time complexity results: {csv_fname}")
@@ -1173,7 +1172,7 @@ class Test:
                 labels = np.vstack((m1, m2, spin1z, spin2z)).T
             else:
                 labels = np.vstack((m1, m2)).T
-            labels = torch.tensor(labels, dtype=torch.float64).to(device)
+            labels = torch.tensor(labels, dtype=getattr(torch, self.precision)).to(self.device)
             logging.info(f'Choosing to test sample size {labels.shape}')
 
             # Measure time taken by model to generate samples
@@ -1195,6 +1194,14 @@ class Test:
             # -- Write the result to CSV file each time, so that if the process is interrupted, 
             # we still have the results up to that point.
             csvfile.write(f'{Nr},{elapsed_time}\n')
+
+            # -- Flush out memory storage after each run, to avoid pileup of memory and consequent slowdown 
+            # in time taken for generation of samples in later runs.
+            # Otherwise, around 2x10^4 waveforms, the time taken for generation approachs the vertical asymptote, 
+            # which is not expected for a well-behaved model! This is likely due to the GPU memory getting filled 
+            # up and causing slowdown in generation of samples.
+            torch.cuda.empty_cache()
+            logging.debug("End of run. Emptied CUDA cache to prevent memory pileup.")
 
         # Close the CSV file after writing all results
         csvfile.close()
