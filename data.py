@@ -132,6 +132,17 @@ class BaseWaveform:
         self.init_plot()
         # self.waveform()
 
+    def get_params(self, index):
+        """
+        Get the parameters for the given index from the parameter space.
+        """
+        params = self.baseparams.copy()
+        for param in self.param_space:
+            params[param] = getattr(self, param+'s')[index]
+        if 'q' in self.param_space:
+            params['m1'] = params['m2'] * params['q']
+        return params
+    
     def calc_cutoffconst(self, nsamples=1000):
         """
         Calculate the cutoff constant for the waveform duration
@@ -426,17 +437,6 @@ class Waveform(BaseWaveform):
         np.random.shuffle(val_indices)
         np.random.shuffle(test_indices)
         return (train_indices, val_indices, test_indices)
-
-    def get_params(self, index):
-        """
-        Get the parameters for the given index from the parameter space.
-        """
-        params = self.baseparams.copy()
-        for param in self.param_space:
-            params[param] = getattr(self, param+'s')[index]
-        if 'q' in self.param_space:
-            params['m1'] = params['m2'] * params['q']
-        return params
     
     def write_hdf_grp(self, hf, data, grpname):
         """
