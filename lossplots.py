@@ -111,44 +111,6 @@ def plot_flexcvae_loss(dir=DIR, time=TIME):
     plt.close()
 
 
-
-def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13, fname=''):
-    """
-    Plot histograms of mismatch values for different types of mismatches. 
-    The function takes a DataFrame containing mismatch data and creates histograms 
-    for amplitude, frequency, h_plus, and h_cross mismatches. The x-axis is set to 
-    logarithmic scale, and the y-axis can also be set to logarithmic scale based on 
-    the 'log' parameter. Each subplot includes the mode, mean, and median of the 
-    mismatch values for that type.
-    """
-    types = ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']
-    titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
-    fig, ax = plt.subplots(2, 2, figsize=(10, 10))
-    ax = ax.flatten()
-    for i, t in enumerate(types):
-        bins = np.logspace(np.log10(dfmm[t].min()+1e-10), np.log10(dfmm[t].max()+1e-10), 50)
-        dfmm.hist(t, bins=bins, ax=ax[i], grid=False, edgecolor='black', color='skyblue')
-        ax[i].set_title(None)
-        ax[i].set_xscale('log')
-        if log:
-            ax[i].set_yscale('log')
-        ax[i].set_xlabel('Mismatch', fontsize=fontsize)
-        ax[i].set_ylabel('Frequency', fontsize=fontsize)
-        ax[i].text(0.95, 0.95, f'{titles[i]}', fontweight='bold',
-                   transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
-        ax[i].text(0.95, 0.85, f'Mode: {dfmm[t].mode()[0]:.2e}\nMean: {dfmm[t].mean():.2e}\nMedian: {dfmm[t].median():.2e}', 
-                   transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
-        ax[i].tick_params(which="both", direction='in', top=True, right=True)
-        ax[i].tick_params(labelsize=labelsize)
-    plt.tight_layout()
-    fname = DIR + f'mismatch_hist' + fname
-    fname += '-log' if log else ''
-    plt.savefig(fname+'-'+TIME+'.png', dpi=300, bbox_inches='tight', transparent=True)
-    plt.savefig(fname+'-white'+'-'+TIME+'.png', dpi=300, bbox_inches='tight')
-    plt.close()
-    logging.info(f'Mismatch histograms saved to {DIR}')
-
-
 def plot_mmcontour_in_qchi_space(dfmm, fontsize=15, labelsize=13, fname=''):
     """
     Plot the mismatches in the mass ratio and chi_eff plane as contours.
@@ -261,6 +223,43 @@ def apply_chi_cuts(dfmm, cut=0.8):
     return dfmmcut
 
 
+def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13, fname=''):
+    """
+    Plot histograms of mismatch values for different types of mismatches. 
+    The function takes a DataFrame containing mismatch data and creates histograms 
+    for amplitude, frequency, h_plus, and h_cross mismatches. The x-axis is set to 
+    logarithmic scale, and the y-axis can also be set to logarithmic scale based on 
+    the 'log' parameter. Each subplot includes the mode, mean, and median of the 
+    mismatch values for that type.
+    """
+    types = ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']
+    titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
+    fig, ax = plt.subplots(2, 2, figsize=(10, 10))
+    ax = ax.flatten()
+    for i, t in enumerate(types):
+        bins = np.logspace(np.log10(dfmm[t].min()+1e-10), np.log10(dfmm[t].max()+1e-10), 50)
+        dfmm.hist(t, bins=bins, ax=ax[i], grid=False, edgecolor='black', color='skyblue')
+        ax[i].set_title(None)
+        ax[i].set_xscale('log')
+        if log:
+            ax[i].set_yscale('log')
+        ax[i].set_xlabel('Mismatch', fontsize=fontsize)
+        ax[i].set_ylabel('Frequency', fontsize=fontsize)
+        ax[i].text(0.95, 0.95, f'{titles[i]}', fontweight='bold',
+                   transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
+        ax[i].text(0.95, 0.85, f'Mode: {dfmm[t].mode()[0]:.2e}\nMean: {dfmm[t].mean():.2e}\nMedian: {dfmm[t].median():.2e}', 
+                   transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
+        ax[i].tick_params(which="both", direction='in', top=True, right=True)
+        ax[i].tick_params(labelsize=labelsize)
+    plt.tight_layout()
+    fname = DIR + f'mismatch_hist' + fname
+    fname += '-log' if log else ''
+    plt.savefig(fname+'-'+TIME+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(fname+'-white'+'-'+TIME+'.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    logging.info(f'Mismatch histograms saved to {DIR}')
+
+
 def mismatch_anal(args, cut=0.8):
     logging.info("Starting mismatch analysis...")
     mmfile = DIR + 'mismatch-results-' + TIME + '.h5'
@@ -341,7 +340,7 @@ def plot_rom_opt_mm_hist(fname=None, dir=DIR, time=TIME, fontsize=15, labelsize=
         ax.tick_params(labelsize=labelsize)
         ax.set_xscale('log')
         ax.set_xlabel('Mismatch', fontsize=fontsize)
-        ax.set_ylabel('Frequency', fontsize=fontsize)
+        ax.set_ylabel('Count', fontsize=fontsize)
         ax.legend(['ROM', 'Opt'], fontsize=labelsize)
         ax.text(0.95, 0.95, title, fontweight='bold',
                    transform=ax.transAxes, fontsize=fontsize, va='top', ha='right')

@@ -925,7 +925,7 @@ class Test:
         plt.close()
 
 
-    def test_uq(self, batch_size=1, Nruns=1000):
+    def test_uq(self, batch_size=1, Nruns=1000, plot_hist=True, fontsize=12):
         """
         Test the uncertainty quantification (UQ) of the model for 1000 random
         sample generation corresponding the same input parameters. The output
@@ -943,10 +943,15 @@ class Test:
 
         Arguments
         ---------
-        
         batch_size: int, optional
             The batch size to use for loading the test data. Default is 1, since we
             want to test the same input parameters for multiple generations to evaluate UQ.
+        Nruns: int, optional
+            The number of random generations to perform for the same input parameters. Default is 1000.
+        plot_hist: bool, optional
+            Whether to plot the histogram of mismatch values for the generated samples. Default is True.
+        fontsize: int, optional
+            The font size for the plot labels and titles. Default is 12.
         """
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
@@ -1065,14 +1070,31 @@ class Test:
                     mmtot_freq.append(freq_uq)
                     mmtot_hplus.append(hplus_uq)
                     mmtot_hcross.append(hcross_uq)
-                    axes[0].plot(i, amp_uq, 'o', color='blue',
-                            markersize=4, markeredgewidth=0.25, markeredgecolor='black')
-                    axes[0].plot(i, freq_uq, 'x', color='orange',
-                            markersize=4, markeredgewidth=0.25, markeredgecolor='black')
-                    axes[1].plot(i, hplus_uq, 'o', color='blue',
-                            markersize=4, markeredgewidth=0.25, markeredgecolor='black')
-                    # axes[1].plot(i, hcross_uq, 'x', color='orange',
-                    #         markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                    if plot_hist:
+                        # Plot histogram of mismatch uncertainty values in log scale
+                        bins = np.logspace(np.log10(min(amp_uq, freq_uq, hplus_uq, hcross_uq)+1e-10), 
+                                           np.log10(max(amp_uq, freq_uq, hplus_uq, hcross_uq)+1e-10), 50)
+                        axes[0].hist(amp_uq, bins=bins, label=['Amplitude'], alpha=0.5, color=['blue'])
+                        axes[0].hist(freq_uq, bins=bins, label=['Frequency'], alpha=0.5, color=['orange'])
+                        axes[1].hist(hplus_uq, bins=bins, label=['$h_{+}$'], alpha=0.5, color=['blue'])
+                        axes[1].hist(hcross_uq, bins=bins, label=['$h_{\\times}$'], alpha=0.5, color=['orange'])
+                        axes[0].set_xscale('log')
+                        axes[0].set_xlabel('Mismatch Uncertainty', fontsize=fontsize)
+                        axes[0].set_ylabel('Count', fontsize=fontsize)
+                        axes[0].legend(loc='upper right')
+                        axes[1].set_xscale('log')
+                        axes[1].set_xlabel('Mismatch Uncertainty', fontsize=fontsize)
+                        axes[1].set_ylabel('Count', fontsize=fontsize)
+                        axes[1].legend(loc='upper right')
+                    else:
+                        axes[0].plot(i, amp_uq, 'o', color='blue',
+                                markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                        axes[0].plot(i, freq_uq, 'x', color='orange',
+                                markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                        axes[1].plot(i, hplus_uq, 'o', color='blue',
+                                markersize=4, markeredgewidth=0.25, markeredgecolor='black')
+                        # axes[1].plot(i, hcross_uq, 'x', color='orange',
+                        #         markersize=4, markeredgewidth=0.25, markeredgecolor='black')
                 else:
                     mmtot_amp.append(mismatch_amp.flatten()[0])
                     mmtot_freq.append(mismatch_freq.flatten()[0])
@@ -1095,35 +1117,61 @@ class Test:
         print(f'Mean Amplitude Mismatch: {mu_amp:.2e} ± {std_amp:.2e}')
         print(f'Mean hplus Mismatch: {mu_hplus:.2e} ± {std_hplus:.2e}')
         print(f'Mean hcross Mismatch: {mu_hcross:.2e} ± {std_hcross:.2e}')
+
+        # -- Save mismatch uncertainty values to a dataframe and save as csv file
+        df_uq = pd.DataFrame({
+            'mismatch_uncertainty_amp': mmtot_amp,
+            'mismatch_uncertainty_freq': mmtot_freq,
+            'mismatch_uncertainty_hplus': mmtot_hplus,
+            'mismatch_uncertainty_hcross': mmtot_hcross,
+        })
+        savename = f'{self.savedir}/uq-test-' + 'hist-' if plot_hist else ''
+        savename += f'mean-abs-diff-{Nruns}-' if batch_size > 1 else ''
+        savename += datetime.now().strftime('%Y%m%d_%H%M%S')
+        df_uq.to_csv(savename + '.csv', index=False)
+        logging.info(f"Mismatch uncertainty values saved to {savename}.csv")
+
+        # Plotting
         for ax in [axes[0], axes[1]]:
             ax.set_yscale('log')
-            ax.set_xlabel('Iteration', fontsize=12)
-            ax.set_ylabel('Mismatch Uncertainty', fontsize=12)
-            ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
+            ax.set_xlabel('Iteration', fontsize=fontsize)
+            ax.set_ylabel('Mismatch Uncertainty', fontsize=fontsize)
+            if plot_hist:
+                ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+            else:
+                ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
             ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
             ax.tick_params(which='both', direction='in', top=True, right=True)
         axes[0].legend(['Amplitude', 'Frequency'], loc='upper right')
         if batch_size == 1:
             label = f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}, $\\chi_1$={labels[0][2]:.2f}, $\\chi_2$={labels[0][3]:.2f}' \
                 if self.aligned else f'$m_1$={labels[0][0]:.2f}, $m_2$={labels[0][1]:.2f}'
-            axes[0].text(0.05, 0.025, label, transform=axes[0].transAxes, ha='left', fontsize=12)
-            axes[1].text(0.05, 0.10, label, transform=axes[1].transAxes, ha='left', fontsize=12)
+            axes[0].text(0.05, 0.025, label, transform=axes[0].transAxes, ha='left', fontsize=fontsize)
+            axes[1].text(0.05, 0.10, label, transform=axes[1].transAxes, ha='left', fontsize=fontsize)
             axes[0].text(0.05, 0.03,  f'$|\\delta A|$={mu_amp:.2e}' + ', ' +
-                        f'$|\\delta f|$={mu_freq:.2e}\n', transform=axes[0].transAxes, ha='left', fontsize=12)
+                        f'$|\\delta f|$={mu_freq:.2e}\n', transform=axes[0].transAxes, ha='left', fontsize=fontsize)
             axes[1].text(0.05, 0.05, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}' + ', ' +
-                        '$|\\delta h_{\\times}|$='+f'{mu_hcross:.2e}', transform=axes[1].transAxes, ha='left', fontsize=12)
+                        '$|\\delta h_{\\times}|$='+f'{mu_hcross:.2e}', transform=axes[1].transAxes, ha='left', fontsize=fontsize)
             axes[1].legend(['$h_{+}$', '$h_{\\times}$'], loc='upper right')
+        elif batch_size > 1 and plot_hist:
+            # axes[0].text(0.95, 0.85, f'A(t)\nMedian: {np.median(mmtot_amp):.2e}\nMean: {np.mean(mmtot_amp):.2e}', 
+            #        transform=axes[0].transAxes, fontsize=fontsize, va='top', ha='right')
+            # axes[1].text(0.95, 0.85, '$h_{+}$\n'+f'Median: {np.median(mmtot_hplus):.2e}\nMean: {np.mean(mmtot_hplus):.2e}', 
+            #        transform=axes[1].transAxes, fontsize=fontsize, va='top', ha='right')
+            # -- overwrite legend with median value information instead!
+            axes[0].legend([f'$A(t)$\nMedian: {np.median(mmtot_amp):.2e}',
+                            f'$f(t)$\nMedian: {np.median(mmtot_freq):.2e}'], loc='upper right')
+            axes[1].legend([f'$h_+$\nMedian: {np.median(mmtot_hplus):.2e}',
+                            '$h_{\\times}$'+f'\nMedian: {np.median(mmtot_hcross):.2e}'], loc='upper right')   
         else:
             axes[1].set_ylim(bottom=1e-2)
             axes[0].text(0.05, 0.85,  '$|\\delta A|$='+f'{mu_amp:.2e}'+
-                        '\n$|\\delta f|$='+f'{mu_freq:.2e}\n', transform=axes[0].transAxes, ha='left', fontsize=12)
-            axes[1].text(0.05, 0.05, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}', transform=axes[1].transAxes, ha='left', fontsize=12)
+                        '\n$|\\delta f|$='+f'{mu_freq:.2e}\n', transform=axes[0].transAxes, ha='left', fontsize=fontsize)
+            axes[1].text(0.05, 0.05, '$|\\delta h_{+}|$='+f'{mu_hplus:.2e}', transform=axes[1].transAxes, ha='left', fontsize=fontsize)
             axes[1].legend(['$h_{+}$'], loc='upper right')
         plt.tight_layout()
-        figname = f'{self.savedir}/uq-test-' + f'mean-abs-diff-{Nruns}' if batch_size > 1 else ''
-        figname += datetime.now().strftime('%Y%m%d_%H%M%S')
-        plt.savefig(figname+'.png', dpi=300, transparent=True)
-        plt.savefig(figname+'-white.png', dpi=300)
+        plt.savefig(savename+'.png', dpi=300, transparent=True)
+        plt.savefig(savename+'-white.png', dpi=300)
         plt.show()
         plt.close()
         print("All UQ tests completed.")
