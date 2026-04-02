@@ -354,6 +354,47 @@ def plot_rom_opt_mm_hist(fname=None, dir=DIR, time=TIME, fontsize=15, labelsize=
     logging.info(f"ROM and Optimized mismatch histograms saved to {savename}")
 
 
+def plot_uq_hist_from_file(fontsize=15, labelsize=13):
+    """
+    Plots the hplus and hcross mismatch uncertainty histograms
+    on two subplots with log-scaled x-axes. The function reads 
+    mismatch data from a specified CSV file, and creates histograms 
+    for the hplus and hcross mismatches.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+    dir = '../results/20260401/'
+    fname = 'uq-test-hist-mean-abs-diff-5000-20260401_174233'
+    dfuq = pd.read_csv(dir+fname+'.csv', header=0)
+    hpbins = np.logspace(np.log10(dfuq['mmuq_hplus'].min())+1e-10,
+                            np.log10(dfuq['mmuq_hplus'].max())+1e-10, 50)
+    dfuq.hist('mmuq_hplus', bins=hpbins, ax=axes[0], grid=False, edgecolor='black', color='lightblue')
+    dfuq.hist('mmuq_hcross', bins=hpbins, ax=axes[1], grid=False, edgecolor='black', color='lightblue')
+    types = ['mmuq_hplus', 'mmuq_hcross']
+    titles = [ '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
+    for i in range(len(types)):
+        ax = axes[i]
+        ax.set_xlim(1e-2,1e0)
+        ax.set_xscale('log')
+        ax.tick_params(which="both", direction='in', top=True, right=True)
+        ax.tick_params(labelsize=labelsize)
+        ax.set_xlabel('Mismatch Uncertainty', fontsize=fontsize)
+        ax.set_ylabel('Count', fontsize=fontsize)
+        ax.text(0.95, 0.95, titles[i], fontweight='bold',
+                   transform=ax.transAxes, fontsize=fontsize, va='top', ha='right')
+        ax.text(0.95, 0.85, f'Mode: {dfuq[types[i]].mode()[0]:.2e}\nMean: {dfuq[types[i]].mean():.2e}\nMedian: {dfuq[types[i]].median():.2e}',
+                   transform=ax.transAxes, fontsize=fontsize, va='top', ha='right')
+        ax.set_title(None)
+        ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
+    plt.tight_layout()
+    savename = dir + 'uq-hphc-hist-mean-abs-diff-5000'
+    now = datetime.now().strftime('%Y%m%d_%H%M%S')
+    plt.savefig(savename+'-'+now+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(savename+'-white'+'-'+now+'.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    plt.close()
+    logging.info(f"Uncertainty histograms saved to {dir}")
+
+
 def plot_timecompare_from_file(fname=None, dir=DIR, time=TIME, fontsize=12, labelsize=10):
     """
     Plot the time taken to generate different variants of the SEOBNRv4 waveform
@@ -431,4 +472,5 @@ if __name__ == "__main__":
     # mismatch_anal(args)
     # plot_rom_opt_mm_hist()
     # plot_timecompare_from_file()
-    plot_flexcvae_loss(dir=args.dir, time=args.time)
+    # plot_flexcvae_loss(dir=args.dir, time=args.time)
+    plot_uq_hist_from_file()

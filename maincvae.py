@@ -2555,7 +2555,7 @@ if __name__ == "__main__":
     if args.test:
         # try:
         if args.test_uq:
-            Test(args).test_uq(batch_size=args.batch_size, Nruns=1000, 
+            Test(args).test_uq(batch_size=args.batch_size, Nruns=5000, 
                                plot_hist=True, plotonlyone=True,
                                fontsize=15, labelsize=13)
         elif args.time_complexity:
