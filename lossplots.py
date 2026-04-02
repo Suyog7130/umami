@@ -13,8 +13,8 @@ from datetime import datetime
 import matplotlib.ticker as tck
 
 
-DIR = '../results/251225/'
-TIME = '20251225_003516'
+DIR = '../results/20251023/'
+TIME = '20251023_075320'
 
 def plot(ax, fname, logscale=False, save=False, show=True,
          label=''):
@@ -246,9 +246,9 @@ def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13, fname=''):
         ax[i].set_xlabel('Mismatch', fontsize=fontsize)
         ax[i].set_ylabel('Frequency', fontsize=fontsize)
         ax[i].text(0.95, 0.95, f'{titles[i]}', fontweight='bold',
-                   transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
+                   transform=ax[i].transAxes, fontsize=labelsize, va='top', ha='right')
         ax[i].text(0.95, 0.85, f'Mode: {dfmm[t].mode()[0]:.2e}\nMean: {dfmm[t].mean():.2e}\nMedian: {dfmm[t].median():.2e}', 
-                   transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
+                   transform=ax[i].transAxes, fontsize=labelsize, va='top', ha='right')
         ax[i].tick_params(which="both", direction='in', top=True, right=True)
         ax[i].tick_params(labelsize=labelsize)
     plt.tight_layout()
@@ -276,20 +276,20 @@ def mismatch_anal(args, cut=0.8):
 
     # Plot mismatch histograms
     if args.histogram:
-        plot_mm_hist(dfmm)
-        plot_mm_hist(dfmm, log=True)
-        plot_mm_hist(dfmmcut, fname='-cut')
-        plot_mm_hist(dfmmcut, log=True, fname='-cut')
+        plot_mm_hist(dfmm, fontsize=args.fontsize, labelsize=args.labelsize)
+        plot_mm_hist(dfmm, log=True, fontsize=args.fontsize, labelsize=args.labelsize)
+        plot_mm_hist(dfmmcut, fname='-cut', fontsize=args.fontsize, labelsize=args.labelsize)
+        plot_mm_hist(dfmmcut, log=True, fname='-cut', fontsize=args.fontsize, labelsize=args.labelsize)
 
     if args.contour:
-        plot_mmcontour_in_qchi_space(dfmm)
-        plot_mmcontour_in_qchi_space(dfmmcut, fname='-cut')
+        plot_mmcontour_in_qchi_space(dfmm, fontsize=args.fontsize, labelsize=args.labelsize)
+        plot_mmcontour_in_qchi_space(dfmmcut, fname='-cut', fontsize=args.fontsize, labelsize=args.labelsize)
 
     if args.mm_in_qchi:
-        plot_mm_vs_mass(dfmm)
-        plot_mm_vs_mass(dfmmcut, fname='-cut')
-        plot_mm_vs_chieff(dfmm)
-        plot_mm_vs_chieff(dfmmcut, fname='-cut')
+        plot_mm_vs_mass(dfmm, fontsize=args.fontsize, labelsize=args.labelsize)
+        plot_mm_vs_mass(dfmmcut, fname='-cut', fontsize=args.fontsize, labelsize=args.labelsize)
+        plot_mm_vs_chieff(dfmm, fontsize=args.fontsize, labelsize=args.labelsize)
+        plot_mm_vs_chieff(dfmmcut, fname='-cut', fontsize=args.fontsize, labelsize=args.labelsize)
 
     # Output mean, median, best & worst mismatches
     logging.info("Calculating mean, median, best & worst mismatches...")
@@ -366,7 +366,7 @@ def plot_uq_hist_from_file(fontsize=15, labelsize=13):
     fname = 'uq-test-hist-mean-abs-diff-5000-20260401_174233'
     dfuq = pd.read_csv(dir+fname+'.csv', header=0)
     hpbins = np.logspace(np.log10(dfuq['mmuq_hplus'].min())+1e-10,
-                            np.log10(dfuq['mmuq_hplus'].max())+1e-10, 50)
+                         np.log10(dfuq['mmuq_hplus'].max())+1e-10, 50)
     dfuq.hist('mmuq_hplus', bins=hpbins, ax=axes[0], grid=False, edgecolor='black', color='lightblue')
     dfuq.hist('mmuq_hcross', bins=hpbins, ax=axes[1], grid=False, edgecolor='black', color='lightblue')
     types = ['mmuq_hplus', 'mmuq_hcross']
@@ -380,9 +380,9 @@ def plot_uq_hist_from_file(fontsize=15, labelsize=13):
         ax.set_xlabel('Mismatch Uncertainty', fontsize=fontsize)
         ax.set_ylabel('Count', fontsize=fontsize)
         ax.text(0.95, 0.95, titles[i], fontweight='bold',
-                   transform=ax.transAxes, fontsize=fontsize, va='top', ha='right')
+                transform=ax.transAxes, fontsize=labelsize, va='top', ha='right')
         ax.text(0.95, 0.85, f'Mode: {dfuq[types[i]].mode()[0]:.2e}\nMean: {dfuq[types[i]].mean():.2e}\nMedian: {dfuq[types[i]].median():.2e}',
-                   transform=ax.transAxes, fontsize=fontsize, va='top', ha='right')
+                transform=ax.transAxes, fontsize=labelsize, va='top', ha='right')
         ax.set_title(None)
         ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
     plt.tight_layout()
@@ -450,7 +450,11 @@ if __name__ == "__main__":
                         help='Directory containing the results files. (default:{%(default)s})')
     parser.add_argument('--time', type=str, default=datetime.now().strftime('%Y%m%d-%H%M%S'),
                         help='Timestamp to identify the specific results files to use. (default:{%(default)s})')
-    
+    parser.add_argument('--fontsize', type=int, default=15,
+                        help='Font size for plot labels and titles. (default:{%(default)s})')
+    parser.add_argument('--labelsize', type=int, default=13,
+                        help='Font size for plot labels. (default:{%(default)s})')
+
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging for debugging purposes.')
     args = parser.parse_args()
 
@@ -469,8 +473,8 @@ if __name__ == "__main__":
 
 
     # plot_running_loss(dir=args.dir, time=args.time)
-    # mismatch_anal(args)
-    # plot_rom_opt_mm_hist()
+    mismatch_anal(args)
+    # plot_rom_opt_mm_hist(fontsize=20, labelsize=15)
     # plot_timecompare_from_file()
     # plot_flexcvae_loss(dir=args.dir, time=args.time)
-    plot_uq_hist_from_file()
+    # plot_uq_hist_from_file(fontsize=20, labelsize=15)
