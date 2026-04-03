@@ -244,9 +244,9 @@ def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13, fname=''):
         if log:
             ax[i].set_yscale('log')
         ax[i].set_xlabel('Mismatch', fontsize=fontsize)
-        ax[i].set_ylabel('Frequency', fontsize=fontsize)
+        ax[i].set_ylabel('Count', fontsize=fontsize)
         ax[i].text(0.95, 0.95, f'{titles[i]}', fontweight='bold',
-                   transform=ax[i].transAxes, fontsize=labelsize, va='top', ha='right')
+                   transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
         ax[i].text(0.95, 0.85, f'Mode: {dfmm[t].mode()[0]:.2e}\nMean: {dfmm[t].mean():.2e}\nMedian: {dfmm[t].median():.2e}', 
                    transform=ax[i].transAxes, fontsize=labelsize, va='top', ha='right')
         ax[i].tick_params(which="both", direction='in', top=True, right=True)
