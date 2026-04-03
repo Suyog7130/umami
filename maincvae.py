@@ -1186,7 +1186,7 @@ class Test:
         print("All UQ tests completed.")
 
 
-    def test_timecomplexity(self, num=int(1e4)):
+    def test_timecomplexity(self, num=int(1e6), num_start=int(1e4)):
         """
         Test the time complexity of the model for generating a 1-10e4 ish number of samples.
         This is useful for understanding the efficiency of the model in real-time
@@ -1195,7 +1195,7 @@ class Test:
         # Nruns = [1, 10, 50, 100, 500, 1e3, 5e3, 1e4]
         # Nruns = np.logspace(0, 5, num=num, dtype=int)
         # Nruns = [int(n) for n in [1, 10, 50, 100, 500, 1e3, 5e3, 1e4, 5e4]]
-        Nruns = np.arange(1,num+1)
+        Nruns = np.arange(num_start,num+1)
         logging.info(f"Testing with model: {self.model_path}")
         # Load the trained model
         preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
