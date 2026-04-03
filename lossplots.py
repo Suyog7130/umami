@@ -402,10 +402,39 @@ def plot_timecompare_from_file(fname=None, dir=DIR, time=TIME, fontsize=12, labe
     """
     approximant = 'SEOBNRv4'
     dir = '../results/'
-    modeldf = pd.read_csv(dir + '20260228/timecomplexity_results-20260228_031118.csv', skiprows=1,
+    date = '20260401'
+    # fname = '20260228/timecomplexity_results-20260228_031118.csv'
+    fname = f'{date}/timecomplexity_results-cuda-20260401_012112.csv'
+    modeldf = pd.read_csv(dir + fname, skiprows=1,
                           names=['Nruns', 'modeltimes'])
     otherdf = pd.read_csv(dir + '20260126/timecomplexity_compare_20260126_031310.csv', skiprows=1,
                           names=['Nruns', 'basetimes', 'romtimes', 'opttimes'])
+    print(otherdf.head())
+    
+    # Print average per waveform generation times for each method
+    avg_model_time = modeldf['modeltimes'].mean() / modeldf['Nruns'].mean()
+    avg_base_time = otherdf['basetimes'].mean() / otherdf['Nruns'].mean()
+    avg_rom_time = otherdf['romtimes'].mean() / otherdf['Nruns'].mean()
+    avg_opt_time = otherdf['opttimes'].mean() / otherdf['Nruns'].mean()
+    logging.info(f"Average time per waveform generation:")
+    logging.info(f"\tModel: {avg_model_time:1e} seconds")
+    logging.info(f"\tBase: {avg_base_time:1e} seconds")
+    logging.info(f"\tROM: {avg_rom_time:1e} seconds")
+    logging.info(f"\tOptimized: {avg_opt_time:1e} seconds")
+    # Print how fast ML model is compared to base, ROM, and optimized, at 99 waveforms generated
+    n = 99
+    # print(modeldf[modeldf['Nruns'] == n]['modeltimes'].values[0])
+    # print(otherdf[otherdf['Nruns'] == n]['basetimes'].values)
+    model_time_n = modeldf[modeldf['Nruns'] == n]['modeltimes'].values[0] / n
+    base_time_n = otherdf[otherdf['Nruns'] == n]['basetimes'].values[0] / n
+    rom_time_n = otherdf[otherdf['Nruns'] == n]['romtimes'].values[0] / n
+    opt_time_n = otherdf[otherdf['Nruns'] == n]['opttimes'].values[0] / n
+    logging.info(f"Time per waveform generation at {n} waveforms:")
+    logging.info(f"\tModel: {model_time_n:1e} seconds")
+    logging.info(f"\tBase: {base_time_n:1e} seconds")
+    logging.info(f"\tROM: {rom_time_n:1e} seconds")
+    logging.info(f"\tOptimized: {opt_time_n:1e} seconds")
+    logging.info(f"Model is {base_time_n/model_time_n:.2f}x faster than Base, {rom_time_n/model_time_n:.2f}x faster than ROM, and {opt_time_n/model_time_n:.2f}x faster than Optimized at {n} waveforms.")
 
     # Plot time taken comparison between model, base, and ROM
     logging.info("Plotting time complexity comparison between model, base, and ROM.")
@@ -428,7 +457,7 @@ def plot_timecompare_from_file(fname=None, dir=DIR, time=TIME, fontsize=12, labe
     ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
     ax.tick_params(which='both', direction='in', top=True, right=True)
     plt.tight_layout()
-    figname = dir + '20260228/' + 'timecomplexity-compare-long-gpu-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+    figname = dir + f'{date}/' + 'timecomplexity-compare-long-gpu-' + datetime.now().strftime('%Y%m%d_%H%M%S')
     plt.savefig(figname+'.png', dpi=300, transparent=True)
     plt.savefig(figname+'-white.png', dpi=300)
     plt.show()
@@ -473,8 +502,8 @@ if __name__ == "__main__":
 
 
     # plot_running_loss(dir=args.dir, time=args.time)
-    mismatch_anal(args)
+    # mismatch_anal(args)
     # plot_rom_opt_mm_hist(fontsize=20, labelsize=15)
-    # plot_timecompare_from_file()
+    plot_timecompare_from_file()
     # plot_flexcvae_loss(dir=args.dir, time=args.time)
     # plot_uq_hist_from_file(fontsize=20, labelsize=15)
