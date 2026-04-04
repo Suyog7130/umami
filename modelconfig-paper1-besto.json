@@ -2,7 +2,7 @@
     "batch_size": 32,
     "latent_dim_x": 32,
     "latent_dim_key": 4,
-    "activation": "relu",
+    "activation": "selu",
     "target": "None",
     "epochs": 1,
     "databatchfrac": 0.01,

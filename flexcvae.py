@@ -724,7 +724,11 @@ class TwoC2E1D(nn.Module):
                                           pre_fc_sizes=[self.key_shape[0] * self.key_shape[1], 500, 500, self.latent_dim_key * 2],
                                           )
         logging.info(f"Encoder for key configured with latent_dim_key={self.latent_dim_key}, input_shape={self.key_shape}, num_classes={self.num_classes}, n_layers=3, has_cnn=False, has_post_fc=False, activation={self.activation}, pre_fc_sizes=[{self.key_shape[0] * self.key_shape[1]}, 500, 500, {self.latent_dim_key}]")
-        self.decoder = BaseDecoder(latent_dim=self.latent_dim_x + self.latent_dim_key,  # e.g. z1 + z1prime, latents are reparametrized, so we don't need multiply by 2!
+        if self.decoder_input_type == 'weighted_sum':
+            self.dec_latent_input_dim = max(self.latent_dim_x, self.latent_dim_key)  # we will project both latents to this size before feeding to decoder
+        else: # default to concat
+            self.dec_latent_input_dim = self.latent_dim_x + self.latent_dim_key
+        self.decoder = BaseDecoder(latent_dim=self.dec_latent_input_dim,  # e.g. z1 + z1prime, latents are reparametrized, so we don't need multiply by 2!
                                    input_shape=self.input_shape,
                                    num_classes=self.num_classes,
                                    n_layers=1,
@@ -735,7 +739,7 @@ class TwoC2E1D(nn.Module):
                                    has_post_fc=True,
                                    activation=self.activation,
                                    last_activation=None,  # output layer should be linear since we will apply MSE loss and we want the output to be able to take any value
-                                   pre_fc_sizes=[self.latent_dim_x + self.latent_dim_key + self.num_classes, 800],
+                                   pre_fc_sizes=[self.dec_latent_input_dim + self.num_classes, 800],
                                    cnn_in_channels=[1, self.MODEL_CONFIG.get('dec_cnn_in', 32) // 2, self.MODEL_CONFIG.get('dec_cnn_out', 32)],  # default to [1, 16, 32] if not specified in MODEL_CONFIG
                                    cnn_out_channels=[self.MODEL_CONFIG.get('dec_cnn_in', 32) // 2, self.MODEL_CONFIG.get('dec_cnn_out', 32), self.MODEL_CONFIG.get('dec_cnn_out', 32)],  # default to [16, 32, 32] if not specified in MODEL_CONFIG
                                    cnn_kernel_size=[self.MODEL_CONFIG.get('dec_cnn_kernel', 4), self.MODEL_CONFIG.get('dec_cnn_kernel', 4), self.MODEL_CONFIG.get('dec_cnn_kernel', 4)],  # default to [4, 4, 4] if not specified in MODEL_CONFIG
@@ -743,7 +747,7 @@ class TwoC2E1D(nn.Module):
                                    cnn_pool_kernel_size=[self.MODEL_CONFIG.get('dec_pool_kernel', 4), self.MODEL_CONFIG.get('dec_pool_kernel', 4), self.MODEL_CONFIG.get('dec_pool_kernel', 4)],  # default to [4, 4, 4] if not specified in MODEL_CONFIG
                                    post_fc_sizes=[0, self.MODEL_CONFIG.get('dec_postfc_hidden', 512), self.input_shape[0] * self.input_shape[1]], # default to [0, 512, input_shape[0] * input_shape[1]] if not specified in MODEL_CONFIG
                                    )
-        logging.info(f"Decoder configured with latent_dim={self.latent_dim_x + self.latent_dim_key}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation={self.activation}, pre_fc_sizes=[{self.latent_dim_x + self.latent_dim_key + self.num_classes}, 512], cnn_in_channels=[1, {self.MODEL_CONFIG.get('dec_cnn_in', 32) // 2}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}], cnn_out_channels=[{self.MODEL_CONFIG.get('dec_cnn_out', 32) // 2}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}], cnn_kernel_size=[4, 4, 4], cnn_dilation=[1, 2, 2], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
+        logging.info(f"Decoder configured with latent_dim={self.dec_latent_input_dim}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation={self.activation}, pre_fc_sizes=[{self.dec_latent_input_dim + self.num_classes}, 512], cnn_in_channels=[1, {self.MODEL_CONFIG.get('dec_cnn_in', 32) // 2}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}], cnn_out_channels=[{self.MODEL_CONFIG.get('dec_cnn_out', 32) // 2}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}], cnn_kernel_size=[4, 4, 4], cnn_dilation=[1, 2, 2], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
         self.conditional_x = BaseConditional(latent_dim=self.latent_dim_x,  # z1 mean and logvar
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
@@ -806,7 +810,10 @@ class TwoC2E1D(nn.Module):
         # logging.debug('__call__')
         logging.debug(f'__call__ with x.shape={x.shape}, labels.shape={labels.shape}, keys.shape={keys.shape}')
         if hasattr(self, 'labels_mean') and hasattr(self, 'labels_std'):
-            labels = self.normalize_labels(labels)
+            if self.labels_mean is None or self.labels_std is None:
+                logging.warning("Labels mean or std is None, skipping normalization.")
+            else:
+                labels = self.normalize_labels(labels)
         return self.forward(x, labels, keys)
     
     def encode_x(self, x, labels):
@@ -912,7 +919,14 @@ class TwoC2E1D(nn.Module):
             z = z_key
         elif self.decoder_input_type == 'weighted_sum':
             alpha = 0.5  # This can be a hyperparameter to tune
-            z = alpha * z_x + (1 - alpha) * z_key
+            # -- match size of z_key to z_x for weighted sum, 
+            # by projecting z_key to the same latent dimension as z_x using a linear layer
+            if z_key.size(1) != z_x.size(1):
+                projection = nn.Linear(z_key.size(1), z_x.size(1)).to(z_key.device)
+                z_key_proj = projection(z_key)
+                z = alpha * z_x + (1 - alpha) * z_key_proj
+            else:
+                z = alpha * z_x + (1 - alpha) * z_key
         elif self.decoder_input_type == 'concat_all':
             z = torch.cat([z_x, z_key, zy_mu, zykey_mu], dim=1)
         else:
@@ -1024,14 +1038,14 @@ class TwoC2E1D(nn.Module):
         # Save all other class attributes to the configfile, for completeness!
         configfile.update({k: convert_to_serializable(v) for k, v in self.__dict__.items() if k not in configfile and k!='MODEL_CONFIG'})
         
-        # Save attibutes of the encoder, decoder, and conditional networks to the config file.
-        configfile.update({
-            'encoder_x_config': {k: convert_to_serializable(v) for k, v in self.encoder_x.__dict__.items()},
-            'encoder_key_config': {k: convert_to_serializable(v) for k, v in self.encoder_key.__dict__.items()},
-            'decoder_config': {k: convert_to_serializable(v) for k, v in self.decoder.__dict__.items()},
-            'conditional_x_config': {k: convert_to_serializable(v) for k, v in self.conditional_x.__dict__.items()},
-            'conditional_key_config': {k: convert_to_serializable(v) for k, v in self.conditional_key.__dict__.items()},
-        })
+        # # Save attibutes of the encoder, decoder, and conditional networks to the config file.
+        # configfile.update({
+        #     'encoder_x_config': {k: convert_to_serializable(v) for k, v in self.encoder_x.__dict__.items()},
+        #     'encoder_key_config': {k: convert_to_serializable(v) for k, v in self.encoder_key.__dict__.items()},
+        #     'decoder_config': {k: convert_to_serializable(v) for k, v in self.decoder.__dict__.items()},
+        #     'conditional_x_config': {k: convert_to_serializable(v) for k, v in self.conditional_x.__dict__.items()},
+        #     'conditional_key_config': {k: convert_to_serializable(v) for k, v in self.conditional_key.__dict__.items()},
+        # })
 
         # Convert any non-serializable objects in configfile to strings for JSON serialization
         for key, value in configfile.items():

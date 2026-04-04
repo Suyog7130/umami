@@ -352,10 +352,18 @@ def load_flex_model(configpath=None, model_path=None):
         # print(float(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
         # print(type(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
         logging.info("Converting labels_mean and labels_std from str->lists to numpy arrays for model initialization.")
-        labels_mean = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
-        labels_std = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
-        MODEL_CONFIG['labels_mean'] = torch.tensor(labels_mean, dtype=getattr(torch, PRECISION)).to(DEVICE)
-        MODEL_CONFIG['labels_std'] = torch.tensor(labels_std, dtype=getattr(torch, PRECISION)).to(DEVICE)
+        if MODEL_CONFIG['labels_mean'] == "None" or MODEL_CONFIG['labels_std'] == "None":
+            logging.warning("Labels mean or std is None in MODEL_CONFIG, skipping conversion and normalization.")
+            MODEL_CONFIG['labels_mean'] = None
+            MODEL_CONFIG['labels_std'] = None
+        else:
+            labels_mean = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
+            labels_std = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
+            # logging.warning('For now we will use predefined global params_mean and params_std for normalization instead of converting from MODEL_CONFIG, since the conversion is not working well and giving NaN values for some reason. This needs to be fixed later.')
+            # labels_mean = params_mean.cpu().numpy()
+            # labels_std = params_std.cpu().numpy()
+            MODEL_CONFIG['labels_mean'] = torch.tensor(labels_mean, dtype=getattr(torch, PRECISION)).to(DEVICE)
+            MODEL_CONFIG['labels_std'] = torch.tensor(labels_std, dtype=getattr(torch, PRECISION)).to(DEVICE)
     # logging.warning("Will still use predefined global params_mean and params_std for normalization for now.")
     if isinstance(MODEL_CONFIG['input_shape'], str):
         logging.info("Converting input_shape from str to tuple for model initialization.")
@@ -366,12 +374,21 @@ def load_flex_model(configpath=None, model_path=None):
     if isinstance(MODEL_CONFIG['target'], str) and MODEL_CONFIG['target'].lower() == 'none':
         logging.info("Setting target to None for model initialization.")
         MODEL_CONFIG['target'] = None
+    for k in MODEL_CONFIG:
+        if MODEL_CONFIG[k] == "None":
+            logging.info(f"Setting {k} to None for model initialization.")
+            MODEL_CONFIG[k] = None
+        if MODEL_CONFIG[k] == "False":
+            logging.info(f"Setting {k} to False for model initialization.")
+            MODEL_CONFIG[k] = False
+        if MODEL_CONFIG[k] == "True":
+            logging.info(f"Setting {k} to True for model initialization.")
+            MODEL_CONFIG[k] = True
 
     model = FlexTwoC2E1D(
         MODEL_CONFIG=MODEL_CONFIG,
         input_shape=(2, PRESET_ARRAY_SIZE),
         num_classes=4,
-        paramsnorm=True,
     )
 
     logging.info("Model architecture initialized. Now loading model weights.")
