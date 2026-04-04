@@ -77,6 +77,17 @@ from data import SEOBNRv4
 import random
 markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
 
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+    PRECISION = 'float64'  # Use double precision for CUDA if available
+elif torch.backends.mps.is_available():
+    DEVICE = torch.device("mps")
+    PRECISION = 'float32'  # Use float32 for MPS since it does not support float64 well
+else:
+    DEVICE = torch.device("cpu")
+    PRECISION = 'float64'  # Use double precision for CPU
+print(f"Using device: {DEVICE}, with precision: {PRECISION}")
+
 BASE_MODEL_CONFIG = {
     'modeltype': 'cvae',
     'latent_dim_x': 8,
@@ -200,10 +211,12 @@ def train(args):
 
     logging.info(f'Reading training data from {trainhdf}.hdf')
     train_set = CustomDataset(forwhat='train', approximant=args.approximant, returnattr=True,
-                            convert=args.convert, hdf_fname=trainhdf, train_device=args.device)
+                            convert=args.convert, hdf_fname=trainhdf, 
+                            train_device=DEVICE, precision=PRECISION)
     logging.info(f'Reading validation data from {validhdf}.hdf')
     valid_set = CustomDataset(forwhat='valid', approximant=args.approximant, returnattr=True,
-                            convert=args.convert, hdf_fname=validhdf, train_device=args.device)
+                            convert=args.convert, hdf_fname=validhdf, 
+                            train_device=DEVICE, precision=PRECISION)
     # logging.info(f"Train set size: {len(train_set)}")
     # logging.info(f"Validation set size: {len(valid_set)}")
             
@@ -230,12 +243,12 @@ def train(args):
     params_std = params_df.std().values
     logging.info(f"Labels mean: {params_mean}")
     logging.info(f"Labels std: {params_std}")
-    params_mean = torch.tensor(params_mean, dtype=torch.float64).to(args.device)
-    params_std = torch.tensor(params_std, dtype=torch.float64).to(args.device)
+    params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION)).to(DEVICE)
+    params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION)).to(DEVICE)
 
     MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
     if not args.use_base_model_config:
-        MODEL_CONFIG['paramsmean'] = False
+        MODEL_CONFIG['paramsnorm'] = False
         MODEL_CONFIG['labels_mean'] = params_mean
         MODEL_CONFIG['labels_std'] = params_std
         MODEL_CONFIG['num_classes'] = num_classes
@@ -261,23 +274,23 @@ def train(args):
         model_path = '../trained-models/' + args.model
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
-        model.load_state_dict(torch.load(model_path, map_location=args.device))
+        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
         logging.info(f"Loaded model from {model_path}")
 
     # -- move model to device and convert to double precision
-    model.to(device)
-    model.to(torch.float64)
+    model.to(DEVICE)
+    model.to(getattr(torch, PRECISION))
 
     # Add a learning rate scheduler
     # Scheduler will adjust learning rate after every epoch
     optimizer = torch.optim.Adam(model.parameters(), lr=MODEL_CONFIG.get('learning_rate', 1e-4))
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-                optimizer, 
-                mode='min', 
-                factor=0.5, 
-                patience=2, 
-                threshold=1e-5)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    #             optimizer, 
+    #             mode='min', 
+    #             factor=0.5, 
+    #             patience=2, 
+    #             threshold=1e-5)
     logging.info('Model Initialized')
 
     logging.info(f'Starting Training with: {args}')
@@ -285,6 +298,7 @@ def train(args):
     train_loss, valid_loss = [], [] 
     netreconloss, netklloss, netmmloss = [], [], []
     netvreconloss, netvklloss, netvmmloss = [], [], []
+    rloss_train_eval, rloss_recon_eval, rloss_kl_eval = [], [], []
     for epoch in tqdm(range(args.epochs), desc='Epoch'):
         model.train(True)
         # avg_loss = train_one_epoch(training_loader, epoch)
@@ -309,8 +323,8 @@ def train(args):
             `x` is [freq, amp], `labels` is [m1,m2] etc. and
             `keys` is [[amp-mean,amp-var],[freq-mean,freq-var]]
             """
-            x, target, labels, keys = x.to(args.device), target.to(args.device), labels.to(args.device), keys.to(args.device)
-            strains = strains.to(args.device)
+            x, target, labels, keys = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE)
+            strains = strains.to(DEVICE)
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
             
@@ -323,6 +337,8 @@ def train(args):
             else:
                 loss, reconloss, klloss = model.loss_function(target, x_recon, zvars)
             loss.backward()
+            # -- perform optimization per batch/step
+            optimizer.step()
 
             train_rloss.append(loss.item())
             netreconloss.append(reconloss.item())
@@ -330,9 +346,6 @@ def train(args):
                 netklloss.append(klloss.item())
             if args.usemmloss or noklloss:
                 netmmloss.append(mmloss.item())
-
-            # -- perform optimization per batch/step
-            optimizer.step()
 
         # -- update learning rate per epoch
         scheduler.step(loss)
@@ -351,16 +364,34 @@ def train(args):
         # the next epoch starts. Thus, we have put the optimizer step after
         # validation step, so that the training loss and validation loss are more
         # comparable to each other.
+
+        # -- set model to eval mode for validation
         model.eval()
+
+        # -- Do one cycle training in eval mode with no grad after training is finished,
+        # -- to compare train and validation losses at the same epoch and check for overfitting etc.
+        with torch.no_grad():
+            for idx, (x, target, labels, keys, strains) in enumerate(tqdm(training_loader, ncols=80, desc="Train-eval-steps")):
+                x, target, labels, keys = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE)
+                x_recon, zvars = model(x, labels, keys)
+                loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
+                train_eval_loss += loss.item()
+                rloss_train_eval.append(loss.item())
+                rloss_recon_eval.append(recon_loss.item())
+                rloss_kl_eval.append(kl_loss.item())
+        avg_train_eval_loss = train_eval_loss / (len(training_loader))
+        logging.info(f"Epoch {epoch+1}, Batch Avg Train Eval Loss: {avg_train_eval_loss:.4f}")
+
+        # Evaluate on validation set
         with torch.no_grad():  # Disable gradient computation for validation
             # just reconstruct target and calculate diff
             for vx, target, vlabels, vkeys, vstrains, vattr in tqdm(validation_loader, desc='val-batch'):
-                vx, target, vlabels, vkeys = vx.to(args.device), target.to(args.device), vlabels.to(args.device), vkeys.to(args.device)
+                vx, target, vlabels, vkeys = vx.to(DEVICE), target.to(DEVICE), vlabels.to(DEVICE), vkeys.to(DEVICE)
                 vx_recon, vzvars = model(vx, vlabels, vkeys)
                 if noklloss:
-                    vloss, vreconloss, vmmloss = model.mismatch_nokl_loss_func(target, vx_recon, vzvars, strains=vstrains.to(args.device), keys=vkeys.to(args.device), attr=vattr)
+                    vloss, vreconloss, vmmloss = model.mismatch_nokl_loss_func(target, vx_recon, vzvars, strains=vstrains.to(DEVICE), keys=vkeys.to(DEVICE), attr=vattr)
                 elif args.usemmloss:
-                    vloss, vreconloss, vklloss, vmmloss = model.mismatch_loss_func(target, vx_recon, vzvars, strains=vstrains.to(args.device), keys=vkeys.to(args.device), attr=vattr)
+                    vloss, vreconloss, vklloss, vmmloss = model.mismatch_loss_func(target, vx_recon, vzvars, strains=vstrains.to(DEVICE), keys=vkeys.to(DEVICE), attr=vattr)
                 else:
                     vloss, vreconloss, vklloss = model.loss_function(target, vx_recon, vzvars)
                 valid_rloss.append(vloss.item())
@@ -403,7 +434,10 @@ def train(args):
             'netmmloss': netmmloss if args.usemmloss or noklloss else [0]*len(netreconloss),
             'netvreconloss': netvreconloss,
             'netvklloss': netvklloss if not noklloss else [0]*len(netvreconloss),
-            'netvmmloss': netvmmloss if args.usemmloss or noklloss else [0]*len(netvklloss)
+            'netvmmloss': netvmmloss if args.usemmloss or noklloss else [0]*len(netvklloss),
+            'train_eval_loss': rloss_train_eval,
+            'train_eval_recon_loss': rloss_recon_eval,
+            'train_eval_kl_loss': rloss_kl_eval,
             })
         savename = args.modeltype + '-nokll-' if noklloss else ''
         dfnet.to_csv(savedir + f'net-loss-{savename}{timestamp}.csv', index=False)

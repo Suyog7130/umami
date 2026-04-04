@@ -105,8 +105,7 @@ def training(model: FlexTwoC2E1D,
     if train_loader is None or val_loader is None:
         logging.info("Setting up dataloaders since they were not provided.")
         train_loader, val_loader = set_dataloaders()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
+    model = model.to(DEVICE)
     model = model.to(getattr(torch, PRECISION))
 
     if datafrac == 1.0:
@@ -146,7 +145,7 @@ def training(model: FlexTwoC2E1D,
         for idx, (x, target, labels, keys, strains) in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
             if idx >= num_train_batches:
                 break
-            x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
+            x, target, labels, keys = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE)
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
             loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
@@ -178,7 +177,7 @@ def training(model: FlexTwoC2E1D,
             for idx, (x, target, labels, keys, strains) in enumerate(tqdm(train_loader, ncols=80, desc="Train-eval-steps")):
                 if idx >= num_train_batches:
                     break
-                x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
+                x, target, labels, keys = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE)
                 x_recon, zvars = model(x, labels, keys)
                 loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
                 train_eval_loss += loss.item()
@@ -188,14 +187,13 @@ def training(model: FlexTwoC2E1D,
         avg_train_eval_loss = train_eval_loss / num_train_batches
         logging.info(f"Epoch {epoch+1}, Batch Avg Train Eval Loss: {avg_train_eval_loss:.4f}")
 
-
         # Evaluate on validation set
         val_loss = 0.0
         with torch.no_grad():
             for idx, (x, target, labels, keys, strains) in enumerate(tqdm(val_loader, ncols=80, desc="Val-steps")):
                 if idx >= num_val_batches:
                     break
-                x, target, labels, keys = x.to(device), target.to(device), labels.to(device), keys.to(device)
+                x, target, labels, keys = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE)
                 x_recon, zvars = model(x, labels, keys)
                 loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
                 val_loss += loss.item()

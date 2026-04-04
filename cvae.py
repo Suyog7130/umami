@@ -704,7 +704,7 @@ class CVAE(nn.Module):
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         # TODO: What is the `reduction` thing doing here?
         recon_loss = F.mse_loss(x_recon, x, reduction='mean')
-        logging.info(f"Reconstruction Loss: {recon_loss.item()}")
+        logging.debug(f"Reconstruction Loss: {recon_loss.item()}")
 
         # KL divergence for each latent space
         kl_loss_z1 = self.latent_loss(z1_mean, z1_log_var)
@@ -712,7 +712,7 @@ class CVAE(nn.Module):
         kl_loss_z1p = self.latent_loss(z1p_mean, z1p_log_var)
         kl_loss_z2p = self.latent_loss(z2p_mean, z2p_log_var)
         # Print KL divergence losses for debugging
-        logging.info(f"KL Loss z1: {kl_loss_z1.item()}, KL Loss z2: {kl_loss_z2.item()}, "
+        logging.debug(f"KL Loss z1: {kl_loss_z1.item()}, KL Loss z2: {kl_loss_z2.item()}, "
             f"KL Loss z1p: {kl_loss_z1p.item()}, KL Loss z2p: {kl_loss_z2p.item()}")
 
         # Latent loss between encoders
