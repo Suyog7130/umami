@@ -194,8 +194,8 @@ def train(args):
     if args.dummy:
         # -- use validation set for training, for quick code check!
         trainhdf = args.datadir+args.approximant+'-val-100000-fcutoff-uniform-aligned-regen'
-        validhdf += '-100000-fcutoff-uniform-aligned-regen'
-    
+        validhdf = args.datadir+args.approximant+'-val-100000-fcutoff-uniform-aligned-regen'
+
     if not os.path.isfile(trainhdf + '.hdf'):
         raise FileNotFoundError(f"Training data file not found: {trainhdf}.hdf")
     if not os.path.isfile(validhdf + '.hdf'):
@@ -371,7 +371,7 @@ def train(args):
         # -- Do one cycle training in eval mode with no grad after training is finished,
         # -- to compare train and validation losses at the same epoch and check for overfitting etc.
         with torch.no_grad():
-            for idx, (x, target, labels, keys, strains) in enumerate(tqdm(training_loader, ncols=80, desc="Train-eval-steps")):
+            for idx, (x, target, labels, keys, strains, attr) in enumerate(tqdm(training_loader, ncols=80, desc="Train-eval-steps")):
                 x, target, labels, keys = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE)
                 x_recon, zvars = model(x, labels, keys)
                 loss, recon_loss, kl_loss = model.loss_function(target, x_recon, zvars)
