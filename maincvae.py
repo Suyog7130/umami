@@ -193,8 +193,8 @@ def train(args):
 
     if args.dummy:
         # -- use validation set for training, for quick code check!
-        trainhdf = args.datadir+args.approximant+'-val-100000-fcutoff-uniform-aligned-regen'
-        validhdf = args.datadir+args.approximant+'-val-100000-fcutoff-uniform-aligned-regen'
+        trainhdf = args.datadir+args.approximant+'-train-100-fcutoff-uniform-aligned'
+        validhdf = args.datadir+args.approximant+'-val-100-fcutoff-uniform-aligned'
 
     if not os.path.isfile(trainhdf + '.hdf'):
         raise FileNotFoundError(f"Training data file not found: {trainhdf}.hdf")
@@ -370,6 +370,7 @@ def train(args):
 
         # -- Do one cycle training in eval mode with no grad after training is finished,
         # -- to compare train and validation losses at the same epoch and check for overfitting etc.
+        train_eval_loss = 0.0
         with torch.no_grad():
             for idx, (x, target, labels, keys, strains, attr) in enumerate(tqdm(training_loader, ncols=80, desc="Train-eval-steps")):
                 x, target, labels, keys = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE)
@@ -409,9 +410,10 @@ def train(args):
         logging.info(f"Model backup saved at {backup_model_path}")
     
     savename = timestamp + '-' + str(args.epochs)
-    if not os.path.isdir('../trained-models/'):
-        os.makedirs('../trained-models/')
-    model_path = f'../trained-models/model-'
+    modeldir = f'../trained-models/{datetime.now().strftime("%Y%m%d")}'
+    if not os.path.isdir(modeldir):
+        os.makedirs(modeldir)
+    model_path = f'{modeldir}/model-'
     model_path += 'mmloss-' if args.usemmloss else ''
     model_path += args.modeltype + '-nokll-' if noklloss else ''
     model_path += savename
@@ -422,28 +424,63 @@ def train(args):
         torch.save(model.state_dict(), model_path)
         # Save losses to files
         # When using pandas, all arrays should have same length
+        assert len(train_loss) == len(valid_loss) == args.epochs, "train_loss and valid_loss should have length equal to number of epochs"
+        assert len(train_rloss) == ntbatches * args.epochs, "train_rloss should have length equal to number of training batches times number of epochs"
+        assert len(valid_rloss) == nvbatches * args.epochs, "valid_rloss should have length equal to number of validation batches times number of epochs"
+        assert len(netreconloss) == ntbatches * args.epochs, "netreconloss should have length equal to number of training batches times number of epochs"
+        assert len(netvreconloss) == nvbatches * args.epochs, "netvreconloss should have length equal to number of validation batches times number of epochs"
+        assert len(rloss_train_eval) == ntbatches * args.epochs, "rloss_train_eval should have length equal to number of training batches times number of epochs"
+        assert len(rloss_recon_eval) == ntbatches * args.epochs, "rloss_recon_eval should have length equal to number of training batches times number of epochs"
+        assert len(rloss_kl_eval) == ntbatches * args.epochs, "rloss_kl_eval should have length equal to number of training batches times number of epochs"
+        if not noklloss:
+            assert len(netklloss) == ntbatches * args.epochs, "netklloss should have length equal to number of training batches times number of epochs"
+            assert len(netvklloss) == nvbatches * args.epochs, "netvklloss should have length equal to number of validation batches times number of epochs"
+        if args.usemmloss or noklloss:
+            assert len(netmmloss) == ntbatches * args.epochs, "netmmloss should have length equal to number of training batches times number of epochs"
+            assert len(netvmmloss) == nvbatches * args.epochs, "netvmmloss should have length equal to number of validation batches times number of epochs"
+        logging.info(f"Lengths of loss arrays are consistent with number of epochs and batches.")
+        logging.debug(f"train_loss length: {len(train_loss)}, valid_loss length: {len(valid_loss)}")
+        logging.debug(f"train_rloss length: {len(train_rloss)}, valid_rloss length: {len(valid_rloss)}")
+        logging.debug(f"netreconloss length: {len(netreconloss)}, netvreconloss length: {len(netvreconloss)}")
+        logging.debug(f"rloss_train_eval length: {len(rloss_train_eval)}, rloss_recon_eval length: {len(rloss_recon_eval)}, rloss_kl_eval length: {len(rloss_kl_eval)}")
+        if not noklloss:
+            logging.debug(f"netklloss length: {len(netklloss)}, netvklloss length: {len(netvklloss)}")
+        if args.usemmloss or noklloss:
+            logging.debug(f"netmmloss length: {len(netmmloss)}, netvmmloss length: {len(netvmmloss)}")
         dfepoch = pd.DataFrame({
             'train_loss': train_loss,
             'valid_loss': valid_loss,})
         dfepoch.to_csv(savedir + f'epoch-loss-{timestamp}.csv', index=False)
         np.savetxt(savedir + f'train-rloss-{timestamp}.txt', train_rloss)
         np.savetxt(savedir + f'valid-rloss-{timestamp}.txt', valid_rloss)
-        dfnet = pd.DataFrame({
+        dftrain = pd.DataFrame({
             'netreconloss': netreconloss,
             'netklloss': netklloss if not noklloss else [0]*len(netreconloss),
             'netmmloss': netmmloss if args.usemmloss or noklloss else [0]*len(netreconloss),
+            })
+        dfval = pd.DataFrame({
             'netvreconloss': netvreconloss,
             'netvklloss': netvklloss if not noklloss else [0]*len(netvreconloss),
             'netvmmloss': netvmmloss if args.usemmloss or noklloss else [0]*len(netvklloss),
+            })
+        dfeval = pd.DataFrame({
             'train_eval_loss': rloss_train_eval,
             'train_eval_recon_loss': rloss_recon_eval,
             'train_eval_kl_loss': rloss_kl_eval,
             })
         savename = args.modeltype + '-nokll-' if noklloss else ''
-        dfnet.to_csv(savedir + f'net-loss-{savename}{timestamp}.csv', index=False)
+        dftrain.to_csv(savedir + f'net-train-loss-{savename}{timestamp}.csv', index=False)
+        dfval.to_csv(savedir + f'net-val-loss-{savename}{timestamp}.csv', index=False)
+        dfeval.to_csv(savedir + f'train-eval-loss-{savename}{timestamp}.csv', index=False)
 
         # -- Save MODEL_CONFIG to JSON file with same savename for future reference
         model_config_path = f'../trained-models/model-config-{savename}{timestamp}.json'
+        # -- Convert any non-serializable objects in MODEL_CONFIG to strings for JSON serialization
+        for key, value in MODEL_CONFIG.items():
+            if isinstance(value, torch.Tensor):
+                MODEL_CONFIG[key] = value.cpu().numpy().tolist()  # Convert tensor to list
+            elif isinstance(value, torch.dtype):
+                MODEL_CONFIG[key] = str(value)  # Convert dtype to string
         with open(model_config_path, 'w') as f:
             json.dump(MODEL_CONFIG, f)
         logging.info(f"Model config saved at {model_config_path}")
