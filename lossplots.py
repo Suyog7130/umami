@@ -111,6 +111,108 @@ def plot_flexcvae_loss(dir=DIR, time=TIME):
     plt.close()
 
 
+def plot_loss_from_file(fontsize=15, labelsize=13):
+    dir = '../results/20260408/'
+    time = '20260408_062713'
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+    # Plot running loss from file
+    trloss = np.loadtxt(dir + 'train-rloss-' + time + '.txt', delimiter=',', skiprows=1)
+    traindf = pd.read_csv(dir + 'net-train-loss-' + time + '.csv', delimiter=',', header=0)
+    evaldf = pd.read_csv(dir + 'train-eval-loss-' + time + '.csv', delimiter=',', header=0)
+    # Plot validation losses
+    vrloss = np.loadtxt(dir + 'valid-rloss-' + time + '.txt', delimiter=',', skiprows=1)
+    validdf = pd.read_csv(dir + 'net-val-loss-' + time + '.csv', delimiter=',', header=0)
+    # Plot and save figs in the directory
+    ax.plot(range(len(trloss)), trloss, label='Total Train Loss')
+    ax.plot(range(len(vrloss)), vrloss, label='Total Valid Loss')
+    for col in traindf.columns:
+        ax.plot(range(len(traindf[col])), traindf[col], label=f'Train {col}')
+    for col in evaldf.columns:
+        ax.plot(range(len(evaldf[col])), evaldf[col], label=f'Eval {col}')
+    for col in validdf.columns:
+        ax.plot(range(len(validdf[col])), validdf[col], label=f'Valid {col}')
+    ax.set_xlabel('Cumulative Steps', fontsize=fontsize)
+    ax.set_ylabel('Loss', fontsize=fontsize)
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.legend()
+    ax.xaxis.set_minor_locator(plt.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+    ax.yaxis.set_minor_locator(plt.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+    ax.tick_params(which='both', direction='in', top=True, right=True)
+    plt.tight_layout()
+    figname = dir + 'loss_plot_' + time + '.png'
+    plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
+    plt.show()
+    plt.close()
+    logging.info(f"Loss plot saved to {figname}")
+    # -- Now, plot train, eval, valid losses in one plot each for total, recon and kl losses
+    neteval = evaldf['train_eval_loss']
+    reconloss_train = traindf['netreconloss']
+    reconloss_eval = evaldf['train_eval_recon_loss']
+    reconloss_valid = validdf['netvreconloss']
+    klloss_train = traindf['netklloss']
+    klloss_eval = evaldf['train_eval_kl_loss']
+    klloss_valid = validdf['netvklloss']
+    items = [{'quant':[trloss, vrloss, neteval],
+              'label':['Train: Total Loss', 'Valid: Total Loss', 'Eval: Total Loss'],
+              'savename':'total_loss_plot_'},
+              {'quant':[reconloss_train, reconloss_eval, reconloss_valid],
+               'label':['Train: Recon Loss', 'Eval: Recon Loss', 'Valid: Recon Loss'],
+               'savename':'recon_loss_plot_'},
+              {'quant':[klloss_train, klloss_eval, klloss_valid],
+               'label':['Train: KL Loss', 'Eval: KL Loss', 'Valid: KL Loss'],
+               'savename':'kl_loss_plot_'},
+              {'quant':[trloss, reconloss_train, klloss_train],
+               'label':['Train: Total Loss', 'Train: Recon Loss', 'Train: KL Loss'],
+               'savename':'train_loss_plot_'},
+               {'quant':[vrloss, reconloss_valid, klloss_valid],
+                'label':['Valid: Total Loss', 'Valid: Recon Loss', 'Valid: KL Loss'],
+                'savename':'valid_loss_plot_'},
+                {'quant':[neteval, reconloss_eval, klloss_eval],
+                    'label':['Eval: Total Loss', 'Eval: Recon Loss', 'Eval: KL Loss'],
+                    'savename':'eval_loss_plot_'},
+                {'quant':[trloss, neteval, reconloss_train, reconloss_eval, klloss_train, klloss_eval],
+                    'label':['Train: Total Loss', 'Eval: Total Loss', 'Train: Recon Loss', 'Eval: Recon Loss',
+                             'Train: KL Loss', 'Eval: KL Loss'],
+                    'savename':'train_eval_loss_plot_'},
+                {'quant':[vrloss, neteval, reconloss_valid, reconloss_eval, klloss_valid, klloss_eval],
+                 'label':['Valid: Total Loss', 'Eval: Total Loss', 'Valid: Recon Loss', 'Eval: Recon Loss',
+                          'Valid: KL Loss', 'Eval: KL Loss'],
+                 'savename':'valid_eval_loss_plot_'},
+                 {'quant':[trloss, vrloss, reconloss_train, reconloss_valid, klloss_train, klloss_valid],
+                  'label':['Train: Total Loss', 'Valid: Total Loss', 'Train: Recon Loss', 'Valid: Recon Loss',
+                           'Train: KL Loss', 'Valid: KL Loss'],
+                  'savename':'train_valid_loss_plot_'},
+                {'quant':[trloss, vrloss, neteval, klloss_train, klloss_valid, klloss_eval],
+                 'label':['Train: Total Loss', 'Valid: Total Loss', 'Eval: Total Loss', 'Train: KL Loss',
+                          'Valid: KL Loss', 'Eval: KL Loss'],
+                 'savename':'total_kl_loss_plot_'},
+                 {'quant':[trloss, vrloss, neteval, reconloss_train, reconloss_valid, reconloss_eval],
+                  'label':['Train: Total Loss', 'Valid: Total Loss', 'Eval: Total Loss', 'Train: Recon Loss',
+                           'Valid: Recon Loss', 'Eval: Recon Loss'],
+                  'savename':'total_recon_loss_plot_'}
+              ]
+    for item in items:
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        for i in range(len(item['quant'])):
+            ax.plot(range(len(item['quant'][i])), item['quant'][i], label=item['label'][i])
+        ax.set_xlabel('Cumulative Steps', fontsize=fontsize)
+        ax.set_ylabel('Loss', fontsize=fontsize)
+        ax.set_xscale('log')
+        ax.set_yscale('log')
+        ax.legend()
+        ax.xaxis.set_minor_locator(plt.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.yaxis.set_minor_locator(plt.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.tick_params(which='both', direction='in', top=True, right=True)
+        plt.tight_layout()
+        figname = dir + f'{item["savename"]}{time}.png'
+        plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
+        plt.show()
+        plt.close()
+        logging.info(f"{item['savename'][:-1]} loss plot saved to {figname}")
+
+
+
 def plot_mmcontour_in_qchi_space(dfmm, fontsize=15, labelsize=13, fname=''):
     """
     Plot the mismatches in the mass ratio and chi_eff plane as contours.
@@ -395,7 +497,8 @@ def plot_uq_hist_from_file(fontsize=15, labelsize=13):
     logging.info(f"Uncertainty histograms saved to {dir}")
 
 
-def plot_timecompare_from_file(fname=None, dir=DIR, time=TIME, fontsize=12, labelsize=10):
+def plot_timecompare_from_file(fname=None, dir=DIR, time=TIME, fontsize=12, labelsize=10,
+                               corrected=True):
     """
     Plot the time taken to generate different variants of the SEOBNRv4 waveform
     versus the base waveform implementation.
@@ -404,8 +507,9 @@ def plot_timecompare_from_file(fname=None, dir=DIR, time=TIME, fontsize=12, labe
     dir = '../results/'
     date = '20260401'
     # fname = '20260228/timecomplexity_results-20260228_031118.csv'
-    fname = f'{date}/timecomplexity_results-cuda-20260401_012112.csv'
-    modeldf = pd.read_csv(dir + fname, skiprows=1,
+    fname = f'{date}/timecomplexity_results-cuda-20260401_012112'
+    fname += '-corrected' if corrected else ''
+    modeldf = pd.read_csv(dir + fname + '.csv', skiprows=1,
                           names=['Nruns', 'modeltimes'])
     otherdf = pd.read_csv(dir + '20260126/timecomplexity_compare_20260126_031310.csv', skiprows=1,
                           names=['Nruns', 'basetimes', 'romtimes', 'opttimes'])
@@ -458,6 +562,7 @@ def plot_timecompare_from_file(fname=None, dir=DIR, time=TIME, fontsize=12, labe
     ax.tick_params(which='both', direction='in', top=True, right=True)
     plt.tight_layout()
     figname = dir + f'{date}/' + 'timecomplexity-compare-long-gpu-' + datetime.now().strftime('%Y%m%d_%H%M%S')
+    figname += '-corrected' if corrected else ''
     plt.savefig(figname+'.png', dpi=300, transparent=True)
     plt.savefig(figname+'-white.png', dpi=300)
     plt.show()
@@ -500,10 +605,10 @@ if __name__ == "__main__":
                         format='%(asctime)s - %(levelname)s - %(message)s', 
                         datefmt='%Y-%m-%d %H:%M:%S')
 
-
     # plot_running_loss(dir=args.dir, time=args.time)
     # mismatch_anal(args)
     # plot_rom_opt_mm_hist(fontsize=20, labelsize=15)
-    plot_timecompare_from_file()
+    # plot_timecompare_from_file()
     # plot_flexcvae_loss(dir=args.dir, time=args.time)
     # plot_uq_hist_from_file(fontsize=20, labelsize=15)
+    plot_loss_from_file()
