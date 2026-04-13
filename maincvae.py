@@ -1289,6 +1289,29 @@ class Test:
         csvfile.write('num_samples,time_seconds\n')  # Write header row
         logging.info(f"CSV file opened for writing time complexity results: {csv_fname}")
 
+        # -- create some dummy warm-up runs!
+        # NOTE: To remove the cold-start time from the calculation,
+        # which happens on the first time the model is called. CUDA
+        # will initialize a location on the GPU to store the model,
+        # and setup the necessary instruction sets during the first time.
+        # After the warm-up, the same GPU location is used, so the initial
+        # warm-up time is not required. Plus, till all 100% of the GPU
+        # memory is being used, the time taken for N waveforms to generate
+        # is mostly the same. Changes occur after GPU memory is filled-up!
+        for _ in range(10):
+            labels = torch.tensor([[10, 10, -0.5, 0.5]], dtype=getattr(torch, self.precision)).to(self.device)
+            with torch.no_grad():
+                z1_mean, z1_log_var = model.encode_label_for_x(labels)
+                z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
+                if self.modeltype=='cae':
+                    _ = model.decode(z1_mean, z1p_mean, labels)
+                else:
+                    z1 = model.reparameterize(z1_mean, z1_log_var)
+                    z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                    _ = model.decode(z1, z1p, labels)
+        logging.info("Completed warm-up runs to mitigate cold-start time.")
+
+
         times = []
         for Nr in Nruns:
             # Generate random labels within the training range
@@ -1304,14 +1327,6 @@ class Test:
             logging.info(f'Choosing to test sample size {labels.shape}')
 
             # Measure time taken by model to generate samples
-            # NOTE: To remove the cold-start time from the calculation,
-            # which happens on the first time the model is called. CUDA
-            # will initialize a location on the GPU to store the model,
-            # and setup the necessary instruction sets during the first time.
-            # After the warm-up, the same GPU location is used, so the initial
-            # warm-up time is not required. Plus, till all 100% of the GPU
-            # memory is being used, the time taken for N waveforms to generate
-            # is mostly the same. Changes occur after GPU memory is filled-up!
             if self.device == 'cuda':
                 torch.cuda.synchronize() # Wait for warm-up to finish
             start_time = time.time()
