@@ -1299,7 +1299,7 @@ class Test:
         # memory is being used, the time taken for N waveforms to generate
         # is mostly the same. Changes occur after GPU memory is filled-up!
         for _ in range(10):
-            labels = torch.tensor([[10, 10, -0.5, 0.5],[10, 10, -0.5, 0.5]], 
+            labels = torch.tensor([[10, 10, -0.5, 0.5],[10, 10, -0.5, 0.5],[10, 10, -0.5, 0.5]], 
                                   dtype=getattr(torch, self.precision)).to(self.device)
             with torch.no_grad():
                 z1_mean, z1_log_var = model.encode_label_for_x(labels)
