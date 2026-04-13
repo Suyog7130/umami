@@ -1304,6 +1304,16 @@ class Test:
             logging.info(f'Choosing to test sample size {labels.shape}')
 
             # Measure time taken by model to generate samples
+            # NOTE: To remove the cold-start time from the calculation,
+            # which happens on the first time the model is called. CUDA
+            # will initialize a location on the GPU to store the model,
+            # and setup the necessary instruction sets during the first time.
+            # After the warm-up, the same GPU location is used, so the initial
+            # warm-up time is not required. Plus, till all 100% of the GPU
+            # memory is being used, the time taken for N waveforms to generate
+            # is mostly the same. Changes occur after GPU memory is filled-up!
+            if self.device == 'cuda':
+                torch.cuda.synchronize() # Wait for warm-up to finish
             start_time = time.time()
             with torch.no_grad():
                 # Use the label-conditioned encoders and decoder to generate data
@@ -1315,6 +1325,8 @@ class Test:
                     z1 = model.reparameterize(z1_mean, z1_log_var)
                     z1p = model.reparameterize(z1p_mean, z1p_log_var)
                     reconst = model.decode(z1, z1p, labels)
+            if self.device == 'cuda':
+                torch.cuda.synchronize() # Wait for warm-up to finish
             end_time = time.time()
             elapsed_time = end_time - start_time
             times.append(elapsed_time)
@@ -2631,7 +2643,7 @@ if __name__ == "__main__":
                                fontsize=15, labelsize=13)
         elif args.time_complexity:
             # for n in [100, 500, 1000]:
-            Test(args).test_timecomplexity()
+            Test(args).test_timecomplexity(num_start=1, num=100)
         elif args.time_compare:
             if args.fname is not None:
                 Test(args).plot_time_complexity_compare(fname=args.fname)
