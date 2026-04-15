@@ -111,7 +111,8 @@ def plot_flexcvae_loss(dir=DIR, time=TIME):
     plt.close()
 
 
-def plot_loss_from_file(fontsize=15, labelsize=13):
+def plot_loss_from_file(fontsize=12, 
+                        val_plot_type: {'scatter', 'bar', None}='bar'):
     dir = '../results/20260408/'
     time = '20260408_062713'
     fig, ax = plt.subplots(1, 1, figsize=(5, 5))
@@ -141,8 +142,8 @@ def plot_loss_from_file(fontsize=15, labelsize=13):
     ax.tick_params(which='both', direction='in', top=True, right=True)
     plt.tight_layout()
     figname = dir + 'loss_plot_' + time + '.png'
-    plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
-    plt.show()
+    # plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
+    # plt.show()
     plt.close()
     logging.info(f"Loss plot saved to {figname}")
     # -- Now, plot train, eval, valid losses in one plot each for total, recon and kl losses
@@ -154,48 +155,94 @@ def plot_loss_from_file(fontsize=15, labelsize=13):
     klloss_eval = evaldf['train_eval_kl_loss']
     klloss_valid = validdf['netvklloss']
     items = [{'quant':[trloss, vrloss, neteval],
-              'label':['Train: Total Loss', 'Valid: Total Loss', 'Eval: Total Loss'],
-              'savename':'total_loss_plot_'},
-              {'quant':[reconloss_train, reconloss_eval, reconloss_valid],
-               'label':['Train: Recon Loss', 'Eval: Recon Loss', 'Valid: Recon Loss'],
-               'savename':'recon_loss_plot_'},
-              {'quant':[klloss_train, klloss_eval, klloss_valid],
-               'label':['Train: KL Loss', 'Eval: KL Loss', 'Valid: KL Loss'],
-               'savename':'kl_loss_plot_'},
-              {'quant':[trloss, reconloss_train, klloss_train],
-               'label':['Train: Total Loss', 'Train: Recon Loss', 'Train: KL Loss'],
-               'savename':'train_loss_plot_'},
-               {'quant':[vrloss, reconloss_valid, klloss_valid],
+                'label':['Train: Total Loss', 'Valid: Total Loss', 'Eval: Total Loss'],
+                'savename':'total_loss_plot_'},
+            {'quant':[reconloss_train, reconloss_eval, reconloss_valid],
+                'label':['Train: Recon Loss', 'Eval: Recon Loss', 'Valid: Recon Loss'],
+                'savename':'recon_loss_plot_'},
+            {'quant':[klloss_train, klloss_eval, klloss_valid],
+                'label':['Train: KL Loss', 'Eval: KL Loss', 'Valid: KL Loss'],
+                'savename':'kl_loss_plot_'},
+            {'quant':[trloss, reconloss_train, klloss_train],
+                'label':['Train: Total Loss', 'Train: Recon Loss', 'Train: KL Loss'],
+                'savename':'train_loss_plot_'},
+            {'quant':[vrloss, reconloss_valid, klloss_valid],
                 'label':['Valid: Total Loss', 'Valid: Recon Loss', 'Valid: KL Loss'],
                 'savename':'valid_loss_plot_'},
-                {'quant':[neteval, reconloss_eval, klloss_eval],
-                    'label':['Eval: Total Loss', 'Eval: Recon Loss', 'Eval: KL Loss'],
-                    'savename':'eval_loss_plot_'},
-                {'quant':[trloss, neteval, reconloss_train, reconloss_eval, klloss_train, klloss_eval],
-                    'label':['Train: Total Loss', 'Eval: Total Loss', 'Train: Recon Loss', 'Eval: Recon Loss',
-                             'Train: KL Loss', 'Eval: KL Loss'],
-                    'savename':'train_eval_loss_plot_'},
-                {'quant':[vrloss, neteval, reconloss_valid, reconloss_eval, klloss_valid, klloss_eval],
-                 'label':['Valid: Total Loss', 'Eval: Total Loss', 'Valid: Recon Loss', 'Eval: Recon Loss',
-                          'Valid: KL Loss', 'Eval: KL Loss'],
-                 'savename':'valid_eval_loss_plot_'},
-                 {'quant':[trloss, vrloss, reconloss_train, reconloss_valid, klloss_train, klloss_valid],
-                  'label':['Train: Total Loss', 'Valid: Total Loss', 'Train: Recon Loss', 'Valid: Recon Loss',
-                           'Train: KL Loss', 'Valid: KL Loss'],
-                  'savename':'train_valid_loss_plot_'},
-                {'quant':[trloss, vrloss, neteval, klloss_train, klloss_valid, klloss_eval],
-                 'label':['Train: Total Loss', 'Valid: Total Loss', 'Eval: Total Loss', 'Train: KL Loss',
-                          'Valid: KL Loss', 'Eval: KL Loss'],
-                 'savename':'total_kl_loss_plot_'},
-                 {'quant':[trloss, vrloss, neteval, reconloss_train, reconloss_valid, reconloss_eval],
-                  'label':['Train: Total Loss', 'Valid: Total Loss', 'Eval: Total Loss', 'Train: Recon Loss',
-                           'Valid: Recon Loss', 'Eval: Recon Loss'],
-                  'savename':'total_recon_loss_plot_'}
-              ]
+            {'quant':[neteval, reconloss_eval, klloss_eval],
+                'label':['Eval: Total Loss', 'Eval: Recon Loss', 'Eval: KL Loss'],
+                'savename':'eval_loss_plot_'},
+            {'quant':[trloss, neteval, reconloss_train, reconloss_eval, klloss_train, klloss_eval],
+                'label':['Train: Total Loss', 'Eval: Total Loss', 'Train: Recon Loss', 'Eval: Recon Loss',
+                            'Train: KL Loss', 'Eval: KL Loss'],
+                'savename':'train_eval_loss_plot_'},
+            {'quant':[vrloss, neteval, reconloss_valid, reconloss_eval, klloss_valid, klloss_eval],
+                'label':['Valid: Total Loss', 'Eval: Total Loss', 'Valid: Recon Loss', 'Eval: Recon Loss',
+                        'Valid: KL Loss', 'Eval: KL Loss'],
+                'savename':'valid_eval_loss_plot_'},
+            {'quant':[trloss, vrloss, reconloss_train, reconloss_valid, klloss_train, klloss_valid],
+                'label':['Train: Total Loss', 'Valid: Total Loss', 'Train: Recon Loss', 'Valid: Recon Loss',
+                        'Train: KL Loss', 'Valid: KL Loss'],
+                'savename':'train_valid_loss_plot_'},
+            {'quant':[trloss, vrloss, neteval, klloss_train, klloss_valid, klloss_eval],
+                'label':['Train: Total Loss', 'Valid: Total Loss', 'Eval: Total Loss', 'Train: KL Loss',
+                        'Valid: KL Loss', 'Eval: KL Loss'],
+                'savename':'total_kl_loss_plot_'},
+            {'quant':[trloss, vrloss, neteval, reconloss_train, reconloss_valid, reconloss_eval],
+                'label':['Train: Total Loss', 'Valid: Total Loss', 'Eval: Total Loss', 'Train: Recon Loss',
+                        'Valid: Recon Loss', 'Eval: Recon Loss'],
+                'savename':'total_recon_loss_plot_'}
+            ]
+    num_epochs = 10  # -- this is fixed!
+    train_steps_per_epoch = len(trloss) // num_epochs
+    logging.info(f"Train steps per epoch: {train_steps_per_epoch}")
+    eval_steps_per_epoch = len(neteval) // num_epochs
+    val_steps_per_epoch = len(vrloss) // num_epochs
+    logging.info(f"Eval steps per epoch: {eval_steps_per_epoch}")
+    logging.info(f"Valid steps per epoch: {val_steps_per_epoch}")
     for item in items:
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
         for i in range(len(item['quant'])):
-            ax.plot(range(len(item['quant'][i])), item['quant'][i], label=item['label'][i])
+            # -- If `plot_val_vert` is on, then plot validation loss as vertically distributed points,
+            # after each epoch worth of training steps, instead of spreading them horizontally!
+            if val_plot_type is not None:
+                # -- Iterate over number of epochs, plotting val loss at each epoch end point
+                if item['label'][i].startswith('Valid'):
+                    steps_per_epoch = val_steps_per_epoch
+                    if 'Total' in item['label'][i]:
+                        color = 'orange'
+                    elif 'Recon' in item['label'][i]:
+                        color = 'cyan'
+                    elif 'KL' in item['label'][i]:
+                        color = 'magenta'
+                elif item['label'][i].startswith('Eval'):
+                    steps_per_epoch = eval_steps_per_epoch
+                    if 'Total' in item['label'][i]:
+                        color = 'red'
+                    elif 'Recon' in item['label'][i]:
+                        color = 'blue'
+                    elif 'KL' in item['label'][i]:
+                        color = 'purple'
+                else:
+                    # -- For train losses, just plot as usual
+                    ax.plot(range(len(item['quant'][i])), item['quant'][i], label=item['label'][i])
+                    continue
+                logging.info(f"Plotting {item['label'][i]} with {num_epochs} epochs and {steps_per_epoch} steps per epoch.")
+                for epoch in range(num_epochs):
+                    epoch_end_step = (epoch + 1) * train_steps_per_epoch
+                    losses = item['quant'][i][epoch * steps_per_epoch : (epoch + 1) * steps_per_epoch]
+                    if val_plot_type == 'hist':
+                        # -- Plot vertical bars of losses for each epoce at appropriate, 
+                        # -- with the mean and standard deviation determining the height and width of the bar, respectively
+                        ax.hist(losses, bins=20, alpha=0.6, color=color, label=item['label'][i] if epoch == 0 else None)
+                    else:
+                        # -- add label the first time and then set it to None for subsequent epochs to avoid duplicate legend entries
+                        if epoch == 0:
+                            ax.plot([epoch_end_step] * len(losses), losses, '.', alpha=0.6, color=color, label=item['label'][i])
+                        else:
+                            ax.plot([epoch_end_step] * len(losses), losses, '.', alpha=0.6, color=color)
+            else:
+                ax.plot(range(len(item['quant'][i])), item['quant'][i], label=item['label'][i])
         ax.set_xlabel('Cumulative Steps', fontsize=fontsize)
         ax.set_ylabel('Loss', fontsize=fontsize)
         ax.set_xscale('log')
@@ -205,8 +252,9 @@ def plot_loss_from_file(fontsize=15, labelsize=13):
         ax.yaxis.set_minor_locator(plt.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
         ax.tick_params(which='both', direction='in', top=True, right=True)
         plt.tight_layout()
-        figname = dir + f'{item["savename"]}{time}.png'
-        plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
+        figname = dir + item['savename']
+        figname += f'val-{val_plot_type}' if val_plot_type is not None else ''
+        plt.savefig(figname+f'{time}.png', dpi=300, bbox_inches='tight', transparent=True)
         plt.show()
         plt.close()
         logging.info(f"{item['savename'][:-1]} loss plot saved to {figname}")
