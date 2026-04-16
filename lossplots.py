@@ -556,7 +556,8 @@ def plot_rom_opt_mm_hist(fname=None, dir=DIR, time=TIME, fontsize=15, labelsize=
     logging.info(f"ROM and Optimized mismatch histograms saved to {savename}")
 
 
-def plot_uq_hist_from_file(fontsize=15, labelsize=13):
+def plot_uq_hist_from_file(fontsize=15, labelsize=13, 
+                           datatype: {'absdiff', 'nwaves'} = 'absdiff'):
     """
     Plots the hplus and hcross mismatch uncertainty histograms
     on two subplots with log-scaled x-axes. The function reads 
@@ -564,8 +565,14 @@ def plot_uq_hist_from_file(fontsize=15, labelsize=13):
     for the hplus and hcross mismatches.
     """
     fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-    dir = '../results/20260401/'
-    fname = 'uq-test-hist-mean-abs-diff-5000-20260401_174233'
+    if datatype == 'nwaves':
+        dir = '../results/20260416/'
+        fname = 'uq-hphc-hist-Nwaves-100-Nruns-100-20260416_163715'
+        savename = dir + 'uq-hphc-hist-Nwaves-100-Nruns-100'
+    else:
+        dir = '../results/20260401/'
+        fname = 'uq-test-hist-mean-abs-diff-5000-20260401_174233'
+        savename = dir + 'uq-hphc-hist-mean-abs-diff-5000'
     dfuq = pd.read_csv(dir+fname+'.csv', header=0)
     hpbins = np.logspace(np.log10(dfuq['mmuq_hplus'].min())+1e-10,
                          np.log10(dfuq['mmuq_hplus'].max())+1e-10, 50)
@@ -575,20 +582,24 @@ def plot_uq_hist_from_file(fontsize=15, labelsize=13):
     titles = [ '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
     for i in range(len(types)):
         ax = axes[i]
-        ax.set_xlim(1e-2,1e0)
+        if datatype == 'absdiff':
+            ax.set_xlim(1e-2,1e0)
+            xloc, yloc, ha = 0.95, 0.95, 'right'
+        else:
+            ax.set_xlim(1e-5, 1e-1)
+            xloc, yloc, ha = 0.05, 0.95, 'left'
         ax.set_xscale('log')
         ax.tick_params(which="both", direction='in', top=True, right=True)
         ax.tick_params(labelsize=labelsize)
         ax.set_xlabel('Mismatch Uncertainty', fontsize=fontsize)
         ax.set_ylabel('Count', fontsize=fontsize)
-        ax.text(0.95, 0.95, titles[i], fontweight='bold',
-                transform=ax.transAxes, fontsize=labelsize, va='top', ha='right')
-        ax.text(0.95, 0.85, f'Mode: {dfuq[types[i]].mode()[0]:.2e}\nMean: {dfuq[types[i]].mean():.2e}\nMedian: {dfuq[types[i]].median():.2e}',
-                transform=ax.transAxes, fontsize=labelsize, va='top', ha='right')
+        ax.text(xloc, yloc, titles[i], fontweight='bold',
+                transform=ax.transAxes, fontsize=labelsize, va='top', ha=ha)
+        ax.text(xloc, yloc - 0.1, f'Mode: {dfuq[types[i]].mode()[0]:.2e}\nMean: {dfuq[types[i]].mean():.2e}\nMedian: {dfuq[types[i]].median():.2e}',
+                transform=ax.transAxes, fontsize=labelsize, va='top', ha=ha)
         ax.set_title(None)
         ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
     plt.tight_layout()
-    savename = dir + 'uq-hphc-hist-mean-abs-diff-5000'
     now = datetime.now().strftime('%Y%m%d_%H%M%S')
     plt.savefig(savename+'-'+now+'.png', dpi=300, bbox_inches='tight', transparent=True)
     plt.savefig(savename+'-white'+'-'+now+'.png', dpi=300, bbox_inches='tight')
@@ -710,5 +721,5 @@ if __name__ == "__main__":
     # plot_rom_opt_mm_hist(fontsize=20, labelsize=15)
     # plot_timecompare_from_file()
     # plot_flexcvae_loss(dir=args.dir, time=args.time)
-    # plot_uq_hist_from_file(fontsize=20, labelsize=15)
-    plot_loss_from_file()
+    plot_uq_hist_from_file(fontsize=20, labelsize=15, datatype='nwaves')
+    # plot_loss_from_file()

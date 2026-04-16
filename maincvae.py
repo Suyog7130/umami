@@ -22,6 +22,7 @@ Working on the minimal working example today!
 """
 
 import os
+import csv
 import json
 import time
 import argparse
@@ -1295,6 +1296,17 @@ class Test:
         across different input parameters.
         """
         logging.info(f"Testing latent sampling uncertainty with model: {self.model_path}")
+        logging.info(f"Number of random generations for each waveform (Nruns): {Nruns}")
+        logging.info(f"Number of random waveforms to test UQ on (Nwaves): {Nwaves}")
+
+        savename = self.savedir + f'uq-hphc-hist-Nwaves-{Nwaves}-Nruns-{Nruns}'
+        now = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # -- initialize CSV file to data after each Nwave iteration
+        csvfname = savename + '-' + now + '.csv'
+        with open(csvfname, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['mmuq_amp', 'mmuq_freq', 'mmuq_hplus', 'mmuq_hcross'])
+
         # Load the trained model
         preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
         num_classes = 4 if args.aligned else 2
@@ -1315,7 +1327,7 @@ class Test:
 
         all_mm_means_amp, all_mm_stds_amp, all_mm_means_freq, all_mm_stds_freq = [], [], [], []
         all_mm_means_hp, all_mm_stds_hp, all_mm_means_hc, all_mm_stds_hc = [], [], [], []
-        for i in range(Nwaves):
+        for i in tqdm(range(Nwaves), desc="Nwaves", unit="waveform", nrows=80):
 
             # Select a random waveform from a random batch from the dataloader
             # NOTE: We only work with batch_size=1 here, since we want to test the same input parameters 
@@ -1331,7 +1343,7 @@ class Test:
 
             mm_amp, mm_freq = [], []
             mm_hp, mm_hc = [], []
-            for j in range(Nruns):
+            for j in tqdm(range(Nruns), desc="Nruns", unit="run", nrows=80):
                 with torch.no_grad():
                     z1_mean, z1_log_var = model.encode_label_for_x(labels)
                     z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
@@ -1370,7 +1382,11 @@ class Test:
             all_mm_stds_hp.append(np.std(mm_hp))
             all_mm_means_hc.append(np.mean(mm_hc))
             all_mm_stds_hc.append(np.std(mm_hc))
-
+            with open(csvfname, 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow([np.std(mm_amp), np.std(mm_freq), np.std(mm_hp), np.std(mm_hc)])
+            logging.info(f'Completed UQ for waveform {i+1}/{Nwaves}. Mean and Std of hplus Mismatch: {np.mean(mm_hp):.2e} ± {np.std(mm_hp):.2e}, Mean and Std of hcross Mismatch: {np.mean(mm_hc):.2e} ± {np.std(mm_hc):.2e}')
+                         
         # -- Plot histogram of the standard deviation of the mismatch values across all 
         # `Nwaves` number of waveforms, which we call the mismatch uncertainty, to evaluate the 
         # latent sampling uncertainty of the model across different input parameters.
@@ -1389,21 +1405,20 @@ class Test:
         titles = [ '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
         for i in range(len(types)):
             ax = axes[i]
-            ax.set_xlim(1e-2,1e0)
+            ax.set_xlim(1e-5, 1e-1)
+            xloc, yloc, ha = 0.05, 0.95, 'left'
             ax.set_xscale('log')
             ax.tick_params(which="both", direction='in', top=True, right=True)
             ax.tick_params(labelsize=labelsize)
             ax.set_xlabel('Mismatch Uncertainty', fontsize=fontsize)
             ax.set_ylabel('Count', fontsize=fontsize)
-            ax.text(0.95, 0.95, titles[i], fontweight='bold',
-                    transform=ax.transAxes, fontsize=labelsize, va='top', ha='right')
-            ax.text(0.95, 0.85, f'Mode: {dfuq[types[i]].mode()[0]:.2e}\nMean: {dfuq[types[i]].mean():.2e}\nMedian: {dfuq[types[i]].median():.2e}',
-                    transform=ax.transAxes, fontsize=labelsize, va='top', ha='right')
+            ax.text(xloc, yloc, titles[i], fontweight='bold',
+                    transform=ax.transAxes, fontsize=labelsize, va='top', ha=ha)
+            ax.text(xloc, yloc - 0.1, f'Mode: {dfuq[types[i]].mode()[0]:.2e}\nMean: {dfuq[types[i]].mean():.2e}\nMedian: {dfuq[types[i]].median():.2e}',
+                    transform=ax.transAxes, fontsize=labelsize, va='top', ha=ha)
             ax.set_title(None)
             ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
         plt.tight_layout()
-        savename = dir + f'uq-hphc-hist-Nwaves-{Nwaves}-Nruns-{Nruns}'
-        now = datetime.now().strftime('%Y%m%d_%H%M%S')
         plt.savefig(savename+'-'+now+'.png', dpi=300, bbox_inches='tight', transparent=True)
         plt.savefig(savename+'-white'+'-'+now+'.png', dpi=300, bbox_inches='tight')
         plt.show()
@@ -2527,7 +2542,7 @@ def plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
     keys = keys.cpu().numpy() if isinstance(keys, torch.Tensor) else keys
     phases = phases.cpu().numpy() if isinstance(phases, torch.Tensor) else phases
     strains = strains.cpu().numpy() if isinstance(strains, torch.Tensor) else strains
-    logging.info(f"x shape: {x.shape}, reconst shape: {reconst.shape}, phases shape: {phases.shape}, strains shape: {strains.shape}")
+    logging.debug(f"x shape: {x.shape}, reconst shape: {reconst.shape}, phases shape: {phases.shape}, strains shape: {strains.shape}")
 
     chirpmasses = np.zeros((labels.shape[0], 1))  # Store chirp masses for each sample
     totalmasses = np.zeros((labels.shape[0], 1))  # Store total masses for each sample
@@ -2814,7 +2829,11 @@ if __name__ == "__main__":
                                plot_hist=True, plotonlyone=True,
                                fontsize=15, labelsize=13)
         elif args.test_uq_iter:
-            Test(args).test_uq_iter(Nwaves=100, Nruns=1000,
+            Test(args).test_uq_iter(Nwaves=1000, Nruns=100,
+                                    fontsize=15, labelsize=13)
+            Test(args).test_uq_iter(Nwaves=1000, Nruns=1000,
+                                    fontsize=15, labelsize=13)
+            Test(args).test_uq_iter(Nwaves=5000, Nruns=100,
                                     fontsize=15, labelsize=13)
         elif args.time_complexity:
             # for n in [100, 500, 1000]:
