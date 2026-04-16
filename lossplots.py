@@ -141,7 +141,7 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
     ax.tick_params(which='both', direction='in', top=True, right=True)
     plt.tight_layout()
     figname = dir + 'loss_plot_' + time + '.png'
-    # plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
     # plt.show()
     plt.close()
     logging.info(f"Loss plot saved to {figname}")
@@ -230,46 +230,13 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
                 for epoch in range(num_epochs):
                     epoch_end_step = (epoch + 1) * train_steps_per_epoch
                     losses = item['quant'][i][epoch * steps_per_epoch : (epoch + 1) * steps_per_epoch]
-                    if val_plot_type == 'bar':
-                        # -- Plot bars of losses for each epoch at appropriate num of steps centered vertically at the mean loss for that epoch, 
-                        # with error bars showing the std deviation of the losses in that epoch!
-                        # Each epoch will show all items to be plotted beside each other with some width, 
-                        # and spacing. Since this is a different figure, the xaxis can be different, for instance having
-                        # number of epochs on bottom xaxis with each epoch's vertical location been a discrete point, and
-                        # the cumulative steps been shown on secondary top xaxis in log-scale, simply for reference!
-                        mean_loss = np.mean(losses)
-                        std_loss = np.std(losses)
-                        bar_width = 0.8 / len(item['quant'])  # -- width of each bar, with some spacing
-                        bar_x = epoch + (i - len(item['quant']) / 2) * bar_width + bar_width / 2  # -- center bars around epoch number
-                        valax.bar(bar_x, mean_loss, yerr=std_loss, width=bar_width, color=color, alpha=0.6, label=item['label'][i] if epoch == 0 else None)
-                        # 
+                    # -- add label the first time and then set it to None for subsequent epochs to avoid duplicate legend entries
+                    if epoch == 0:
+                        ax.plot([epoch_end_step] * len(losses), losses, '.', alpha=0.6, color=color, label=item['label'][i])
                     else:
-                        # -- add label the first time and then set it to None for subsequent epochs to avoid duplicate legend entries
-                        if epoch == 0:
-                            ax.plot([epoch_end_step] * len(losses), losses, '.', alpha=0.6, color=color, label=item['label'][i])
-                        else:
-                            ax.plot([epoch_end_step] * len(losses), losses, '.', alpha=0.6, color=color)
+                        ax.plot([epoch_end_step] * len(losses), losses, '.', alpha=0.6, color=color)
             else:
                 ax.plot(range(len(item['quant'][i])), item['quant'][i], label=item['label'][i])
-        if val_plot_type == 'bar':
-            valax.set_xlabel('Epoch', fontsize=fontsize)
-            valax.set_ylabel('Loss', fontsize=fontsize)
-            valax.legend()
-            valax.xaxis.set_major_locator(tck.FixedLocator(range(num_epochs)))
-            valax.xaxis.set_minor_locator(tck.FixedLocator([x + 0.5 for x in range(num_epochs - 1)]))
-            valax.tick_params(which='both', direction='in', top=True, right=True)
-            # -- Add secondary x-axis on top to show cumulative steps in log scale
-            secax = valax.secondary_xaxis('top')
-            secax.set_xlabel('Cumulative Steps', fontsize=fontsize)
-            secax.set_xscale('log')
-            secax.set_xticks([(epoch + 1) * train_steps_per_epoch for epoch in range(num_epochs)])
-            secax.set_xticklabels([f'{(epoch + 1) * train_steps_per_epoch:,}' for epoch in range(num_epochs)], rotation=45, ha='right')
-            # -- Save this validation loss plot separately, making sure only valax is saved!
-            val_figname = dir + item['savename'] + 'val-' + val_plot_type + '-' + time + '.png'
-            valfig.tight_layout()
-            valfig.savefig(val_figname, dpi=300, bbox_inches='tight', transparent=True)
-            # valfig.show()
-            logging.info(f"{item['savename'][:-1]} validation loss plot saved to {val_figname}")
         ax.set_xlabel('Cumulative Steps', fontsize=fontsize)
         ax.set_ylabel('Loss', fontsize=fontsize)
         ax.set_xscale('log')
@@ -280,14 +247,69 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
         ax.tick_params(which='both', direction='in', top=True, right=True)
         plt.tight_layout()
         figname = dir + item['savename']
-        figname += f'val-{val_plot_type}' if val_plot_type is not None else ''
+        figname += f'val-{val_plot_type}-' if val_plot_type is not None else ''
         plt.savefig(figname+f'{time}.png', dpi=300, bbox_inches='tight', transparent=True)
-        plt.show()
+        # plt.show()
         plt.close()
         logging.info(f"{item['savename'][:-1]} loss plot saved to {figname}")
 
-        # -- Plot Validation / Eval losses as bars in a separate figure!
-        valfig, valax = plt.subplots(1, 1, figsize=(5, 5))
+    # -- Plot Validation / Eval losses as bars in a separate figure!
+    # -- Plot bars of losses for each epoch at appropriate num of steps centered vertically at the mean loss for that epoch, 
+    # with error bars showing the std deviation of the losses in that epoch!
+    # Each epoch will show all items to be plotted beside each other with some width, 
+    # and spacing. Since this is a different figure, the xaxis can be different, for instance having
+    # number of epochs on bottom xaxis with each epoch's vertical location been a discrete point, and
+    # the cumulative steps been shown on secondary top xaxis in log-scale, simply for reference!
+    for item in items:
+        if not any(label.startswith('Valid') or label.startswith('Eval') for label in item['label']):
+            continue  # -- only plot bars for items that have valid or eval losses
+        fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+        for i in range(len(item['quant'])):
+            if item['label'][i].startswith('Valid'):
+                steps_per_epoch = val_steps_per_epoch
+                if 'Total' in item['label'][i]:
+                    color = 'orange'
+                elif 'Recon' in item['label'][i]:
+                    color = 'cyan'
+                elif 'KL' in item['label'][i]:
+                    color = 'magenta'
+            elif item['label'][i].startswith('Eval'):
+                steps_per_epoch = eval_steps_per_epoch
+                if 'Total' in item['label'][i]:
+                    color = 'red'
+                elif 'Recon' in item['label'][i]:
+                    color = 'blue'
+                elif 'KL' in item['label'][i]:
+                    color = 'purple'
+            else:
+                continue  # -- only plot bars for valid and eval losses
+            for epoch in range(num_epochs):
+                losses = item['quant'][i][epoch * steps_per_epoch : (epoch + 1) * steps_per_epoch]
+                mean_loss = np.mean(losses)
+                std_loss = np.std(losses)
+                bar_width = 0.8 / len(item['quant'])  # -- width of each bar, with some spacing
+                bar_x = epoch + 1 + (i - len(item['quant']) / 2) * bar_width + bar_width / 2  # -- center bars around epoch number
+                ax.bar(bar_x, height=std_loss*2, bottom=mean_loss-std_loss, width=bar_width, color=color, alpha=0.6, 
+                       label=item['label'][i] if epoch == 0 else None)
+        ax.set_yscale('log')
+        ax.set_xlabel('Epoch', fontsize=fontsize)
+        ax.set_ylabel('Loss', fontsize=fontsize)
+        ax.legend()
+        ax.xaxis.set_major_locator(plt.MaxNLocator(11))  # -- set major ticks at epoch numbers
+        ax.yaxis.set_minor_locator(plt.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+        ax.tick_params(which='both', direction='in', top=True, right=True)
+        # # -- add num of training steps on secondary x-axis at the top in log scale for reference, 
+        # # assuming each epoch has same number of training steps, which is true in our case since 
+        # # we are plotting cumulative steps on x-axis in the previous plots!
+        # secax = ax.secondary_xaxis('top', functions=(lambda epoch: epoch * train_steps_per_epoch, lambda steps: steps / train_steps_per_epoch))
+        # secax.tick_params(which='both', direction='in', top=True)
+        # secax.set_xscale('log')
+        # secax.set_xlabel('Cumulative Training Steps', fontsize=fontsize)
+        figname = dir + item['savename'] + 'epochbar-' + time + '.png'
+        plt.tight_layout()
+        plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
+        plt.show()
+        logging.info(f"{item['savename'][:-1]} validation loss plot saved to {figname}")
 
 
 
