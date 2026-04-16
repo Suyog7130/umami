@@ -1256,6 +1256,160 @@ class Test:
         plt.close()
         print("All UQ tests completed.")
 
+    
+    def test_uq_iter(self, Nruns=1000, Nwaves=1000, fontsize=12, labelsize=10):
+        """
+        Test the latent sampling uncertainty of the trained model, by first
+        calculating the mean and standard deviation (call mismatch uncertainty) in the mismatch value of a single
+        random waveform generated `Nruns` times, and then iterating this process for
+        `Nwaves` number of random waveforms. Finally, we will quote the mean and standard
+        deviation of the mismatch uncertainty across all these `Nwaves` number of waveforms, 
+        which will give us a good idea about the latent sampling uncertainty of the model 
+        across different input parameters. This is a more rigorous test of the UQ of the model, 
+        compared to the `test_uq` function where we only test the UQ for a single random waveform.
+        Lastly, we plot a histogram of the mismatch uncertainty values across all these `Nwaves` number of waveforms,
+        which will give us a visual representation of the distribution of the mismatch uncertainty values 
+        across different input parameters.
+
+        Since we need to also calculate the polarizations from the reconstructed amplitude and
+        frequency series, we need to work with data from the test dataset, from which we would
+        select `Nwaves` number of random waveforms, and then for each waveform, we will generate 
+        `Nruns` number of reconstructions from the model, and then calculate the mismatch uncertainty 
+        for each waveform across these `Nruns` number of reconstructions.
+
+        Arguments
+        ---------
+        batch_size: int, optional
+            The batch size to use for loading the test data. Default is 1, since we want to test the 
+            same input parameters for multiple generations to evaluate UQ.
+        Nruns: int, optional
+            The number of random generations to perform for the same input parameters. Default is 1000.
+        Nwaves: int, optional
+            The number of random waveforms to test the UQ on. Default is 1000.
+
+        Output
+        ------
+        A histogram of the mismatch uncertainty values across all the `Nwaves` number of waveforms, 
+        and the mean and standard deviation of the mismatch uncertainty values across all these `Nwaves` number
+        of waveforms, which will give us a good idea about the latent sampling uncertainty of the model
+        across different input parameters.
+        """
+        logging.info(f"Testing latent sampling uncertainty with model: {self.model_path}")
+        # Load the trained model
+        preset_array_size = 8190 if args.fcutoff or args.aligned else PRESET_ARRAY_SIZE
+        num_classes = 4 if args.aligned else 2
+        if self.modeltype=='cae':
+            model = CAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                        key_shape=(2,2)).to(args.device)
+        else:
+            model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, 
+                    key_shape=(2,2)).to(args.device)
+        model.load_state_dict(torch.load(self.model_path, map_location=device))
+        model.to(getattr(torch, self.precision))
+        model.to(self.device)
+        model.eval()
+        logging.info("Model loaded and set to evaluation mode.")
+
+        # -- Set up dataloader for test dataset
+        test_loader = self.setdataloader(batch_size=1)
+
+        all_mm_means_amp, all_mm_stds_amp, all_mm_means_freq, all_mm_stds_freq = [], [], [], []
+        all_mm_means_hp, all_mm_stds_hp, all_mm_means_hc, all_mm_stds_hc = [], [], [], []
+        for i in range(Nwaves):
+
+            # Select a random waveform from a random batch from the dataloader
+            # NOTE: We only work with batch_size=1 here, since we want to test the same input parameters 
+            # for multiple generations to evaluate UQ, and then iterate this process for `Nwaves` number of waveforms.
+            try:
+                x, labels, keys, phases, strains, attr = next(iter(test_loader))
+                labels = labels.to(device)
+            except StopIteration:
+                logging.warning("Reached end of test dataloader while testing UQ. Restarting dataloader.")
+                test_loader = self.setdataloader(batch_size=1)
+                x, labels, keys, phases, strains, attr = next(iter(test_loader))
+                labels = labels.to(device)
+
+            mm_amp, mm_freq = [], []
+            mm_hp, mm_hc = [], []
+            for j in range(Nruns):
+                with torch.no_grad():
+                    z1_mean, z1_log_var = model.encode_label_for_x(labels)
+                    z1p_mean, z1p_log_var = model.encode_label_for_key(labels)
+                    if self.modeltype=='cae':
+                        reconst = model.decode(z1_mean, z1p_mean, labels)
+                    else:
+                        z1 = model.reparameterize(z1_mean, z1_log_var)
+                        z1p = model.reparameterize(z1p_mean, z1p_log_var)
+                        reconst = model.decode(z1, z1p, labels)
+                    
+                    if not self.aligned:
+                        logging.info('Test for current batch completed. Removing zero padding if any.')
+                        x, reconst, phases = removezeros(x, reconst, phases, attr)
+                        logging.debug(f'new shapes, Input: {x.shape}, Reconstructed: {reconst.shape}, phases: {phases.shape}')
+                    
+                    # NOTE: These returned mismatch arrays constain values for the whole batch!
+                    mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios \
+                        = plot_mismatch(x, reconst, labels, keys, savedir=self.savedir, nobatchwiseplot=True)
+                    logging.debug("Amplitude and Frequency mismatch calculated for current batch.")
+                    logging.debug("Calculating hplus/hcross mismatch for current batch.")
+                    mismatch_hplus, mismatch_hcross, chirpmasses, totalmasses, massratios, chieffs, num_saved_overplots \
+                        = plot_polarization_mismatch(x, reconst, labels, keys, phases, strains, attr,
+                                                    savedir=self.savedir, nobatchwiseplot=True,
+                                                    num_saved_overplots=None)
+                    mm_amp.append(mismatch_amp.flatten()[0])
+                    mm_freq.append(mismatch_freq.flatten()[0])
+                    mm_hp.append(mismatch_hplus.flatten()[0])
+                    mm_hc.append(mismatch_hcross.flatten()[0])
+            # -- Calculate mean and std of mismatch values across `Nruns` number of generations 
+            # for the current waveform, and append to the total lists
+            all_mm_means_amp.append(np.mean(mm_amp))
+            all_mm_stds_amp.append(np.std(mm_amp))
+            all_mm_means_freq.append(np.mean(mm_freq))
+            all_mm_stds_freq.append(np.std(mm_freq))
+            all_mm_means_hp.append(np.mean(mm_hp))
+            all_mm_stds_hp.append(np.std(mm_hp))
+            all_mm_means_hc.append(np.mean(mm_hc))
+            all_mm_stds_hc.append(np.std(mm_hc))
+
+        # -- Plot histogram of the standard deviation of the mismatch values across all 
+        # `Nwaves` number of waveforms, which we call the mismatch uncertainty, to evaluate the 
+        # latent sampling uncertainty of the model across different input parameters.
+        fig, axes = plt.subplots(1, 2, figsize=(10,5))
+        dfuq = pd.DataFrame({
+            'mmuq_amp': all_mm_stds_amp,
+            'mmuq_freq': all_mm_stds_freq,
+            'mmuq_hplus': all_mm_stds_hp,
+            'mmuq_hcross': all_mm_stds_hc,
+        })
+        hpbins = np.logspace(np.log10(dfuq['mmuq_hplus'].min())+1e-10,
+                             np.log10(dfuq['mmuq_hplus'].max())+1e-10, 50)
+        dfuq.hist('mmuq_hplus', bins=hpbins, ax=axes[0], grid=False, edgecolor='black', color='lightblue')
+        dfuq.hist('mmuq_hcross', bins=hpbins, ax=axes[1], grid=False, edgecolor='black', color='lightblue')
+        types = ['mmuq_hplus', 'mmuq_hcross']
+        titles = [ '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
+        for i in range(len(types)):
+            ax = axes[i]
+            ax.set_xlim(1e-2,1e0)
+            ax.set_xscale('log')
+            ax.tick_params(which="both", direction='in', top=True, right=True)
+            ax.tick_params(labelsize=labelsize)
+            ax.set_xlabel('Mismatch Uncertainty', fontsize=fontsize)
+            ax.set_ylabel('Count', fontsize=fontsize)
+            ax.text(0.95, 0.95, titles[i], fontweight='bold',
+                    transform=ax.transAxes, fontsize=labelsize, va='top', ha='right')
+            ax.text(0.95, 0.85, f'Mode: {dfuq[types[i]].mode()[0]:.2e}\nMean: {dfuq[types[i]].mean():.2e}\nMedian: {dfuq[types[i]].median():.2e}',
+                    transform=ax.transAxes, fontsize=labelsize, va='top', ha='right')
+            ax.set_title(None)
+            ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
+        plt.tight_layout()
+        savename = dir + f'uq-hphc-hist-Nwaves-{Nwaves}-Nruns-{Nruns}'
+        now = datetime.now().strftime('%Y%m%d_%H%M%S')
+        plt.savefig(savename+'-'+now+'.png', dpi=300, bbox_inches='tight', transparent=True)
+        plt.savefig(savename+'-white'+'-'+now+'.png', dpi=300, bbox_inches='tight')
+        plt.show()
+        plt.close()
+        logging.info("All UQ iterations completed. Plotting histogram of mismatch uncertainty values across all waveforms.")
+
 
     def test_timecomplexity(self, num=int(1e6), num_start=int(1e4)):
         """
@@ -2561,6 +2715,8 @@ if __name__ == "__main__":
                             help='whether to test?')
     parser.add_argument('--test-uq', action='store_true', default=False,
                         help='whether to test uncertainty quantification?')
+    parser.add_argument('--test-uq-iter', action='store_true', default=False,
+                        help='whether to test uncertainty quantification iteratively for Nwaves?')
     parser.add_argument('--time-complexity', action='store_true', default=False,
                         help='whether to test time complexity?')
     parser.add_argument('--time-compare', action='store_true', default=False,
@@ -2657,6 +2813,9 @@ if __name__ == "__main__":
             Test(args).test_uq(batch_size=args.batch_size, Nruns=5000, 
                                plot_hist=True, plotonlyone=True,
                                fontsize=15, labelsize=13)
+        elif args.test_uq_iter:
+            Test(args).test_uq_iter(Nwaves=100, Nruns=1000,
+                                    fontsize=15, labelsize=13)
         elif args.time_complexity:
             # for n in [100, 500, 1000]:
             Test(args).test_timecomplexity(num_start=1, num=100)
