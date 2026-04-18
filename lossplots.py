@@ -111,7 +111,8 @@ def plot_flexcvae_loss(dir=DIR, time=TIME):
     plt.close()
 
 
-def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
+def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None} = None,
+                        onlyprintsteps=False):
     dir = '../results/20260408/'
     time = '20260408_062713'
     fig, ax = plt.subplots(1, 1, figsize=(5, 5))
@@ -122,6 +123,7 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
     # Plot validation losses
     vrloss = np.loadtxt(dir + 'valid-rloss-' + time + '.txt', delimiter=',', skiprows=1)
     validdf = pd.read_csv(dir + 'net-val-loss-' + time + '.csv', delimiter=',', header=0)
+
     # Plot and save figs in the directory
     ax.plot(range(len(trloss)), trloss, label='Total Train Loss')
     ax.plot(range(len(vrloss)), vrloss, label='Total Valid Loss')
@@ -141,10 +143,11 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
     ax.tick_params(which='both', direction='in', top=True, right=True)
     plt.tight_layout()
     figname = dir + 'loss_plot_' + time + '.png'
-    plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
+    # plt.savefig(figname, dpi=300, bbox_inches='tight', transparent=True)
     # plt.show()
     plt.close()
     logging.info(f"Loss plot saved to {figname}")
+
     # -- Now, plot train, eval, valid losses in one plot each for total, recon and kl losses
     neteval = evaldf['train_eval_loss']
     reconloss_train = traindf['netreconloss']
@@ -153,6 +156,20 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
     klloss_train = traindf['netklloss']
     klloss_eval = evaldf['train_eval_kl_loss']
     klloss_valid = validdf['netvklloss']
+
+    num_epochs = 10  # -- this is fixed!
+    train_steps_per_epoch = len(trloss) // num_epochs
+    logging.info(f"Train steps per epoch: {train_steps_per_epoch}")
+    eval_steps_per_epoch = len(neteval) // num_epochs
+    val_steps_per_epoch = len(vrloss) // num_epochs
+    logging.info(f"Eval steps per epoch: {eval_steps_per_epoch}")
+    logging.info(f"Valid steps per epoch: {val_steps_per_epoch}")
+    if onlyprintsteps:
+        print(f"Train steps per epoch: {train_steps_per_epoch}")
+        print(f"Eval steps per epoch: {eval_steps_per_epoch}")
+        print(f"Valid steps per epoch: {val_steps_per_epoch}")
+        return
+    
     items = [{'quant':[trloss, vrloss, neteval],
                 'label':['Train: Total Loss', 'Valid: Total Loss', 'Eval: Total Loss'],
                 'savename':'total_loss_plot_'},
@@ -162,8 +179,8 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
             {'quant':[klloss_train, klloss_eval, klloss_valid],
                 'label':['Train: KL Loss', 'Eval: KL Loss', 'Valid: KL Loss'],
                 'savename':'kl_loss_plot_'},
-            {'quant':[trloss, reconloss_train, klloss_train],
-                'label':['Train: Total Loss', 'Train: Recon Loss', 'Train: KL Loss'],
+            {'quant':[klloss_train, reconloss_train, trloss],
+                'label':['Train: KL Loss', 'Train: Recon Loss', 'Train: Total Loss'],
                 'savename':'train_loss_plot_'},
             {'quant':[vrloss, reconloss_valid, klloss_valid],
                 'label':['Valid: Total Loss', 'Valid: Recon Loss', 'Valid: KL Loss'],
@@ -192,13 +209,6 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
                         'Valid: Recon Loss', 'Eval: Recon Loss'],
                 'savename':'total_recon_loss_plot_'}
             ]
-    num_epochs = 10  # -- this is fixed!
-    train_steps_per_epoch = len(trloss) // num_epochs
-    logging.info(f"Train steps per epoch: {train_steps_per_epoch}")
-    eval_steps_per_epoch = len(neteval) // num_epochs
-    val_steps_per_epoch = len(vrloss) // num_epochs
-    logging.info(f"Eval steps per epoch: {eval_steps_per_epoch}")
-    logging.info(f"Valid steps per epoch: {val_steps_per_epoch}")
     for item in items:
         fig, ax = plt.subplots(1, 1, figsize=(5, 5))
         for i in range(len(item['quant'])):
@@ -224,7 +234,7 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
                         color = 'purple'
                 else:
                     # -- For train losses, just plot as usual
-                    ax.plot(range(len(item['quant'][i])), item['quant'][i], label=item['label'][i])
+                    ax.plot(range(len(item['quant'][i])), item['quant'][i], label=item['label'][i], alpha=0.6)
                     continue
                 logging.info(f"Plotting {item['label'][i]} with {num_epochs} epochs and {steps_per_epoch} steps per epoch.")
                 for epoch in range(num_epochs):
@@ -236,7 +246,7 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None}=None):
                     else:
                         ax.plot([epoch_end_step] * len(losses), losses, '.', alpha=0.6, color=color)
             else:
-                ax.plot(range(len(item['quant'][i])), item['quant'][i], label=item['label'][i])
+                ax.plot(range(len(item['quant'][i])), item['quant'][i], label=item['label'][i], alpha=0.6)
         ax.set_xlabel('Cumulative Steps', fontsize=fontsize)
         ax.set_ylabel('Loss', fontsize=fontsize)
         ax.set_xscale('log')
@@ -567,8 +577,8 @@ def plot_uq_hist_from_file(fontsize=15, labelsize=13,
     fig, axes = plt.subplots(1, 2, figsize=(10, 5))
     if datatype == 'nwaves':
         dir = '../results/20260416/'
-        fname = 'uq-hphc-hist-Nwaves-100-Nruns-100-20260416_163715'
-        savename = dir + 'uq-hphc-hist-Nwaves-100-Nruns-100'
+        fname = 'uq-hphc-hist-Nwaves-5000-Nruns-100-20260416_083418'
+        savename = dir + 'uq-hphc-hist-Nwaves-5000-Nruns-100'
     else:
         dir = '../results/20260401/'
         fname = 'uq-test-hist-mean-abs-diff-5000-20260401_174233'
@@ -591,7 +601,7 @@ def plot_uq_hist_from_file(fontsize=15, labelsize=13,
         ax.set_xscale('log')
         ax.tick_params(which="both", direction='in', top=True, right=True)
         ax.tick_params(labelsize=labelsize)
-        ax.set_xlabel('Mismatch Uncertainty', fontsize=fontsize)
+        ax.set_xlabel('Mismatch Standard Deviation', fontsize=fontsize)
         ax.set_ylabel('Count', fontsize=fontsize)
         ax.text(xloc, yloc, titles[i], fontweight='bold',
                 transform=ax.transAxes, fontsize=labelsize, va='top', ha=ha)
@@ -721,5 +731,5 @@ if __name__ == "__main__":
     # plot_rom_opt_mm_hist(fontsize=20, labelsize=15)
     # plot_timecompare_from_file()
     # plot_flexcvae_loss(dir=args.dir, time=args.time)
-    plot_uq_hist_from_file(fontsize=20, labelsize=15, datatype='nwaves')
-    # plot_loss_from_file()
+    # plot_uq_hist_from_file(datatype='nwaves')
+    plot_loss_from_file(onlyprintsteps=False)
