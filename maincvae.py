@@ -249,13 +249,14 @@ def train(args):
 
     MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
     if not args.use_base_model_config:
-        MODEL_CONFIG['paramsnorm'] = False
+        MODEL_CONFIG['paramsnorm'] = True
         MODEL_CONFIG['labels_mean'] = params_mean
         MODEL_CONFIG['labels_std'] = params_std
         MODEL_CONFIG['num_classes'] = num_classes
         MODEL_CONFIG['latent_dim_x'] = 32
         MODEL_CONFIG['latent_dim_key'] = 2
         MODEL_CONFIG['learning_rate'] = 1e-3
+        MODEL_CONFIG['modeltype'] = args.modeltype
     logging.info(f'Model Config: {MODEL_CONFIG}')
 
     # Initialize Model

@@ -367,8 +367,10 @@ class CVAE(nn.Module):
             self.register_buffer('labels_mean', labels_mean)
             self.register_buffer('labels_std', labels_std)
         elif labels_mean is not None or labels_std is not None:
+            self.register_buffer('labels_mean', labels_mean)
+            self.register_buffer('labels_std', labels_std)
             logging.warning("labels_mean and labels_std are provided but paramsnorm is False. \
-                These will be ignored since input param normalization is NOT enabled.")
+                This means that labels_mean and labels_std were provided in MODEL_CONFIG. We will use them!")
         else:
             logging.info("Input parameter normalization is NOT enabled. \
                 The model will use the raw labels without normalization.")
