@@ -33,11 +33,11 @@ APPROXIMANT = 'SEOBNRv4'
 
 SAMPLE_RATE = 8192.0  # n_samples = duration(s) / sample_rate
 DURATION = 1.00
-sample_len = int(DURATION * SAMPLE_RATE)
+SAMPLE_LEN = int(DURATION * SAMPLE_RATE)
 DELTA_T = DURATION / SAMPLE_RATE   # delta_t is just 1/sample_rate!
-delta_f = 1.0 / DURATION  # delta_f = 1.0 / duration(s)
-f_lower = FMIN = 40.0
-f_len = sample_len // 2 + 1  # upper frequency
+DELTA_F = 1.0 / DURATION  # delta_f = 1.0 / duration(s)
+F_LOWER = FMIN = 40.0
+F_LEN = SAMPLE_LEN // 2 + 1  # upper frequency
 
 np_gen = np.random.default_rng()
 
@@ -102,24 +102,17 @@ class BaseWaveform:
         self.q_range = [1,10]
         self.chi_range = [-0.8,0.8]
 
-        self.f_lower = f_lower
-
         self.baseparams = {
             'f_lower': baseparams.get('f_lower', FMIN),
             'delta_t': baseparams.get('delta_t', DELTA_T),
             'approximant': baseparams.get('approximant', approximant),
         }
 
-        self.fcutoff = fcutoff
-        if self.fcutoff:
-            self.fname += '-fcutoff'
-            self.cutoffconst = self.calc_cutoffconst()
-        else:
-            self.cutoffconst = None
-
         # higher-level options
         self.nosave = nosave
         self.approximant = approximant
+        self.fcutoff = fcutoff
+        self.cutoffconst = None  # -- will be calculated later if fcutoff is True
         self.aligned = aligned
         self.precess = precess
         self.use_lal_sim = (wflibname == 'lalsim')
@@ -128,7 +121,9 @@ class BaseWaveform:
         self.wfloader = self._set_waveform_loader()
 
         self.fname = fname + '-' + self.approximant
+
         if self.aligned:
+            print("We will use aligned-spin waveforms!")
             self.fname += '-aligned'
         self.init_plot()
         # self.waveform()
@@ -143,30 +138,6 @@ class BaseWaveform:
         if 'q' in self.param_space:
             params['m1'] = params['m2'] * params['q']
         return params
-    
-    def calc_cutoffconst(self, nsamples=1000):
-        """
-        Calculate the cutoff constant for the waveform duration
-        calculation based on the approximate relation:
-
-            DURATION = C * fcutoff^(-8/3) * mchirp^(-5/3)
-        
-        where, C is the cutoff constant to be calculated.
-        """
-        logging.info("Calculating cutoff constant for waveform duration...")
-        consts = np.zeros(nsamples)
-        for i in range(nsamples):
-            param = self.get_params(i)
-            data = self.get_waveform(*param)
-            hp, hc = data[0], data[1]
-            duration = hp.duration
-            m1, m2 = param['m1'], param['m2']
-            mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
-            fcutoff = param['f_lower']
-            consts[i] = duration * fcutoff**(8/3) * mchirp**(5/3)
-        cutoffconst = np.mean(consts)
-        logging.info(f"Cutoff constant calculated: {cutoffconst}")
-        return cutoffconst
 
     def _set_masses(self, num=100):
         m1s = np.random.uniform(self.mass_range[0], self.mass_range[1], num)
@@ -187,20 +158,34 @@ class BaseWaveform:
         self.ax1 = plt.subplot2grid((2, 2), (1, 0), fig=self.fig)
         self.ax2 = plt.subplot2grid((2, 2), (1, 1), fig=self.fig)
 
-    def plot_single_wf(self, m1, m2, hp, hc, amp, phase, freq):
-        self.ax.plot(hp.sample_times, hp, label='$h_{+}$')
-        self.ax.plot(hc.sample_times, hc, label='$h_{\\times}$')
-        self.ax.set_xlabel('Sample Times', fontsize=12)
-        self.ax.set_ylabel('h(t)', fontsize=12)
-        self.ax.legend(loc='upper left', fontsize=10, ncols=2)
-        self.ax1.plot(amp.sample_times, amp)
-        self.ax1.set_xlabel('Sample Times', fontsize=12)
-        self.ax1.set_ylabel('Amplitude', fontsize=12)
-        self.ax2.plot(freq.sample_times, freq)
-        self.ax2.set_xlabel('Sample Times', fontsize=12)
-        self.ax2.set_ylabel('Frequency', fontsize=12)
-        self.fig.suptitle(f'$m_1$={m1:.2f}, $m_2$={m2:.2f}, approx={APPROXIMANT}')
-        self.savefig([self.ax, self.ax1, self.ax2])
+    def plot_single_wf(self, m1, m2, hp, hc, amp=None, phase=None, freq=None):
+        if amp is not None and freq is not None:
+            fig, axes = plt.subplots(3, 1, figsize=(8, 12))
+            ax, ax1, ax2 = axes
+        else:
+            fig, ax = plt.subplots(figsize=(8, 5))
+        ax.plot(hp.sample_times, hp, label='$h_{+}$')
+        ax.plot(hc.sample_times, hc, label='$h_{\\times}$')
+        ax.set_xlabel('Sample Times', fontsize=12)
+        ax.set_ylabel('h(t)', fontsize=12)
+        ax.legend(loc='upper left', fontsize=10, ncols=2)
+        if amp is not None:
+            self.ax1.plot(amp.sample_times, amp)
+            self.ax1.set_xlabel('Sample Times', fontsize=12)
+            self.ax1.set_ylabel('Amplitude', fontsize=12)
+        if freq is not None:
+            self.ax2.plot(freq.sample_times, freq)
+            self.ax2.set_xlabel('Sample Times', fontsize=12)
+            self.ax2.set_ylabel('Frequency', fontsize=12)
+        ax.set_title(f'm1={m1:.2f} $M_{{\\odot}}$, m2={m2:.2f} $M_{{\\odot}}$')
+        ax.tick_params(axis='both', which='major', labelsize=10, direction='in', top=True, right=True)
+        if amp is not None and freq is not None:
+            ax1.tick_params(axis='both', which='major', labelsize=10, direction='in', top=True, right=True)
+            ax2.tick_params(axis='both', which='major', labelsize=10, direction='in', top=True, right=True)
+        plt.tight_layout()
+        plt.savefig(self.fname+'_single.png', dpi=300, bbox_inches='tight', transparent=True)
+        plt.show()
+        plt.close(self.fig)
 
     def plot_two_wfs(self, *kwargs):
         m1s, m2s, hps, amps, phases, freqs = kwargs
@@ -217,6 +202,8 @@ class BaseWaveform:
             self.ax2.set_xlabel('Sample Times', fontsize=12)
             self.ax2.set_ylabel('Frequency', fontsize=12)
         self.savefig([self.ax, self.ax1, self.ax2])
+        plt.show()
+        plt.close(self.fig)
 
     def _set_waveform_loader(self):
         """
@@ -301,9 +288,20 @@ class BaseWaveform:
     #     return m1, m2, hp, hc, amp, phase, freq
 
 
-    def get_waveform(self, params: dict):
+    def get_waveform(self, 
+                     params: dict, 
+                     _flag_calc_cutoffconst: bool = False):
         """
         Get the waveform for one set of source parameters.
+
+        Arguments
+        ---------
+        params : dict
+            A dictionary containing the source parameters (masses, spins, etc.) and 
+            waveform generation parameters (f_lower, delta_t, etc.).
+        _flag_calc_cutoffconst : bool, optional
+            Flag to indicate whether we are generating waveforms for the purpose of 
+            calculating the cutoff constant.
 
         Returns
         -------
@@ -318,6 +316,7 @@ class BaseWaveform:
         # Call PyCBC function by default!
         hp, hc = self.wfloader(**wfkwargs)
         logging.info(f"Generated waveform with {wfkwargs}")
+        logging.info(f"hp duration: {hp.duration}, hc duration: {hc.duration}")
 
         if self.wflibname=='lalsim':
             logging.info("Generated lal wavefroms!")
@@ -341,30 +340,48 @@ class BaseWaveform:
         if self.wflibname=='pycbc':
             hp, hc = hp.trim_zeros(), hc.trim_zeros()
 
-            m1 = wfkwargs.get('mass1', params.get('m1_msun', wfkwargs['m1']))
-            m2 = wfkwargs.get('mass2', params.get('m2_msun', wfkwargs['m2']))
+            m1 = wfkwargs.get('mass1')
+            m2 = wfkwargs.get('mass2')
 
-            if self.cutoffconst is not None:
-                logging.info(f'f_low={f_lower}, duration={hp.duration}')
+            # NOTE: The hell I dont understand why `hp.duration` is always less that DURATION,
+            # although for a set sample_rate, it should always be SAMPLE_LEN samples long, for one second duration signals!!!
+            # TODO: Think why `hp.duration < DURATION` is not correct, but `len(hp)<SAMPLE_LEN` works besto!
+            if len(hp)<SAMPLE_LEN and self.cutoffconst is not None:                
+                logging.warning(f"Waveform duration {hp.duration:.4f} is less than desired duration {DURATION:.4f}. Adjusting f_lower from {wfkwargs['f_lower']:.4f} ...")
                 # calculate new f_lower
                 mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
                 new_fcutoff = ( DURATION / (self.cutoffconst * mchirp ** (-5/3)) )**(-3/8)
-                logging.info(f'New f_lower={new_fcutoff}')
-                # adjust the new f_lower to allow for some error
-                new_fcutoff -= 0.2*new_fcutoff
-                # generate a second waveform
-                wfkwargs['f_lower'] = new_fcutoff
-                hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
-                hp, hc = hp.trim_zeros(), hc.trim_zeros()
-                logging.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
-                logging.info(f'sample_len={len(hp)}')
+                while len(hp) < SAMPLE_LEN:
+                    # adjust the new f_lower to allow for some error
+                    new_fcutoff -= 0.2*new_fcutoff
+                    logging.info(f'New f_lower={new_fcutoff}')
+                    # generate a second waveform
+                    wfkwargs['f_lower'] = new_fcutoff
+                    hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
+                    hp, hc = hp.trim_zeros(), hc.trim_zeros()
+                    logging.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
+                    logging.info(f'sample_len={len(hp)}')
+                self.plot_single_wf(m1, m2, hp, hc)
+            elif len(hp) < SAMPLE_LEN and self.cutoffconst is None and not _flag_calc_cutoffconst:
+                logging.warning(f"Waveform duration {hp.duration:.4f} is less than desired duration {DURATION:.4f}. Consider using fcutoff option to ensure minimum duration for all waveforms.")
+
+            if len(hp) > PRESET_ARRAY_SIZE:
+                diff = len(hp) - PRESET_ARRAY_SIZE
+                logging.warning(f'len(hp) > {PRESET_ARRAY_SIZE} by {diff} elements')
+                hp = hp[diff:]
+                hc = hc[diff:]
+                logging.warning(f'After trimming, len(hp)={len(hp)}, len(hc)={len(hc)}')
 
             amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
             phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
             freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
             logging.debug(f'Length of hp: {len(hp)}, hc: {len(hc)}')
             logging.debug(f'Length of amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
-            # print(hp.__dict__)
+
+            assert len(hp) == len(hc), f"Length mismatch: hp={len(hp)}, hc={len(hc)}"
+            assert len(amp) == len(phase) == len(freq)+1, f"Length mismatch: amp={len(amp)}, phase={len(phase)}, freq={len(freq)}"
+        
+        logging.info(f"Waveform generation successful!")
         return (hp, hc, amp, phase, freq)
 
     def waveform(self, num=1):
@@ -394,7 +411,8 @@ class Waveform(BaseWaveform):
     """
     Main class to generate, save, and load training / test waveforms.
     """
-    def __init__(self, nsamples=1e5, fcutoff=None,
+    def __init__(self, 
+                 nsamples=1e5,
                  param_space=['m1_msun', 'm2_msun', 'chi1z', 'chi2z'],
                  use_params_file=True, 
                  *args, **kwargs):
@@ -402,10 +420,19 @@ class Waveform(BaseWaveform):
         self.nsamples = nsamples
         self.param_space = param_space
         self.tttratio = [0.7, 0.1, 0.2]  # train, val, test
+
         if use_params_file:
             self.load_params_from_file()
         else:
             self.set_parameter_space()
+
+        if self.fcutoff:
+            print("Using fcutoff to ensure waveform duration >= DURATION!")
+            self.fname += '-fcutoff'
+            self.cutoffconst = self.calc_cutoffconst()
+            print(f"Cutoff constant calculated: {self.cutoffconst}")
+        else:
+            self.cutoffconst = None
 
     def set_parameter_space(self):
         """
@@ -456,7 +483,31 @@ class Waveform(BaseWaveform):
                     raise ValueError(f"Parameter {param} not found in the CSV file.")
                 setattr(self, param+'s', df[param].values)
         logging.info(f"Parameters loaded from {params_file_dir} successfully.")
+    
+    def calc_cutoffconst(self, nsamples=1000):
+        """
+        Calculate the cutoff constant for the waveform duration
+        calculation based on the approximate relation:
 
+            DURATION = C * fcutoff^(-8/3) * mchirp^(-5/3)
+        
+        where, C is the cutoff constant to be calculated.
+        """
+        logging.info("Calculating cutoff constant for waveform duration...")
+        consts = np.zeros(nsamples)
+        for i in range(nsamples):
+            params = self.get_params(i)
+            data = self.get_waveform(params, _flag_calc_cutoffconst=True)
+            hp, hc = data[0], data[1]
+            duration = hp.duration
+            m1, m2 = params.get('m1', params.get('m1_msun')), params.get('m2', params.get('m2_msun'))
+            mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+            fcutoff = params['f_lower']
+            consts[i] = duration * fcutoff**(8/3) * mchirp**(5/3)
+        cutoffconst = np.mean(consts)
+        logging.info(f"Cutoff constant calculated: {cutoffconst}")
+        return cutoffconst
+    
     def _tttsplits(self):
         indices = np.arange(self.nsamples)
         train_indices = indices[:int(self.nsamples * self.tttratio[0])]
@@ -478,9 +529,9 @@ class Waveform(BaseWaveform):
             logging.info('Assuming data is the `hp` strain.')
             hf[grpname].create_dataset('hp', data=data)
 
-        elif isinstance(data, list):
+        elif isinstance(data, list) or isinstance(data, tuple):
             dsnames = ['hp', 'hc', 'amp', 'phase', 'freq']
-            logging.info(f'Assuming data array is in the form {dsnames}')
+            # logging.warning(f'Assuming data is a list of arrays in the order: {dsnames}')
             # Do not write the extra info since it was already written!
             for name, tsdata in zip(dsnames, data[:-1]):
                 logging.debug(f"{name}, {tsdata.shape}")
@@ -494,8 +545,7 @@ class Waveform(BaseWaveform):
                 else:
                     raise ValueError(f"Data for {name} is not a numpy array.")
         else:
-            raise ValueError("Data must be a numpy array or a list of arrays or \
-                            a dictionary of arrays.")
+            raise ValueError("Data must be a numpy array or a list/tuple of arrays or a dictionary of arrays.")
     
     def write_data_to_hdf(self, which='train'):
         """
@@ -503,12 +553,13 @@ class Waveform(BaseWaveform):
         """
         self.fname += f'-{self.wflibname}-{int(DURATION)}sec-{int(SAMPLE_RATE)}Hz'
         self.fname += f'-{which}'
-        logging.info(f'Writing {which} data to HDF5 file {self.fname}.hdf')
+        print(f'Writing {which} data to HDF5 file {self.fname}.hdf')
         if os.path.exists(self.fname+'.hdf'):
-            logging.info(f'File {self.fname}.hdf already exists. Using an incremented name.')
+            logging.warning(f'File {self.fname}.hdf already exists. Using an incremented name.')
             self.fname = self.fname.split('.hdf')[0] + '-1'
 
         split_indices = self._tttsplits()[{'train':0, 'val':1, 'test':2}[which]]
+        self.fname += f'-{len(split_indices)}samples'
 
         with h5py.File(self.fname+'.hdf', 'w') as hf:
             # Create a group for each mass
@@ -521,216 +572,216 @@ class Waveform(BaseWaveform):
                 for param, value in params.items():
                     hfgrp.attrs[param] = value
                 self.write_hdf_grp(hf, data, grpname)
-        logging.info(f"Data written to {self.fname+'.hdf'} successfully.")
+        print(f"Data written to {self.fname+'.hdf'} successfully.")
 
     def read_data_from_hdf(self, which='train'):
         raise NotImplementedError("Reading data from HDF5 file not implemented yet.")
 
 
 
-class SEOBNRv4:
-    """
-    DEPRECATED! NOTE: Please use the generic `Waveforms` class!
-    Class to generate SEOBNRv4 waveforms.
-    """
-    def __init__(self, masses=None, spins=None, fcutoff=True, fname='',
-                 preset_array_size=PRESET_ARRAY_SIZE):
-        super().__init__()
-        self.masses = masses if masses is not None else np.random.uniform(5, 75, (1000, 2))
-        self.spins = spins if (spins is not None and masses is not None) else np.random.uniform(-0.999, 0.999, (1000, 2))
-        if fcutoff:
-            self.cutoffconst = calc_cutoffconst()
-        else:
-            self.cutoffconst = None
-        self.otherparams = False
+# class SEOBNRv4:
+#     """
+#     DEPRECATED! NOTE: Please use the generic `Waveforms` class!
+#     Class to generate SEOBNRv4 waveforms.
+#     """
+#     def __init__(self, masses=None, spins=None, fcutoff=True, fname='',
+#                  preset_array_size=PRESET_ARRAY_SIZE):
+#         super().__init__()
+#         self.masses = masses if masses is not None else np.random.uniform(5, 75, (1000, 2))
+#         self.spins = spins if (spins is not None and masses is not None) else np.random.uniform(-0.999, 0.999, (1000, 2))
+#         if fcutoff:
+#             self.cutoffconst = calc_cutoffconst()
+#         else:
+#             self.cutoffconst = None
+#         self.otherparams = False
 
-        self.approximant = APPROXIMANT
-        self.sample_rate = SAMPLE_RATE
-        self.delta_t = DELTA_T
-        self.f_lower = f_lower
-        self.duration = DURATION
-        self.preset_array_size = preset_array_size
+#         self.approximant = APPROXIMANT
+#         self.sample_rate = SAMPLE_RATE
+#         self.delta_t = DELTA_T
+#         self.f_lower = f_lower
+#         self.duration = DURATION
+#         self.preset_array_size = preset_array_size
 
-        self.fname = str(self.approximant) + '-' + fname + 'fcutoff-uniform-aligned'
-        if self.otherparams:
-            self.fname += '-otherparam'
+#         self.fname = str(self.approximant) + '-' + fname + 'fcutoff-uniform-aligned'
+#         if self.otherparams:
+#             self.fname += '-otherparam'
 
-    def get_aligned_vals(self, m1, m2, s1, s2):
-        """
-        Generate the time-domain waveform for the given masses, aligned spins and
-        approximant. The waveform is generated with variable length (duration)
-        and this is directly converted to Amp/Freq and saved.
-        There are 3 different datasets that can be generated:
-        - `raw`: The raw time-domain waveform is generated, converted to Amp/Freq
-                and then saved, without appending zeros in hp/hc. The equal duration
-                waveforms of 1 second lenght for this dataset are the ones generated
-                in `get_vals_for_hdf`.
-        - `f_cutoff`: The raw time-domain waveform is generated, and is made to be of
-                the desired duration of 1 second, by changing the lower freq cutoff.
-                Then it is converted to Amp/Freq and saved.
+#     def get_aligned_vals(self, m1, m2, s1, s2):
+#         """
+#         Generate the time-domain waveform for the given masses, aligned spins and
+#         approximant. The waveform is generated with variable length (duration)
+#         and this is directly converted to Amp/Freq and saved.
+#         There are 3 different datasets that can be generated:
+#         - `raw`: The raw time-domain waveform is generated, converted to Amp/Freq
+#                 and then saved, without appending zeros in hp/hc. The equal duration
+#                 waveforms of 1 second lenght for this dataset are the ones generated
+#                 in `get_vals_for_hdf`.
+#         - `f_cutoff`: The raw time-domain waveform is generated, and is made to be of
+#                 the desired duration of 1 second, by changing the lower freq cutoff.
+#                 Then it is converted to Amp/Freq and saved.
 
-        Returns:
-            hp, hc, amp, phase, freq: numpy arrays of the waveform polarizations,
-                amplitude, phase and frequency.
-        """
-        extra = {}
-        wfkwargs = {
-            'approximant': self.approximant,
-            'mass1': m1,
-            'mass2': m2,
-            'f_lower': self.f_lower,
-            'delta_t': self.delta_t,
-            'spin1z': s1,
-            'spin2z': s2,
-        }
-        if self.otherparams:
-            angles = np_gen.uniform(0., 2*np.pi, 3)
-            wfkwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
-            # TODO: check if the inclination has to be in this range ??
-            wfkwargs['inclination'] = np_gen.uniform(0., np.pi)
-        logging.info(f"waveform_kwargs: {wfkwargs}")
-        hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
+#         Returns:
+#             hp, hc, amp, phase, freq: numpy arrays of the waveform polarizations,
+#                 amplitude, phase and frequency.
+#         """
+#         extra = {}
+#         wfkwargs = {
+#             'approximant': self.approximant,
+#             'mass1': m1,
+#             'mass2': m2,
+#             'f_lower': self.f_lower,
+#             'delta_t': self.delta_t,
+#             'spin1z': s1,
+#             'spin2z': s2,
+#         }
+#         if self.otherparams:
+#             angles = np_gen.uniform(0., 2*np.pi, 3)
+#             wfkwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
+#             # TODO: check if the inclination has to be in this range ??
+#             wfkwargs['inclination'] = np_gen.uniform(0., np.pi)
+#         logging.info(f"waveform_kwargs: {wfkwargs}")
+#         hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
 
-        hp = hp.trim_zeros()
-        hc = hc.trim_zeros()
+#         hp = hp.trim_zeros()
+#         hc = hc.trim_zeros()
 
-        if self.cutoffconst is not None:
-            logging.info(f'f_low={f_lower}, duration={hp.duration}')
+#         if self.cutoffconst is not None:
+#             logging.info(f'f_low={f_lower}, duration={hp.duration}')
 
-            # calculate new f_lower
-            mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
-            new_fcutoff = ( self.duration / (self.cutoffconst * mchirp ** (-5/3)) )**(-3/8)
-            extra['f_lower'] = new_fcutoff
-            logging.info(f'New f_lower={new_fcutoff}')
-            # adjust the new f_lower to allow for some error
-            new_fcutoff -= 0.2*new_fcutoff
+#             # calculate new f_lower
+#             mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+#             new_fcutoff = ( self.duration / (self.cutoffconst * mchirp ** (-5/3)) )**(-3/8)
+#             extra['f_lower'] = new_fcutoff
+#             logging.info(f'New f_lower={new_fcutoff}')
+#             # adjust the new f_lower to allow for some error
+#             new_fcutoff -= 0.2*new_fcutoff
 
-            # generate a second waveform
-            wfkwargs['f_lower'] = new_fcutoff
-            hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
-            hp = hp.trim_zeros()
-            hc = hc.trim_zeros()
-            extra['delta_t'] = hp.delta_t
-            logging.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
-            logging.info(f'sample_len={len(hp)}')
+#             # generate a second waveform
+#             wfkwargs['f_lower'] = new_fcutoff
+#             hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
+#             hp = hp.trim_zeros()
+#             hc = hc.trim_zeros()
+#             extra['delta_t'] = hp.delta_t
+#             logging.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
+#             logging.info(f'sample_len={len(hp)}')
 
-        # Have correct input lengths!
-        # It should be ensured that the merger is always within the data.
-        if len(hp) > self.preset_array_size:
-            extra['truncated'] = True
-            extra['truncated_len'] = diff = len(hp) - self.preset_array_size
-            logging.debug(f'len(freq) > {self.preset_array_size} by {diff} ele \
-                                \n So truncating array from the left!')
-            hp = hp[diff:]
-        if len(hc) > self.preset_array_size:
-            extra['truncated'] = True
-            extra['truncated_len'] = diff = len(hc) - self.preset_array_size
-            logging.debug(f'len(amp) > {self.preset_array_size} by {diff} ele \
-                                \n So truncating array from the left!')
-            hc = hc[diff:]
+#         # Have correct input lengths!
+#         # It should be ensured that the merger is always within the data.
+#         if len(hp) > self.preset_array_size:
+#             extra['truncated'] = True
+#             extra['truncated_len'] = diff = len(hp) - self.preset_array_size
+#             logging.debug(f'len(freq) > {self.preset_array_size} by {diff} ele \
+#                                 \n So truncating array from the left!')
+#             hp = hp[diff:]
+#         if len(hc) > self.preset_array_size:
+#             extra['truncated'] = True
+#             extra['truncated_len'] = diff = len(hc) - self.preset_array_size
+#             logging.debug(f'len(amp) > {self.preset_array_size} by {diff} ele \
+#                                 \n So truncating array from the left!')
+#             hc = hc[diff:]
 
-        # TODO: Add the `_regenerate_waveform` function here to ensure
-        # that shorter waveforms are regenerated with still lower fcutoff.
+#         # TODO: Add the `_regenerate_waveform` function here to ensure
+#         # that shorter waveforms are regenerated with still lower fcutoff.
 
-        # Calculate the amplitude and phase from the polarizations.
-        logging.debug('Converting `hp` & `hc` to Freq Amp!')
-        amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
-        phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
-        freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
+#         # Calculate the amplitude and phase from the polarizations.
+#         logging.debug('Converting `hp` & `hc` to Freq Amp!')
+#         amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
+#         phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
+#         freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
 
-        # NOTE: There's no need to pad or truncate amp/freq b'cuz the
-        # length will be the same with the original hp/hc
-        hp = np.array(hp, dtype=np.float32)
-        hc = np.array(hc, dtype=np.float32)
-        amp = np.array(amp.data, dtype=np.float32)
-        phase = np.array(phase.data, dtype=np.float32)
-        freq = np.array(freq.data, dtype=np.float32)
+#         # NOTE: There's no need to pad or truncate amp/freq b'cuz the
+#         # length will be the same with the original hp/hc
+#         hp = np.array(hp, dtype=np.float32)
+#         hc = np.array(hc, dtype=np.float32)
+#         amp = np.array(amp.data, dtype=np.float32)
+#         phase = np.array(phase.data, dtype=np.float32)
+#         freq = np.array(freq.data, dtype=np.float32)
 
-        # append the extra info to the end of the data
-        extra['truncated'] = extra.get('truncated', False)
-        extra['padded'] = extra.get('padded', False)
-        extra['truncated_len'] = extra.get('truncated_len', None)
-        extra['padded_at'] = extra.get('padded_at', None)
-        extra['eccentricity'] = wfkwargs.get('eccentricity', None)
-        extra['coa_phase'] = wfkwargs.get('coa_phase', None)
-        extra['inclination'] = wfkwargs.get('inclination', None)
-        return [hp, hc, amp, phase, freq, extra]
+#         # append the extra info to the end of the data
+#         extra['truncated'] = extra.get('truncated', False)
+#         extra['padded'] = extra.get('padded', False)
+#         extra['truncated_len'] = extra.get('truncated_len', None)
+#         extra['padded_at'] = extra.get('padded_at', None)
+#         extra['eccentricity'] = wfkwargs.get('eccentricity', None)
+#         extra['coa_phase'] = wfkwargs.get('coa_phase', None)
+#         extra['inclination'] = wfkwargs.get('inclination', None)
+#         return [hp, hc, amp, phase, freq, extra]
 
-    def write_hdf_grp(self, hf, data, grpname):
-        """
-        Write the data to the HDF5 file.
-        `data` is a list or dictionary of arrays.
-            'hp', 'hc', 'amp', 'phase', 'freq'
-        Either passed as a list or a dictionary.
-        """
-        if isinstance(data, np.ndarray):
-            logging.info('Assuming data is the `hp` strain.')
-            hf[grpname].create_dataset('hp', data=data)
+#     def write_hdf_grp(self, hf, data, grpname):
+#         """
+#         Write the data to the HDF5 file.
+#         `data` is a list or dictionary of arrays.
+#             'hp', 'hc', 'amp', 'phase', 'freq'
+#         Either passed as a list or a dictionary.
+#         """
+#         if isinstance(data, np.ndarray):
+#             logging.info('Assuming data is the `hp` strain.')
+#             hf[grpname].create_dataset('hp', data=data)
 
-        elif isinstance(data, list):
-            dsnames = ['hp', 'hc', 'amp', 'phase', 'freq']
-            logging.info(f'Assuming data array is in the form {dsnames}')
-            # Do not write the extra info since it was already written!
-            for name, tsdata in zip(dsnames, data[:-1]):
-                logging.debug(f"{name}, {tsdata.shape}")
-                ds = hf[grpname].create_dataset(name, data=tsdata)
+#         elif isinstance(data, list):
+#             dsnames = ['hp', 'hc', 'amp', 'phase', 'freq']
+#             logging.info(f'Assuming data array is in the form {dsnames}')
+#             # Do not write the extra info since it was already written!
+#             for name, tsdata in zip(dsnames, data[:-1]):
+#                 logging.debug(f"{name}, {tsdata.shape}")
+#                 ds = hf[grpname].create_dataset(name, data=tsdata)
 
-        elif isinstance(data, dict):
-            logging.info(f'Assuming data array is in the form {data.keys()}')
-            for name, d in data.items():
-                if isinstance(d, np.ndarray):
-                    hf[grpname].create_dataset(name, data=d)
-                else:
-                    raise ValueError(f"Data for {name} is not a numpy array.")
-        else:
-            raise ValueError("Data must be a numpy array or a list of arrays or \
-                            a dictionary of arrays.")
+#         elif isinstance(data, dict):
+#             logging.info(f'Assuming data array is in the form {data.keys()}')
+#             for name, d in data.items():
+#                 if isinstance(d, np.ndarray):
+#                     hf[grpname].create_dataset(name, data=d)
+#                 else:
+#                     raise ValueError(f"Data for {name} is not a numpy array.")
+#         else:
+#             raise ValueError("Data must be a numpy array or a list of arrays or \
+#                             a dictionary of arrays.")
 
-    def write_data_to_hdf(self):
-        logging.info(f'Writing data to HDF5 file {self.fname}.hdf')
-        if os.path.exists(self.fname+'.hdf'):
-            logging.info(f'File {self.fname}.hdf already exists. Using an incremented name.')
-            self.fname = self.fname.split('.hdf')[0] + '-1'
-        with h5py.File(self.fname+'.hdf', 'w') as hf:
-            # Create a group for each mass
-            for i in tqdm(range(len(self.masses)), desc='samples-written', ncols=100):
-                m1, m2 = self.masses[i]
-                s1, s2 = self.spins[i]
-                grpname = f'sample{i}'
+#     def write_data_to_hdf(self):
+#         print(f'Writing data to HDF5 file {self.fname}.hdf')
+#         if os.path.exists(self.fname+'.hdf'):
+#             logging.info(f'File {self.fname}.hdf already exists. Using an incremented name.')
+#             self.fname = self.fname.split('.hdf')[0] + '-1'
+#         with h5py.File(self.fname+'.hdf', 'w') as hf:
+#             # Create a group for each mass
+#             for i in tqdm(range(len(self.masses)), desc='samples-written', ncols=100):
+#                 m1, m2 = self.masses[i]
+#                 s1, s2 = self.spins[i]
+#                 grpname = f'sample{i}'
 
-                data = self.get_aligned_vals(m1, m2, s1, s2)
-                hfgrp = hf.create_group(grpname)
-                hfgrp.attrs['mass1'] = m1
-                hfgrp.attrs['mass2'] = m2
-                hfgrp.attrs['spin1z'] = s1
-                hfgrp.attrs['spin2z'] = s2
-                hfgrp.attrs['approximant'] = self.approximant
-                hfgrp.attrs['sample_rate'] = self.sample_rate
-                hfgrp.attrs['delta_t'] = data[-1].get('delta_t', self.delta_t)
-                hfgrp.attrs['f_lower'] = data[-1].get('f_lower', self.f_lower)
+#                 data = self.get_aligned_vals(m1, m2, s1, s2)
+#                 hfgrp = hf.create_group(grpname)
+#                 hfgrp.attrs['mass1'] = m1
+#                 hfgrp.attrs['mass2'] = m2
+#                 hfgrp.attrs['spin1z'] = s1
+#                 hfgrp.attrs['spin2z'] = s2
+#                 hfgrp.attrs['approximant'] = self.approximant
+#                 hfgrp.attrs['sample_rate'] = self.sample_rate
+#                 hfgrp.attrs['delta_t'] = data[-1].get('delta_t', self.delta_t)
+#                 hfgrp.attrs['f_lower'] = data[-1].get('f_lower', self.f_lower)
 
-                if self.otherparams:
-                    hfgrp.attrs['coa_phase'] = data[-1]['coa_phase']
-                    hfgrp.attrs['inclination'] = data[-1]['inclination']
+#                 if self.otherparams:
+#                     hfgrp.attrs['coa_phase'] = data[-1]['coa_phase']
+#                     hfgrp.attrs['inclination'] = data[-1]['inclination']
 
-                # extra info like truncated or padded
-                # save these for all samples, with `False` vals when no padding.
-                logging.info(f'extra: {data[-1]}')
-                hfgrp.attrs['truncated'] = data[-1]['truncated']
-                hfgrp.attrs['padded'] = data[-1]['padded']
-                # This is the length of the original waveform
-                # before padding.
-                # This is useful to know how much padding was done.
-                # If the waveform was truncated, this will not be present.
-                # If the waveform was padded, this will be present.
-                if data[-1]['truncated_len'] is not None:
-                    hfgrp.attrs['truncated_len'] = data[-1]['truncated_len']
-                if data[-1]['padded_at'] is not None:
-                    hfgrp.attrs['padded_at'] = data[-1]['padded_at']
+#                 # extra info like truncated or padded
+#                 # save these for all samples, with `False` vals when no padding.
+#                 logging.info(f'extra: {data[-1]}')
+#                 hfgrp.attrs['truncated'] = data[-1]['truncated']
+#                 hfgrp.attrs['padded'] = data[-1]['padded']
+#                 # This is the length of the original waveform
+#                 # before padding.
+#                 # This is useful to know how much padding was done.
+#                 # If the waveform was truncated, this will not be present.
+#                 # If the waveform was padded, this will be present.
+#                 if data[-1]['truncated_len'] is not None:
+#                     hfgrp.attrs['truncated_len'] = data[-1]['truncated_len']
+#                 if data[-1]['padded_at'] is not None:
+#                     hfgrp.attrs['padded_at'] = data[-1]['padded_at']
 
-                self.write_hdf_grp(hf, data, grpname)
-            logging.info(f"Data written to {self.fname+'.hdf'} successfully.")
-            hf.close()
+#                 self.write_hdf_grp(hf, data, grpname)
+#             print(f"Data written to {self.fname+'.hdf'} successfully.")
+#             hf.close()
 
 
 def check_hdf(fname):
@@ -777,13 +828,14 @@ def get_NRSur_data(args):
     wave.waveform()
 
 
-def save_SEOBNRv4_data():
+def save_SEOBNRv4_data(args):
     wave = Waveform(approximant='SEOBNRv4',
                     fcutoff=True,
                     baseparams={'f_lower': 15.0},
                     wflibname='pycbc', 
+                    aligned=True,
                     precess=False,
-                    fname='dummy')
+                    fname=args.fname)
     wave.write_data_to_hdf('train')
 
 
@@ -839,4 +891,4 @@ if __name__=="__main__":
     else:
         # get_SEOBNRv4_data(args)
         # get_NRSur_data(args)
-        save_SEOBNRv4_data()
+        save_SEOBNRv4_data(args)
