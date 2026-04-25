@@ -7,6 +7,7 @@ PyTorch Datasets and DataLoaders and then passed to the training routines and ca
 """
 
 import os
+import glob
 import h5py
 import logging
 import argparse
@@ -88,11 +89,11 @@ def splitspins(nsamples=1e5):
 class BaseWaveform:
     def __init__(self,
                  approximant=APPROXIMANT,
-                 fcutoff=False, 
-                 aligned=True, 
-                 precess=False,
-                 baseparams={},
-                 nosave=False,
+                 fcutoff: bool = False, 
+                 aligned: bool = True, 
+                 precess: bool = False,
+                 baseparams : dict = {},
+                 nosave: bool = False,
                  wflibname='pycbc',
                  fname='waveforms'):
         # Base source param distributions
@@ -269,17 +270,17 @@ class BaseWaveform:
     def _set_pycbc_wfkwargs(self, params: dict, wfkwargs={}):
         wfkwargs["delta_t"] = params.get('delta_t')
         wfkwargs["f_lower"] = params.get('f_lower')
-        wfkwargs["mass1"] = params.get('m1')
-        wfkwargs["mass2"] = params.get('m2')
+        wfkwargs["mass1"] = params.get('m1_msun', params.get('m1'))
+        wfkwargs["mass2"] = params.get('m2_msun', params.get('m2'))
         wfkwargs["approximant"] = params.get('approximant', self.approximant)
         if self.aligned or self.precess:
-            wfkwargs["spin1z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
-            wfkwargs["spin2z"] = 0.5 # np.random.uniform(-0.999, 0.999, 1)
+            wfkwargs["spin1z"] = params.get('chi1z', 0.5) # np.random.uniform(-0.999, 0.999, 1)
+            wfkwargs["spin2z"] = params.get('chi2z', 0.5) # np.random.uniform(-0.999, 0.999, 1)
         if self.precess:
-            wfkwargs["spin1x"] = 0.1
-            wfkwargs["spin1y"] = 0.5
-            wfkwargs["spin2x"] = -0.4
-            wfkwargs["spin2y"] = 0.2
+            wfkwargs["spin1x"] = params.get('chi1x', 0.1)
+            wfkwargs["spin1y"] = params.get('chi1y', 0.5)
+            wfkwargs["spin2x"] = params.get('chi2x', -0.4)
+            wfkwargs["spin2y"] = params.get('chi2y', 0.2)
         return wfkwargs
 
     def _set_wfkwargs(self, params: dict):
@@ -309,21 +310,22 @@ class BaseWaveform:
         tuple
             A tuple containing the masses and the waveforms (hp, hc, amp, phase, freq).
         """
+        logging.info(f"Getting waveform for parameters: {params}")
         wfkwargs = self._set_wfkwargs(params)
-        m1, m2 = params['m1'], params['m2']
-        logging.debug(f"Masses: {m1}, {m2}")
-        print(wfkwargs)
+        for param in self.param_space:
+            logging.debug(f"{param}: {params[param]}")
 
         # Call PyCBC function by default!
         hp, hc = self.wfloader(**wfkwargs)
+        logging.info(f"Generated waveform with {wfkwargs}")
 
         if self.wflibname=='lalsim':
             logging.info("Generated lal wavefroms!")
-            print(hp.__dict__)
-            print(hp.data.__dir__())
+            logging.debug(f"hp: {hp.__dict__}")
+            logging.debug(f"hp.data: {hp.data.__dir__()}")
             hp, hc = np.array(hp.data.data, copy=False), np.array(hp.data.data, copy=False)
-            print(np.asarray(hp.data))
-            print(f"hp shape: {hp.shape}, hc shape: {hc.shape}")
+            logging.debug(f"hp as array: {np.asarray(hp.data)}")
+            logging.debug(f"hp shape: {hp.shape}, hc shape: {hc.shape}")
 
             # TODO: Implement Ampl/Phase/Freq conversion for lal waveforms!
             hp = pycbc.types.TimeSeries(hp, delta_t=wfkwargs["deltaT"])
@@ -338,6 +340,9 @@ class BaseWaveform:
 
         if self.wflibname=='pycbc':
             hp, hc = hp.trim_zeros(), hc.trim_zeros()
+
+            m1 = wfkwargs.get('mass1', params.get('m1_msun', wfkwargs['m1']))
+            m2 = wfkwargs.get('mass2', params.get('m2_msun', wfkwargs['m2']))
 
             if self.cutoffconst is not None:
                 logging.info(f'f_low={f_lower}, duration={hp.duration}')
@@ -360,7 +365,6 @@ class BaseWaveform:
             logging.debug(f'Length of hp: {len(hp)}, hc: {len(hc)}')
             logging.debug(f'Length of amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
             # print(hp.__dict__)
-
         return (hp, hc, amp, phase, freq)
 
     def waveform(self, num=1):
@@ -391,13 +395,17 @@ class Waveform(BaseWaveform):
     Main class to generate, save, and load training / test waveforms.
     """
     def __init__(self, nsamples=1e5, fcutoff=None,
-                 param_space=['q', 's1', 's2'],
+                 param_space=['m1_msun', 'm2_msun', 'chi1z', 'chi2z'],
+                 use_params_file=True, 
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.nsamples = nsamples
         self.param_space = param_space
         self.tttratio = [0.7, 0.1, 0.2]  # train, val, test
-        self.set_parameter_space()
+        if use_params_file:
+            self.load_params_from_file()
+        else:
+            self.set_parameter_space()
 
     def set_parameter_space(self):
         """
@@ -427,6 +435,27 @@ class Waveform(BaseWaveform):
             self.s1ys = np.random.uniform(smin, smax, int(self.nsamples))
             self.s2xs = np.random.uniform(smin, smax, int(self.nsamples))
             self.s2ys = np.random.uniform(smin, smax, int(self.nsamples))
+
+    def load_params_from_file(self, 
+                              params_file_dir='data/params/m5-200_s-0p99-0p99_dL100-1000_uvol/seed42/',
+                              load_file='seed42-params_000'):
+        """
+        Load the parameters for waveform generation from a CSV file.
+        The CSV file should have columns corresponding to the parameters in `self.param_space`.
+        """
+        fnames = glob.glob(params_file_dir + '*.csv')
+        if load_file is not None:
+            fnames = [params_file_dir+load_file+'.csv']
+        self.nsamples = 0
+        for fname in fnames:
+            logging.info(f'Loading file {fname}')
+            df = pd.read_csv(fname)
+            self.nsamples += len(df)
+            for param in self.param_space:
+                if param not in df.columns:
+                    raise ValueError(f"Parameter {param} not found in the CSV file.")
+                setattr(self, param+'s', df[param].values)
+        logging.info(f"Parameters loaded from {params_file_dir} successfully.")
 
     def _tttsplits(self):
         indices = np.arange(self.nsamples)
@@ -472,6 +501,8 @@ class Waveform(BaseWaveform):
         """
         Write the data to HDF5 file for the given split: train, val, test.
         """
+        self.fname += f'-{self.wflibname}-{int(DURATION)}sec-{int(SAMPLE_RATE)}Hz'
+        self.fname += f'-{which}'
         logging.info(f'Writing {which} data to HDF5 file {self.fname}.hdf')
         if os.path.exists(self.fname+'.hdf'):
             logging.info(f'File {self.fname}.hdf already exists. Using an incremented name.')
@@ -483,13 +514,17 @@ class Waveform(BaseWaveform):
             # Create a group for each mass
             for i in tqdm(split_indices, desc='samples-written', ncols=100):
                 params = self.get_params(i)
+                # print(params)
                 grpname = f'sample{i}'
-                data = self.get_waveform(*params)
+                data = self.get_waveform(params)
                 hfgrp = hf.create_group(grpname)
                 for param, value in params.items():
                     hfgrp.attrs[param] = value
                 self.write_hdf_grp(hf, data, grpname)
         logging.info(f"Data written to {self.fname+'.hdf'} successfully.")
+
+    def read_data_from_hdf(self, which='train'):
+        raise NotImplementedError("Reading data from HDF5 file not implemented yet.")
 
 
 
@@ -742,6 +777,16 @@ def get_NRSur_data(args):
     wave.waveform()
 
 
+def save_SEOBNRv4_data():
+    wave = Waveform(approximant='SEOBNRv4',
+                    fcutoff=True,
+                    baseparams={'f_lower': 15.0},
+                    wflibname='pycbc', 
+                    precess=False,
+                    fname='dummy')
+    wave.write_data_to_hdf('train')
+
+
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description="Generate and plot gravitational waveforms.")
     
@@ -793,4 +838,5 @@ if __name__=="__main__":
                       use_lal_sim=args.use_lal_sim)
     else:
         # get_SEOBNRv4_data(args)
-        get_NRSur_data(args)
+        # get_NRSur_data(args)
+        save_SEOBNRv4_data()
