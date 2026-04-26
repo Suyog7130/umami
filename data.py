@@ -347,30 +347,30 @@ class BaseWaveform:
             # although for a set sample_rate, it should always be SAMPLE_LEN samples long, for one second duration signals!!!
             # TODO: Think why `hp.duration < DURATION` is not correct, but `len(hp)<SAMPLE_LEN` works besto!
             if len(hp)<SAMPLE_LEN and self.cutoffconst is not None:                
-                logging.warning(f"Waveform duration {hp.duration:.4f} is less than desired duration {DURATION:.4f}. Adjusting f_lower from {wfkwargs['f_lower']:.4f} ...")
+                logging.info(f"Waveform duration {hp.duration:.4f} is less than desired duration {DURATION:.4f}. Adjusting f_lower from {wfkwargs['f_lower']:.4f} ...")
                 # calculate new f_lower
                 mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
                 new_fcutoff = ( DURATION / (self.cutoffconst * mchirp ** (-5/3)) )**(-3/8)
                 while len(hp) < SAMPLE_LEN:
                     # adjust the new f_lower to allow for some error
                     new_fcutoff -= 0.2*new_fcutoff
-                    logging.info(f'New f_lower={new_fcutoff}')
+                    logging.debug(f'New f_lower={new_fcutoff}')
                     # generate a second waveform
                     wfkwargs['f_lower'] = new_fcutoff
                     hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
                     hp, hc = hp.trim_zeros(), hc.trim_zeros()
-                    logging.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
-                    logging.info(f'sample_len={len(hp)}')
-                self.plot_single_wf(m1, m2, hp, hc)
+                    logging.debug(f'New f_lower={new_fcutoff}, duration={hp.duration}')
+                    logging.debug(f'sample_len={len(hp)}')
+                # self.plot_single_wf(m1, m2, hp, hc)
             elif len(hp) < SAMPLE_LEN and self.cutoffconst is None and not _flag_calc_cutoffconst:
-                logging.warning(f"Waveform duration {hp.duration:.4f} is less than desired duration {DURATION:.4f}. Consider using fcutoff option to ensure minimum duration for all waveforms.")
+                logging.info(f"Waveform duration {hp.duration:.4f} is less than desired duration {DURATION:.4f}. Consider using fcutoff option to ensure minimum duration for all waveforms.")
 
             if len(hp) > PRESET_ARRAY_SIZE:
                 diff = len(hp) - PRESET_ARRAY_SIZE
-                logging.warning(f'len(hp) > {PRESET_ARRAY_SIZE} by {diff} elements')
+                logging.debug(f'len(hp) > {PRESET_ARRAY_SIZE} by {diff} elements')
                 hp = hp[diff:]
                 hc = hc[diff:]
-                logging.warning(f'After trimming, len(hp)={len(hp)}, len(hc)={len(hc)}')
+                logging.debug(f'After trimming, len(hp)={len(hp)}, len(hc)={len(hc)}')
 
             amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
             phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
@@ -475,14 +475,14 @@ class Waveform(BaseWaveform):
             fnames = [params_file_dir+load_file+'.csv']
         self.nsamples = 0
         for fname in fnames:
-            logging.info(f'Loading file {fname}')
+            print(f'Loading file {fname}')
             df = pd.read_csv(fname)
             self.nsamples += len(df)
             for param in self.param_space:
                 if param not in df.columns:
                     raise ValueError(f"Parameter {param} not found in the CSV file.")
                 setattr(self, param+'s', df[param].values)
-        logging.info(f"Parameters loaded from {params_file_dir} successfully.")
+        print(f"Parameters loaded from {params_file_dir} successfully.")
     
     def calc_cutoffconst(self, nsamples=1000):
         """
@@ -493,9 +493,9 @@ class Waveform(BaseWaveform):
         
         where, C is the cutoff constant to be calculated.
         """
-        logging.info("Calculating cutoff constant for waveform duration...")
+        print("Calculating cutoff constant for waveform duration...")
         consts = np.zeros(nsamples)
-        for i in range(nsamples):
+        for i in tqdm(range(nsamples), desc='progress', ncols=100):
             params = self.get_params(i)
             data = self.get_waveform(params, _flag_calc_cutoffconst=True)
             hp, hc = data[0], data[1]
@@ -551,7 +551,7 @@ class Waveform(BaseWaveform):
         """
         Write the data to HDF5 file for the given split: train, val, test.
         """
-        self.fname += f'-{self.wflibname}-{int(DURATION)}sec-{int(SAMPLE_RATE)}Hz'
+        self.fname += f'-{int(DURATION)}sec-{int(SAMPLE_RATE)}Hz'
         self.fname += f'-{which}'
         print(f'Writing {which} data to HDF5 file {self.fname}.hdf')
         if os.path.exists(self.fname+'.hdf'):
@@ -559,7 +559,7 @@ class Waveform(BaseWaveform):
             self.fname = self.fname.split('.hdf')[0] + '-1'
 
         split_indices = self._tttsplits()[{'train':0, 'val':1, 'test':2}[which]]
-        self.fname += f'-{len(split_indices)}samples'
+        self.fname += f'-{len(split_indices)//1000}k'
 
         with h5py.File(self.fname+'.hdf', 'w') as hf:
             # Create a group for each mass
