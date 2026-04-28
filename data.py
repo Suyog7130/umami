@@ -547,32 +547,37 @@ class Waveform(BaseWaveform):
         else:
             raise ValueError("Data must be a numpy array or a list/tuple of arrays or a dictionary of arrays.")
     
-    def write_data_to_hdf(self, which='train'):
+    def write_data_to_hdf(self):
         """
         Write the data to HDF5 file for the given split: train, val, test.
         """
         self.fname += f'-{int(DURATION)}sec-{int(SAMPLE_RATE)}Hz'
-        self.fname += f'-{which}'
-        print(f'Writing {which} data to HDF5 file {self.fname}.hdf')
-        if os.path.exists(self.fname+'.hdf'):
-            logging.warning(f'File {self.fname}.hdf already exists. Using an incremented name.')
-            self.fname = self.fname.split('.hdf')[0] + '-1'
 
-        split_indices = self._tttsplits()[{'train':0, 'val':1, 'test':2}[which]]
-        self.fname += f'-{len(split_indices)//1000}k'
+        indices = self._tttsplits()
 
-        with h5py.File(self.fname+'.hdf', 'w') as hf:
-            # Create a group for each mass
-            for i in tqdm(split_indices, desc='samples-written', ncols=100):
-                params = self.get_params(i)
-                # print(params)
-                grpname = f'sample{i}'
-                data = self.get_waveform(params)
-                hfgrp = hf.create_group(grpname)
-                for param, value in params.items():
-                    hfgrp.attrs[param] = value
-                self.write_hdf_grp(hf, data, grpname)
-        print(f"Data written to {self.fname+'.hdf'} successfully.")
+        for i, split in enumerate(['train', 'val', 'test']):
+            split_indices = indices[i]
+            self.fname += f'-{split}'
+            print(f'Writing {split} data to HDF5 file {self.fname}.hdf')
+            if os.path.exists(self.fname+'.hdf'):
+                logging.warning(f'File {self.fname}.hdf already exists. Using an incremented name.')
+                self.fname = self.fname.split('.hdf')[0] + '-1'
+            self.fname += f'-{len(split_indices)//1000}k'
+
+            with h5py.File(self.fname+'.hdf', 'w') as hf:
+                # Create a group for each mass
+                for i in tqdm(split_indices, desc='samples-written', ncols=100):
+                    params = self.get_params(i)
+                    # print(params)
+                    grpname = f'sample{i}'
+                    data = self.get_waveform(params)
+                    hfgrp = hf.create_group(grpname)
+                    for param, value in params.items():
+                        hfgrp.attrs[param] = value
+                    self.write_hdf_grp(hf, data, grpname)
+
+            print(f"Data written to {self.fname+'.hdf'} successfully.")
+        print(f"All data written to HDF5 files successfully.")
 
     def read_data_from_hdf(self, which='train'):
         raise NotImplementedError("Reading data from HDF5 file not implemented yet.")
@@ -836,7 +841,8 @@ def save_SEOBNRv4_data(args):
                     aligned=True,
                     precess=False,
                     fname=args.fname)
-    wave.write_data_to_hdf('train')
+    wave.load_params_from_file(load_file='seed42-params_000')
+    wave.write_data_to_hdf()
 
 
 if __name__=="__main__":
