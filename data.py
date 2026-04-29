@@ -558,11 +558,11 @@ class Waveform(BaseWaveform):
         for i, split in enumerate(['train', 'val', 'test']):
             split_indices = indices[i]
             self.fname += f'-{split}'
-            print(f'Writing {split} data to HDF5 file {self.fname}.hdf')
             if os.path.exists(self.fname+'.hdf'):
                 logging.warning(f'File {self.fname}.hdf already exists. Using an incremented name.')
                 self.fname = self.fname.split('.hdf')[0] + '-1'
             self.fname += f'-{len(split_indices)//1000}k'
+            print(f'Writing {split} data to HDF5 file {self.fname}.hdf')
 
             with h5py.File(self.fname+'.hdf', 'w') as hf:
                 # Create a group for each mass
