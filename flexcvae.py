@@ -1279,7 +1279,10 @@ class CAE(TwoC2E1D):
     minimizing in the loss function. Validation is also performed at the end of
     each epoch, which generalizes the model beyond the training set and ensures that 
     the model is not just memorizing the training data.
-    The weightage for the KL divergence will only be 10%.
+
+    TODO: Update docstring above!
+    TODO: Make `x_encoder` only encode to a single channel latent space,
+    so that we don't have to ignore the second channel in the CAE forward pass!
 
     Attributes:
     -----------
@@ -1304,20 +1307,12 @@ class CAE(TwoC2E1D):
         # print(keys)
         z1_mean, z1_log_var = self.encode_label_for_x(labels)
         z2_mean, z2_log_var = self.encode_x(x, labels)
-        check_for_nan_inf(z1_mean, 'z1_mean')
-        check_for_nan_inf(z2_mean, 'z2_mean')
-        check_for_nan_inf(z1_log_var, 'z1_log_var')
-        check_for_nan_inf(z2_log_var, 'z2_log_var')
         # print("z1_mean:", z1_mean)
         # print("z1_log_var:", z1_log_var)
         # print("z2_mean:", z2_mean)
         # print("z2_log_var:", z2_log_var)
         z1p_mean, z1p_log_var = self.encode_label_for_key(labels)
         z2p_mean, z2p_log_var = self.encode_key(keys, labels)
-        check_for_nan_inf(z1p_mean, 'z1p_mean')
-        check_for_nan_inf(z2p_mean, 'z2p_mean')
-        check_for_nan_inf(z1p_log_var, 'z1p_log_var')
-        check_for_nan_inf(z2p_log_var, 'z2p_log_var')
         x_recon = self.decode(z2_mean, z2p_mean, labels)
         logging.debug(f'Encoded input: z2_mean={z2_mean}, z2p_mean={z2p_mean}')
         zvars = [z1_mean, z1_log_var, z2_mean, z2_log_var, \
