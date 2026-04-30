@@ -11,7 +11,6 @@ import glob
 import h5py
 import logging
 import argparse
-import datetime
 import numpy as np
 import pandas as pd
 
@@ -20,6 +19,7 @@ import lal
 
 import pycbc.waveform
 
+from datetime import datetime
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
@@ -551,7 +551,7 @@ class Waveform(BaseWaveform):
         else:
             raise ValueError("Data must be a numpy array or a list/tuple of arrays or a dictionary of arrays.")
     
-    def write_data_to_hdf(self):
+    def write_data_to_hdf(self, suffix=''):
         """
         Write the data to HDF5 file for the given split: train, val, test.
         """
@@ -567,7 +567,7 @@ class Waveform(BaseWaveform):
             fname += f'-{len(split_indices)//1000}k'
             print(f'Writing {split} data to HDF5 file {fname}.hdf')
 
-            fname += f'-{now}'
+            fname += '-'+suffix+f'-{now}'
             with h5py.File(fname+'.hdf', 'w') as hf:
                 # Create a group for each mass
                 for i in tqdm(split_indices, desc='samples-written', ncols=100):
@@ -845,8 +845,8 @@ def save_SEOBNRv4_data(args):
                     aligned=True,
                     precess=False,
                     fname=args.fname)
-    wave.load_params_from_file(load_file='seed42-params_001')
-    wave.write_data_to_hdf()
+    wave.load_params_from_file(load_file='seed42-params_002')
+    wave.write_data_to_hdf(suffix='seed42-params_002')
 
 
 if __name__=="__main__":

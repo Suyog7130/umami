@@ -22,7 +22,8 @@ import numpy as np
 
 from datacvae import CustomDataset, CustomDataLoader
 # from multicvae import TwoC2E1D
-from flexcvae import TwoC2E1D as FlexTwoC2E1D
+from flexcvae import FlexTwoC2E1D
+from flexcvae import FlexCAE
 
 
 TODAY = datetime.date.today().strftime("%Y%m%d")
@@ -52,20 +53,13 @@ BASE_MODEL_CONFIG = {
     'target': None, #'amp_phase',  # default target is normed amp-freq, but can be set to 'logamp_phase' for log-amp and phase target
     'train_device': DEVICE,
     'model_precision': PRECISION,
+    'modeltype': 'flexcvae',
+    'loss_func_type': None,
 }
 
 datadir = "../data/"
 train_hdf = datadir + 'SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen'
 val_hdf = datadir + "SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen"
-
-logging.info(f'Reading training data from {train_hdf}.hdf')
-train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=False,
-                        hdf_fname=train_hdf, train_device=DEVICE, precision=PRECISION,
-                        target=BASE_MODEL_CONFIG['target'])
-logging.info(f'Reading validation data from {val_hdf}.hdf')
-valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=False,
-                        hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION, 
-                        target=BASE_MODEL_CONFIG['target'])
 
 # -- get mean and std of labels for normalization
 params_fname = '../data/params-' + APPROXIMANT + '-train-100000-fcutoff-uniform-aligned-regen'
@@ -78,12 +72,30 @@ params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION)).to(DEVI
 params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION)).to(DEVICE)
 
 
-def set_dataloaders(batch_size=BATCH_SIZE):
+def set_dataloaders(batch_size=BATCH_SIZE, target=BASE_MODEL_CONFIG['target']):
+    """
+    Sets up the dataloaders for training and validation datasets.
+    Arguments:
+        batch_size: Batch size for the dataloaders (default BATCH_SIZE)
+        target: Target for the model (default BASE_MODEL_CONFIG['target'])
+    Returns:
+        train_loader: DataLoader for the training dataset
+        val_loader: DataLoader for the validation dataset
+    """
+    logging.info(f'Reading training data from {train_hdf}.hdf')
+    train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=False,
+                            hdf_fname=train_hdf, train_device=DEVICE, precision=PRECISION,
+                            target=target)
+    logging.info(f'Reading validation data from {val_hdf}.hdf')
+    valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=False,
+                            hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION, 
+                            target=target)
     train_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
     val_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=False)
+    logging.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(valid_set)}")
     return train_loader, val_loader
 
-def training(model: FlexTwoC2E1D, 
+def training(model: {FlexTwoC2E1D, FlexCAE}, 
              train_loader=None, val_loader=None,
              epochs: int = 5, 
              datafrac: float = DATAFRAC,
@@ -105,7 +117,7 @@ def training(model: FlexTwoC2E1D,
     os.makedirs(savedir, exist_ok=True)
     if train_loader is None or val_loader is None:
         logging.info("Setting up dataloaders since they were not provided.")
-        train_loader, val_loader = set_dataloaders()
+        train_loader, val_loader = set_dataloaders(target=model.MODEL_CONFIG.get('target', BASE_MODEL_CONFIG['target']))
     model = model.to(DEVICE)
     model = model.to(getattr(torch, PRECISION))
 
@@ -113,10 +125,10 @@ def training(model: FlexTwoC2E1D,
         num_train_batches = len(train_loader)
         num_val_batches = len(val_loader)
     else:
-        num_train_batches = int(len(train_set) * datafrac) // train_loader.batch_size
-        num_val_batches = int(len(valid_set) * datafrac) // val_loader.batch_size
-    logging.info(f"Using {num_train_batches} batches for training and validation based on data fraction {datafrac} out of {len(train_set)} data inputs.")
-    
+        num_train_batches = int(len(train_loader) * datafrac) // train_loader.batch_size
+        num_val_batches = int(len(val_loader) * datafrac) // val_loader.batch_size
+    logging.info(f"Using {num_train_batches} batches for training and validation based on data fraction {datafrac} out of {len(train_loader)} data inputs.")
+
     # Check if model parameters contain NaN or Inf before training
     for name, param in model.named_parameters():
         if torch.isnan(param).any():
@@ -124,6 +136,8 @@ def training(model: FlexTwoC2E1D,
         if torch.isinf(param).any():
             logging.warning(f"Parameter {name} contains Inf values before training.")
         # logging.info(f"Parameter {name} - min: {param.min().item()}, max: {param.max().item()}, mean: {param.mean().item()}")
+
+    loss_func_type = model.MODEL_CONFIG.get('loss_func_type', None) if loss_func_type is None else loss_func_type
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4) 
     # -- NOTE: ReduceLROnPlateau is not ideal for our use, since it
@@ -405,11 +419,18 @@ def load_flex_model(configpath=None, model_path=None):
             logging.info(f"Setting {k} to True for model initialization.")
             MODEL_CONFIG[k] = True
 
-    model = FlexTwoC2E1D(
-        MODEL_CONFIG=MODEL_CONFIG,
-        input_shape=(2, PRESET_ARRAY_SIZE),
-        num_classes=4,
-    )
+    if MODEL_CONFIG.get('modeltype', 'flexcvae').lower() == 'flexcae':
+        model = FlexCAE(
+            MODEL_CONFIG=MODEL_CONFIG,
+            input_shape=(2, PRESET_ARRAY_SIZE),
+            num_classes=4,
+        )
+    else:
+        model = FlexTwoC2E1D(
+            MODEL_CONFIG=MODEL_CONFIG,
+            input_shape=(2, PRESET_ARRAY_SIZE),
+            num_classes=4,
+        )
 
     logging.info("Model architecture initialized. Now loading model weights.")
     # print(model)

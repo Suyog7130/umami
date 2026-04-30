@@ -579,7 +579,7 @@ def calc_latent_loss_bet_encoders(z1_mean, z1_log_var, z2_mean, z2_log_var):
 # Define specific CVAE/CAE models
 # -------------------------
 
-class TwoC2E1D(nn.Module):
+class FlexTwoC2E1D(nn.Module):
     """
     Conditional Variational Autoencoder (CVAE) implementation based on my 
     paper. We basically keep everything the same, e.g. loss function and
@@ -643,7 +643,7 @@ class TwoC2E1D(nn.Module):
     def __init__(self, input_shape=(2,8191), num_classes=4, key_shape=(2,2), \
                  labels_mean=None, labels_std=None, paramsnorm=False, \
                  latent_dim_x=8, latent_dim_key=3, MODEL_CONFIG=None, **kwargs):
-        super(TwoC2E1D, self).__init__()
+        super(FlexTwoC2E1D, self).__init__()
 
         # Override hyperparameters with MODEL_CONFIG values if provided
         # This allows for flexible model configuration while maintaining default values.
@@ -1264,7 +1264,7 @@ class TwoC2E1D(nn.Module):
         return (total_loss, recon_loss, mmloss)
 
 
-class CAE(TwoC2E1D):
+class FlexCAE(FlexTwoC2E1D):
     """
     Conditional Autoencoder (CAE) implementation that inherits from CVAE.
     This model is a simplified version of the CVAE, the latent space is not 
