@@ -118,8 +118,9 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     if train_loader is None or val_loader is None:
         logging.info("Setting up dataloaders since they were not provided.")
         train_loader, val_loader = set_dataloaders(target=model.MODEL_CONFIG.get('target', BASE_MODEL_CONFIG['target']))
-    model = model.to(DEVICE)
+        
     model = model.to(getattr(torch, PRECISION))
+    model = model.to(DEVICE)
 
     if datafrac == 1.0:
         num_train_batches = len(train_loader)
@@ -379,8 +380,12 @@ def load_flex_model(configpath=None, model_path=None):
         logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
         MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
 
-    # Convert some hyperparameters from str to appropriate types if needed (e.g. lists, tuples)
-    if isinstance(MODEL_CONFIG['labels_mean'], str) and isinstance(MODEL_CONFIG['labels_std'], str):
+    # -- Load labels mean and std values if provided in MODEL_CONFIG
+    if 'labels_mean' not in MODEL_CONFIG or 'labels_std' not in MODEL_CONFIG:
+        logging.warning("labels_mean or labels_std not found in MODEL_CONFIG. Using global params_mean and params_std for normalization.")
+        MODEL_CONFIG['labels_mean'] = params_mean
+        MODEL_CONFIG['labels_std'] = params_std
+    elif isinstance(MODEL_CONFIG['labels_mean'], str) and isinstance(MODEL_CONFIG['labels_std'], str):
         # print(MODEL_CONFIG['labels_std'])
         # print(MODEL_CONFIG['labels_std'].strip('[]').split(','))
         # print(float(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
@@ -391,14 +396,16 @@ def load_flex_model(configpath=None, model_path=None):
             MODEL_CONFIG['labels_mean'] = None
             MODEL_CONFIG['labels_std'] = None
         else:
-            labels_mean = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
-            labels_std = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
-            # logging.warning('For now we will use predefined global params_mean and params_std for normalization instead of converting from MODEL_CONFIG, since the conversion is not working well and giving NaN values for some reason. This needs to be fixed later.')
-            # labels_mean = params_mean.cpu().numpy()
-            # labels_std = params_std.cpu().numpy()
-            MODEL_CONFIG['labels_mean'] = torch.tensor(labels_mean, dtype=getattr(torch, PRECISION)).to(DEVICE)
-            MODEL_CONFIG['labels_std'] = torch.tensor(labels_std, dtype=getattr(torch, PRECISION)).to(DEVICE)
-    # logging.warning("Will still use predefined global params_mean and params_std for normalization for now.")
+            MODEL_CONFIG['labels_mean'] = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
+            MODEL_CONFIG['labels_std'] = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
+    if MODEL_CONFIG['labels_mean'] is not None and MODEL_CONFIG['labels_std'] is not None:
+        # logging.warning('For now we will use predefined global params_mean and params_std for normalization instead of converting from MODEL_CONFIG, since the conversion is not working well and giving NaN values for some reason. This needs to be fixed later.')
+        # labels_mean = params_mean.cpu().numpy()
+        # labels_std = params_std.cpu().numpy()
+        MODEL_CONFIG['labels_mean'] = torch.tensor(MODEL_CONFIG['labels_mean'], dtype=getattr(torch, PRECISION)).to(DEVICE)
+        MODEL_CONFIG['labels_std'] = torch.tensor(MODEL_CONFIG['labels_std'], dtype=getattr(torch, PRECISION)).to(DEVICE)
+
+    # Convert some hyperparameters from str to appropriate types if needed (e.g. lists, tuples)
     if isinstance(MODEL_CONFIG['input_shape'], str):
         logging.info("Converting input_shape from str to tuple for model initialization.")
         MODEL_CONFIG['input_shape'] = tuple(map(int, MODEL_CONFIG['input_shape'].strip('()').split(',')))
@@ -408,6 +415,7 @@ def load_flex_model(configpath=None, model_path=None):
     if isinstance(MODEL_CONFIG['target'], str) and MODEL_CONFIG['target'].lower() == 'none':
         logging.info("Setting target to None for model initialization.")
         MODEL_CONFIG['target'] = None
+
     for k in MODEL_CONFIG:
         if MODEL_CONFIG[k] == "None":
             logging.info(f"Setting {k} to None for model initialization.")
