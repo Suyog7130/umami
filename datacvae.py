@@ -1341,20 +1341,29 @@ class CustomDataset(Dataset):
 
     Attributes
     ----------
-    train_device : str
-        The device where the training will take place.
     store_device : str
-        The device where the data will be stored.
+        The device to store the data on. Default is 'cpu'.
+    train_device : str
+        The device to train the model on. Default is 'mps' (Apple Silicon).
     inputsize : int
-        The size of the input data.
+        The size of the input array (frequency). Default is 2048.
     outputsize : int
-        The size of the output data.
-    forwhat : str
-        Specifies the purpose of the dataset.
-    masses : np.ndarray
-        The mass values used to generate the data.
-    nsamples : int
-        The number of samples in the dataset.
+        The size of the output array (amplitude). Default is 1994.
+    plot : bool
+        Whether to plot the waveforms for visual inspection. Default is False.
+    convert : bool
+        Whether to convert the data to the target format (amp-freq) or return the original polarizations. Default is False (return original polarizations).
+    nokeys : bool
+        Whether to return the keys (mass1, mass2) along with the data. Default is False (return keys).
+    hdf_fname : str
+        The name of the HDF5 file to read the data from. If None, data will be generated on the fly. Default is None.
+    returnattr : bool
+        Whether to return the attributes (mass1, mass2, etc.) along with the data. Default is False (return only data).
+    precision : {'float32', 'float64'}
+        The precision to use for the data. Default is 'float64'.
+    target : {'unnorm_ampfreq', 'logamp_freq', 'amp_phase', 'logamp_phase'}
+        The target format for the data. Default is None (return original polarizations).
+    
 
     Methods
     -------
@@ -1368,9 +1377,17 @@ class CustomDataset(Dataset):
         approximant='IMRPhenomD', paramsonly=False)
         Generates data using the specified parameters (legacy method).
     """
-    def __init__(self, store_device='cpu', train_device='mps', plot=False,
-                 inputsize=2048, outputsize=1994, forwhat='train', approximant='IMRPhenomD',
-                 convert=False, nokeys=False, hdf_fname=None, **kwargs):
+    def __init__(self, 
+                 store_device: str = 'cpu', 
+                 train_device: str = 'mps', 
+                 inputsize: int = 2048, outputsize: int = 1994, 
+                 forwhat: {'train', 'test', 'val'} = 'train', 
+                 approximant: str = 'IMRPhenomD',
+                 plot: bool = False, convert: bool = False, nokeys: bool = False, hdf_fname: str = None, 
+                 returnattr: bool = False, 
+                 precision: {'float32', 'float64'} = 'float64', 
+                 target: {'unnorm_ampfreq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = None,
+                 **kwargs):
         super().__init__()
         self.train_device = train_device
         self.store_device = store_device
@@ -1380,9 +1397,9 @@ class CustomDataset(Dataset):
         self.convert = convert
         self.nokeys = nokeys
         self.hdf_fname = hdf_fname
-        self.returnattr = kwargs.get('returnattr', False)
-        self.precision = kwargs.get('precision', 'float64')
-        self.target = kwargs.get('target', None)  # by default return normed amp-freq as target
+        self.returnattr = kwargs.get('returnattr', returnattr)
+        self.precision = kwargs.get('precision', precision)
+        self.target = kwargs.get('target', target)
 
         self.forwhat = forwhat
         if hdf_fname is None:

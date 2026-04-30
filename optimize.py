@@ -23,8 +23,7 @@ import numpy as np
 from datacvae import CustomDataset, CustomDataLoader
 # from multicvae import TwoC2E1D
 
-from flexcvae import FlexTwoC2E1D
-from flexcvae import FlexCAE
+from flexcvae import FlexTwoC2E1D, FlexCAE, FlexCAEPhase
 
 
 TODAY = datetime.date.today().strftime("%Y%m%d")
@@ -51,11 +50,11 @@ BASE_MODEL_CONFIG = {
     'latent_dim_x': 16,
     'latent_dim_key': 4,
     'activation': 'gelu',
-    'target': None, #'amp_phase',  # default target is normed amp-freq, but can be set to 'logamp_phase' for log-amp and phase target
     'train_device': DEVICE,
     'model_precision': PRECISION,
     'modeltype': 'flexcvae',
     'loss_func_type': None,
+    'target': None, #'amp_phase',  # default target is normed amp-freq, but can be set to 'logamp_phase' for log-amp and phase target
 }
 
 datadir = "../data/"
@@ -96,7 +95,7 @@ def set_dataloaders(batch_size=BATCH_SIZE, target=BASE_MODEL_CONFIG['target']):
     logging.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(valid_set)}")
     return train_loader, val_loader
 
-def training(model: {FlexTwoC2E1D, FlexCAE}, 
+def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase}, 
              train_loader=None, val_loader=None,
              epochs: int = 5, 
              datafrac: float = DATAFRAC,
@@ -420,7 +419,27 @@ def load_flex_model(configpath=None, model_path=None):
             logging.info(f"Setting {k} to True for model initialization.")
             MODEL_CONFIG[k] = True
 
-    if MODEL_CONFIG.get('modeltype', 'flexcvae').lower() == 'flexcae':
+    if 'modeltype' not in MODEL_CONFIG:
+        logging.warning("modeltype not specified in MODEL_CONFIG, defaulting to 'flexcvae'.")
+        MODEL_CONFIG['modeltype'] = 'flexcvae'
+    if MODEL_CONFIG['modeltype'].lower() not in ['flexcvae', 'flexcae']:
+        logging.error(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', or 'flexcaephase'.")
+        raise ValueError(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', or 'flexcaephase'.")
+
+    if MODEL_CONFIG.get('target', None) is not None:
+        logging.info(f"Model will be initialized with target: {MODEL_CONFIG['target']}")
+
+    if MODEL_CONFIG['target'] == 'amp_phase':
+        logging.info("Initializing FlexCAEPhase model since target is 'amp_phase'.")
+        model = FlexCAEPhase(
+            MODEL_CONFIG=MODEL_CONFIG,
+            input_shape=(2, PRESET_ARRAY_SIZE),
+            num_classes=4,
+        )
+            # -- For amp-phase target, we need to set the loss function type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.
+        MODEL_CONFIG['loss_func_type'] = 'mismatch_nokl'
+        logging.warning("For 'amp_phase' target, setting loss_func_type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.")  
+    elif MODEL_CONFIG.get('modeltype', 'flexcvae').lower() == 'flexcae':
         model = FlexCAE(
             MODEL_CONFIG=MODEL_CONFIG,
             input_shape=(2, PRESET_ARRAY_SIZE),
@@ -432,8 +451,8 @@ def load_flex_model(configpath=None, model_path=None):
             input_shape=(2, PRESET_ARRAY_SIZE),
             num_classes=4,
         )
-
-    logging.info("Model architecture initialized. Now loading model weights.")
+    logging.info(f"Model architecture of type {model.__class__.__name__} initialized. Now loading model weights.")
+    logging.info(f"Model initialized with the following hyperparameters: {MODEL_CONFIG}")
     # print(model)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
     print(f"Total number of trainable parameters: \

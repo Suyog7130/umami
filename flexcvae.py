@@ -1209,7 +1209,11 @@ class FlexTwoC2E1D(nn.Module):
         Returns:
         --------
         total_loss : torch.Tensor
-            Total loss combining reconstruction, latent losses, and mismatch loss.
+            Total loss combining reconstruction and mismatch loss, without KL divergence.
+        recon_loss : torch.Tensor
+            Reconstruction loss component of the total loss.
+        mmloss : float
+            Total mismatch loss for the batch.
         """
         z1_mean, z1_log_var, z2_mean, z2_log_var, \
             z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
@@ -1320,4 +1324,86 @@ class FlexCAE(FlexTwoC2E1D):
                  z1p_mean, z1p_log_var, z2p_mean, z2p_log_var]
         return (x_recon, zvars)
     
+
+class FlexCAEPhase(FlexCAE):
+    """
+    Conditional Autoencoder (CAE) implementation that inherits from FlexCAE.
+    For this model the target outputs are [amp, phase], instead of [amp, freq] as in the previous models. 
+    The model architecture is the same as FlexCAE, but the input and output data are different. 
+    The loss function is also the same as FlexCAE, which includes the reconstruction loss and the KL divergence loss.
+    The mismatch loss functions will change since now we do not have to convert the output to phase first and then
+    to the polarizations! We can now directly convert the [amp,phase] output to the polarization via the following
+    simple relation (valid only for the h22 mode for now, or when applied to individual modes separately):  
+                    hp = amp * cos(phase)
+                    hc = amp * sin(phase)
+    All other functions and attributes are the same as FlexCAE, since the model architecture is the same, and only the 
+    input and output data are different.
+    """
+    def mismatch_nokl_loss_func(self, x, x_recon, zvars, strains, keys, attr):
+        """
+        Computes the mismatch loss between the reconstructed output and the keys.
+
+        NOTE: This mismatch loss function is specifically designed for the FlexCAEPhase model, 
+        where the output is [amp, phase]. The function calculates the mismatch loss by directly converting 
+        the reconstructed and original [amp, phase] outputs to the polarizations using the relations 
+        `hp = amp * cos(phase) and hc = amp * sin(phase)`.
+
+        Parameters:
+        -----------
+        x : torch.Tensor
+            Original input data.
+        x_recon : torch.Tensor
+            Reconstructed input data.
+        zvars : list of torch.Tensor
+            List of latent variable means and log variances.
+        keys : torch.Tensor
+            Normalization keys for the input amplitude and frequency data.
+
+        Returns:
+        --------
+        total_loss : torch.Tensor
+            Total loss combining reconstruction and mismatch loss, without KL divergence.
+        recon_loss : torch.Tensor
+            Reconstruction loss component of the total loss.
+        mmloss : float
+            Total mismatch loss for the batch.
+        """
+        z1_mean, z1_log_var, z2_mean, z2_log_var, \
+            z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
+        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
+            z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
+        
+        # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
+        recon_loss = F.mse_loss(x_recon, x, reduction='mean')
+
+        # -- Calculate the total mismatch loss for the batch (vectorized)
+        amp_recon = x_recon[:, 0].cpu().detach().numpy()
+        phase_recon = x_recon[:, 1].cpu().detach().numpy()
+        amp_orig = x[:, 0].cpu().detach().numpy()
+        phase_orig = x[:, 1].cpu().detach().numpy()
+
+        # -- Denormalize using keys (vectorized)
+        keys_reshaped = keys.reshape(-1, 2, 2).cpu().detach().numpy()
+        amp_mean, amp_std = keys_reshaped[:, 0, 0], keys_reshaped[:, 0, 1]
+        phase_mean, phase_std = keys_reshaped[:, 1, 0], keys_reshaped[:, 1, 1]
+
+        amp_recon = (amp_recon * amp_std[:, np.newaxis]) + amp_mean[:, np.newaxis]
+        phase_recon = (phase_recon * phase_std[:, np.newaxis]) + phase_mean[:, np.newaxis]
+        amp_orig = (amp_orig * amp_std[:, np.newaxis]) + amp_mean[:, np.newaxis]
+        phase_orig = (phase_orig * phase_std[:, np.newaxis]) + phase_mean[:, np.newaxis]
+
+        # -- Calculate mismatch loss (vectorized)
+        mmloss = 0.0
+        for i in range(x.size(0)):
+            hp_recon = amp_recon[i] * np.cos(phase_recon[i])
+            hc_recon = amp_recon[i] * np.sin(phase_recon[i])
+            hp_orig = amp_orig[i] * np.cos(phase_orig[i])
+            hc_orig = amp_orig[i] * np.sin(phase_orig[i])
+            mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
+            mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
+            mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
+        
+        logging.info(f'Total mismatch loss for the batch: {mmloss}')
+        total_loss = recon_loss + mmloss
+        return (total_loss, recon_loss, mmloss)
         
