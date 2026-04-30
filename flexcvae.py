@@ -850,8 +850,13 @@ class FlexTwoC2E1D(nn.Module):
         logging.debug(f"Encoded label for key to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
-    def decode(self, z, y_embed):
-        recon_x = self.decoder(z, y_embed)
+    def decode(self, z, y, y_embed=None):
+        """
+        TODO: `y_embed` != None case is not implemented properly yet!
+        The embedding has dimensions [64,2,32] like, but `z` has dimensions [64, 36] like, 
+        so we can't just concatenate them and feed to the decoder.
+        """
+        recon_x = self.decoder(z, y, y_embed)
         return recon_x.view(-1, *self.input_shape)
 
     def reparameterize(self, z_mean, z_log_var):
@@ -898,8 +903,13 @@ class FlexTwoC2E1D(nn.Module):
         assert zx_mu.size(0) == zy_mu.size(0) == zkey_mu.size(0) == zykey_mu.size(0) == batch_size, "Batch size mismatch across latent representations"
         assert zx_logvar.size(0) == zy_logvar.size(0) == zkey_logvar.size(0) == zykey_logvar.size(0) == batch_size, "Batch size mismatch across latent representations"
 
-        z_x = self.reparameterize(zx_mu, zx_logvar)
-        z_key = self.reparameterize(zkey_mu, zkey_logvar)
+        if self.MODEL_CONFIG.get('modeltype', 'cvae') == 'cae':
+            # If it's a CAE, we don't do reparameterization and just use the means as the latent representations
+            z_x = zx_mu
+            z_key = zkey_mu
+        else:            # If it's a CVAE, we do reparameterization to sample from the latent space
+            z_x = self.reparameterize(zx_mu, zx_logvar)
+            z_key = self.reparameterize(zkey_mu, zkey_logvar)
         assert z_x.size(1) == self.latent_dim_x, "z_x latent_dim mismatch"
         assert z_key.size(1) == self.latent_dim_key, "z_key latent_dim mismatch"
 
@@ -907,7 +917,7 @@ class FlexTwoC2E1D(nn.Module):
         if self.embed_labels_in_decoder:
             y_embed = self.conditional_x(y)  # Use the label-conditioned encoder for x as the label embedding
         else:
-            y_embed = y  # Use raw labels as input to the decoder
+            y_embed = None  # Use raw labels as input to the decoder
 
         # Select decoder input based on the specified type
         if self.decoder_input_type == 'sum':
@@ -934,7 +944,7 @@ class FlexTwoC2E1D(nn.Module):
             z = torch.cat([z_x, z_key], dim=1)  # default to concat if unknown type
             logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of z_x and z_key.")
         
-        recon_x = self.decode(z, y_embed)
+        recon_x = self.decode(z, y, y_embed)
         zvars = [zx_mu, zx_logvar, zy_mu, zy_logvar, zkey_mu, zkey_logvar, zykey_mu, zykey_logvar]
         return (recon_x, zvars)
 
@@ -1289,6 +1299,12 @@ class FlexCAE(FlexTwoC2E1D):
     TODO: Make `x_encoder` only encode to a single channel latent space,
     so that we don't have to ignore the second channel in the CAE forward pass!
 
+    NOTE: The CAE model configuration is already implemented in FlexTwoC2E1D, via the MODEL_CONFIG['modeltype'] attribute, 
+    which can be set to 'cae' to remove the reparameterization step in the forward pass and make the model deterministic.
+    In this class we will simply make sure that MODEL_CONFIG['loss_func_type'] is set to one of the appropriate loss
+    functions for a CAE model, such that no KL divergence loss is included in the total loss, and only the reconstruction loss 
+    or mismatch loss are included.
+
     Attributes:
     -----------
     Inherits all attributes from CVAE.
@@ -1298,31 +1314,12 @@ class FlexCAE(FlexTwoC2E1D):
     forward(x, labels, keys):
         Overrides the forward method to remove the reparameterization step.
     """
-    def forward(self, x, labels, keys):
-        """
-        Overrides the forward method to remove the reparameterization step.
-        The latent space representations are directly taken as the mean outputs
-        from the encoders without sampling, making the model deterministic.
-        However, we still calculate the KL divergence loss in the loss function to encourage
-        the latent space to follow a Gaussian distribution, which allows for generalization
-        beyond the training set. The weightage for the KL divergence will only be 10%.
-        """
-        logging.debug(keys.shape)
-        logging.debug(f'labels.shape={labels.shape}')
-        # print(keys)
-        z1_mean, z1_log_var = self.encode_label_for_x(labels)
-        z2_mean, z2_log_var = self.encode_x(x, labels)
-        # print("z1_mean:", z1_mean)
-        # print("z1_log_var:", z1_log_var)
-        # print("z2_mean:", z2_mean)
-        # print("z2_log_var:", z2_log_var)
-        z1p_mean, z1p_log_var = self.encode_label_for_key(labels)
-        z2p_mean, z2p_log_var = self.encode_key(keys, labels)
-        x_recon = self.decode(z2_mean, z2p_mean, labels)
-        logging.debug(f'Encoded input: z2_mean={z2_mean}, z2p_mean={z2p_mean}')
-        zvars = [z1_mean, z1_log_var, z2_mean, z2_log_var, \
-                 z1p_mean, z1p_log_var, z2p_mean, z2p_log_var]
-        return (x_recon, zvars)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.MODEL_CONFIG['loss_func_type'] not in ['mismatch_nokl', 'mmloss']:
+            logging.warning(f"MODEL_CONFIG['loss_func_type'] is set to '{self.MODEL_CONFIG['loss_func_type']}', which is not appropriate for CAE model!")
+            self.MODEL_CONFIG['loss_func_type'] = 'mismatch_nokl'
+            logging.warning(f"MODEL_CONFIG['loss_func_type'] has been set to 'mismatch_nokl' for the CAE model.")
     
 
 class FlexCAEPhase(FlexCAE):

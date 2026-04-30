@@ -23,7 +23,7 @@
     "key_shape": [2, 2],
     "beta": 0.1,  
     "decoder_input_type": "concat",
-    "embed_labels_in_decoder": true,
+    "embed_labels_in_decoder": false,
     "loss_func_type": "mismatch_nokl",
     "modeltype": "flexcae",
     "modelname": "flexcvae_amp_phase",

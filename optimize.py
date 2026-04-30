@@ -118,7 +118,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     if train_loader is None or val_loader is None:
         logging.info("Setting up dataloaders since they were not provided.")
         train_loader, val_loader = set_dataloaders(target=model.MODEL_CONFIG.get('target', BASE_MODEL_CONFIG['target']))
-        
+
     model = model.to(getattr(torch, PRECISION))
     model = model.to(DEVICE)
 
@@ -490,7 +490,7 @@ def run_training(configpath=None, model_path=None,
     Runs training with specified hyperparameters for a single model configuration!
     """
     model = load_flex_model(configpath=configpath, model_path=model_path)
-    print(model)
+    logging.debug(model)
     train_loader, val_loader = set_dataloaders(batch_size=batch_size)
     training(model, epochs=epochs, datafrac=datafrac, 
              train_loader=train_loader, val_loader=val_loader,
