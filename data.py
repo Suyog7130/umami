@@ -11,6 +11,7 @@ import glob
 import h5py
 import logging
 import argparse
+import datetime
 import numpy as np
 import pandas as pd
 
@@ -510,9 +511,12 @@ class Waveform(BaseWaveform):
     
     def _tttsplits(self):
         indices = np.arange(self.nsamples)
-        train_indices = indices[:int(self.nsamples * self.tttratio[0])]
-        val_indices = indices[int(self.nsamples * self.tttratio[0]):int(self.nsamples * self.tttratio[1])]
-        test_indices = indices[int(self.nsamples * self.tttratio[1]):]
+        train_frac, val_frac, test_frac = self.tttratio
+        train_end_idx = int(self.nsamples * train_frac)
+        val_end_idx = train_end_idx + int(self.nsamples * val_frac)
+        train_indices = indices[:train_end_idx]
+        val_indices = indices[train_end_idx:val_end_idx]
+        test_indices = indices[val_end_idx:]
         np.random.shuffle(train_indices)
         np.random.shuffle(val_indices)
         np.random.shuffle(test_indices)
@@ -551,20 +555,20 @@ class Waveform(BaseWaveform):
         """
         Write the data to HDF5 file for the given split: train, val, test.
         """
-        self.fname += f'-{int(DURATION)}sec-{int(SAMPLE_RATE)}Hz'
-
+        now = datetime.now().strftime("%Y%m%d-%H%M%S")
         indices = self._tttsplits()
-
         for i, split in enumerate(['train', 'val', 'test']):
+            fname = self.fname + f'-{int(DURATION)}sec-{int(SAMPLE_RATE)}Hz'
             split_indices = indices[i]
-            self.fname += f'-{split}'
-            if os.path.exists(self.fname+'.hdf'):
-                logging.warning(f'File {self.fname}.hdf already exists. Using an incremented name.')
-                self.fname = self.fname.split('.hdf')[0] + '-1'
-            self.fname += f'-{len(split_indices)//1000}k'
-            print(f'Writing {split} data to HDF5 file {self.fname}.hdf')
+            fname += f'-{split}'
+            if os.path.exists(fname+'.hdf'):
+                logging.warning(f'File {fname}.hdf already exists. Using an incremented name.')
+                fname = fname.split('.hdf')[0] + '-1'
+            fname += f'-{len(split_indices)//1000}k'
+            print(f'Writing {split} data to HDF5 file {fname}.hdf')
 
-            with h5py.File(self.fname+'.hdf', 'w') as hf:
+            fname += f'-{now}'
+            with h5py.File(fname+'.hdf', 'w') as hf:
                 # Create a group for each mass
                 for i in tqdm(split_indices, desc='samples-written', ncols=100):
                     params = self.get_params(i)
@@ -576,7 +580,7 @@ class Waveform(BaseWaveform):
                         hfgrp.attrs[param] = value
                     self.write_hdf_grp(hf, data, grpname)
 
-            print(f"Data written to {self.fname+'.hdf'} successfully.")
+            print(f"Data written to {fname+'.hdf'} successfully.")
         print(f"All data written to HDF5 files successfully.")
 
     def read_data_from_hdf(self, which='train'):
@@ -841,7 +845,7 @@ def save_SEOBNRv4_data(args):
                     aligned=True,
                     precess=False,
                     fname=args.fname)
-    wave.load_params_from_file(load_file='seed42-params_000')
+    wave.load_params_from_file(load_file='seed42-params_001')
     wave.write_data_to_hdf()
 
 
