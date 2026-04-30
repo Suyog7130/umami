@@ -77,6 +77,7 @@ def convert_to_serializable(obj):
     else:
         return obj
 
+
 # -------------------------
 # Define Base Coder classes
 # -------------------------

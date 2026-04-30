@@ -22,6 +22,7 @@ import numpy as np
 
 from datacvae import CustomDataset, CustomDataLoader
 # from multicvae import TwoC2E1D
+
 from flexcvae import FlexTwoC2E1D
 from flexcvae import FlexCAE
 
