@@ -1718,8 +1718,9 @@ class CustomDataset(Dataset):
             out_attr = data.attrs if type(data) is not dict else data.get('attrs', {})
             out_attr = dict(out_attr)  # Convert HDF5 attributes to a regular dictionary for easier handling
                         
-            if self.returnattr:
-                if self.forwhat=='test':
+            # TODO: make this work with `self.target` argument and be back compatible with `maincvae.py` code!
+            if self.forwhat=='test':
+                if self.returnattr:
                     return (out_normed,
                             out_labels,
                             out_keys,
@@ -1735,42 +1736,34 @@ class CustomDataset(Dataset):
                             out_keys,
                             out_strains,
                             out_attr)
+                
+            # Apart from input and target, the rest of the return values are same for all cases!
+            returnables = [out_labels, out_keys, out_strains]
+            if self.returnattr:
+                returnables.append(out_attr)
+                
             if self.target=='unnorm_ampfreq':
-                return (out_normed, 
-                        out_unnormed, 
-                        out_labels, 
-                        out_keys,
-                        out_strains)
+                logging.debug("Returning normalized amp and freq as input, and unnormalized amp and freq as target since `unnorm_target` is True.")
+                # -- Inputs are normalized amp and freq, targets are unnormalized amp and freq.
+                return tuple([out_normed, out_unnormed] + returnables)
             if self.target=='logamp_freq':
                 logging.debug("Returning normalized log-amp and freq as input, and log-amp as target since `logamp_target` is True.")
                 out_logamp_freq = np.vstack((np.log(amp), freq)).astype(getattr(np, self.precision))
-                return (out_logamp_freq, 
-                        out_logamp_freq, # -- target is log-amp.
-                        out_labels, 
-                        out_keys,
-                        out_strains)
+                # -- Inputs and targets are normalized log-amp and freq.
+                return tuple([out_logamp_freq, out_logamp_freq] + returnables)
             if self.target=='amp_phase':
                 logging.debug("Returning normalized amp and freq as input, and phase as target since `phase_target` is True.")
                 out_amp_phase = np.vstack((amp, phase)).astype(getattr(np, self.precision))
-                return (out_amp_phase, 
-                        out_amp_phase, # -- target is phase.
-                        out_labels, 
-                        out_keys,
-                        out_strains)
+                # -- Inputs and targets are normalized amp and phase.
+                return tuple([out_amp_phase, out_amp_phase] + returnables)
             if self.target=='logamp_phase':
                 logging.debug("Returning normalized log-amp and freq as input, and phase as target since `logamp_phase_target` is True.")
                 out_logamp_phase = np.vstack((np.log(amp), phase)).astype(getattr(np, self.precision))
-                return (out_logamp_phase, 
-                        out_logamp_phase, # -- target is phase.
-                        out_labels, 
-                        out_keys,
-                        out_strains)
+                # -- Inputs and targets are normalized log-amp and phase.
+                return tuple([out_logamp_phase, out_logamp_phase] + returnables)
             logging.debug("Returning normalized amp and freq as both input and target since `unnorm_target` is False.")
-            return (out_normed, 
-                    out_normed, # -- target are normed amp & freq.
-                    out_labels, 
-                    out_keys,
-                    out_strains)
+            # -- Default case: Inputs and targets are normalized amp and freq.
+            return tuple([out_normed, out_normed] + returnables)
         
     def collate_fn(self, batch):
         """ 

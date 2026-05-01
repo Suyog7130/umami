@@ -83,11 +83,11 @@ def set_dataloaders(batch_size=BATCH_SIZE, target=BASE_MODEL_CONFIG['target']):
         val_loader: DataLoader for the validation dataset
     """
     logging.info(f'Reading training data from {train_hdf}.hdf')
-    train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=False,
+    train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=True,
                             hdf_fname=train_hdf, train_device=DEVICE, precision=PRECISION,
                             target=target)
     logging.info(f'Reading validation data from {val_hdf}.hdf')
-    valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=False,
+    valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=True,
                             hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION, 
                             target=target)
     train_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
@@ -177,13 +177,17 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     for epoch in tqdm(range(epochs)):
         model.train()
         train_loss = 0.0
-        for idx, (x, target, labels, keys, strains) in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
+        for idx, (x, target, labels, keys, strains, attr) in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
             if idx >= num_train_batches:
                 break
-            x, target, labels, keys = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE)
+            x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
-            loss, *lcomps = lossfunction(target, x_recon, zvars)
+            if loss_func_type is None:
+                # -- default loss function only takes 3 arguments!
+                loss, *lcomps = lossfunction(target, x_recon, zvars)
+            else:
+                loss, *lcomps = lossfunction(target, x_recon, zvars, strains, keys, attr)
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
@@ -221,9 +225,13 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             for idx, (x, target, labels, keys, strains) in enumerate(tqdm(train_loader, ncols=80, desc="Train-eval-steps")):
                 if idx >= num_train_batches:
                     break
-                x, target, labels, keys = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE)
+                x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
                 x_recon, zvars = model(x, labels, keys)
-                loss, *lcomps = lossfunction(target, x_recon, zvars)
+                if loss_func_type is None:
+                    # -- default loss function only takes 3 arguments!
+                    loss, *lcomps = lossfunction(target, x_recon, zvars)
+                else:
+                    loss, *lcomps = lossfunction(target, x_recon, zvars, strains, keys, attr)
                 train_eval_loss += loss.item()
                 for comp_name, comp_value in zip(lcomps_names, lcomps):
                     lcomps_eval[comp_name].append(comp_value.item())
@@ -236,9 +244,13 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             for idx, (x, target, labels, keys, strains) in enumerate(tqdm(val_loader, ncols=80, desc="Val-steps")):
                 if idx >= num_val_batches:
                     break
-                x, target, labels, keys = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE)
+                x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
                 x_recon, zvars = model(x, labels, keys)
-                loss, *lcomps = lossfunction(target, x_recon, zvars)
+                if loss_func_type is None:
+                    # -- default loss function only takes 3 arguments!
+                    loss, *lcomps = lossfunction(target, x_recon, zvars)
+                else:
+                    loss, *lcomps = lossfunction(target, x_recon, zvars, strains, keys, attr)
                 val_loss += loss.item()
                 for comp_name, comp_value in zip(lcomps_names, lcomps):
                     lcomps_val[comp_name].append(comp_value.item())
