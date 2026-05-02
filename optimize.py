@@ -37,13 +37,13 @@ PRESET_ARRAY_SIZE = 8191
 APPROXIMANT = 'SEOBNRv4'
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
-    PRECISION = 'float64'  # Use double precision for CUDA if available
+    PRECISION = 'float32'  # Can also use double precision `float64` for CUDA if available
 elif torch.backends.mps.is_available():
     DEVICE = torch.device("mps")
     PRECISION = 'float32'  # Use float32 for MPS since it does not support float64 well
 else:
     DEVICE = torch.device("cpu")
-    PRECISION = 'float64'  # Use double precision for CPU
+    PRECISION = 'float32'
 print(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
 BASE_MODEL_CONFIG = {
@@ -613,6 +613,8 @@ if __name__ == "__main__":
                         help="Path to JSON file containing model configuration for training")
     parser.add_argument('--model-path', type=str, default=None,
                         help="Path to pre-trained model checkpoint")
+    parser.add_argument('--epochs', type=int, default=EPOCHS,
+                        help="Number of epochs for training (default: EPOCHS)")
     
     parser.add_argument('--dummyrun', action='store_true',
                         help="Run a dummy training with 10 batches for training loop testing and debugging!")
@@ -656,7 +658,7 @@ if __name__ == "__main__":
         logging.info("Running training with specified hyperparameters!")
         run_training(configpath=args.model_config,
                      model_path=args.model_path,
-                     epochs=10, datafrac=1.0)
+                     epochs=args.epochs, datafrac=1.0)
     elif args.dummyrun:
         logging.info("Running dummy training with 10 batches for training loop testing and debugging!")
         run_training(configpath=args.model_config,
