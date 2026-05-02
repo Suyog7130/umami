@@ -126,9 +126,10 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         num_train_batches = len(train_loader)
         num_val_batches = len(val_loader)
     else:
-        num_train_batches = int(len(train_loader) * datafrac) // train_loader.batch_size
-        num_val_batches = int(len(val_loader) * datafrac) // val_loader.batch_size
-    logging.info(f"Using {num_train_batches} batches for training and validation based on data fraction {datafrac} out of {len(train_loader)} data inputs.")
+        num_train_batches = int( len(train_loader) * datafrac )
+        logging.info(f"Using {num_train_batches} batches for training and validation based on data fraction {datafrac} out of {len(train_loader)} input batches.")
+        num_val_batches = int( len(val_loader) * datafrac )
+        logging.info(f"Using {num_val_batches} batches for validation based on data fraction {datafrac} out of {len(val_loader)} input batches.")
 
     # Check if model parameters contain NaN or Inf before training
     for name, param in model.named_parameters():
@@ -222,7 +223,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         # -- to compare train and validation losses at the same epoch and check for overfitting etc.
         train_eval_loss = 0.0
         with torch.no_grad():
-            for idx, (x, target, labels, keys, strains) in enumerate(tqdm(train_loader, ncols=80, desc="Train-eval-steps")):
+            for idx, (x, target, labels, keys, strains, attr) in enumerate(tqdm(train_loader, ncols=80, desc="Train-eval-steps")):
                 if idx >= num_train_batches:
                     break
                 x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
@@ -241,7 +242,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         # Evaluate on validation set
         val_loss = 0.0
         with torch.no_grad():
-            for idx, (x, target, labels, keys, strains) in enumerate(tqdm(val_loader, ncols=80, desc="Val-steps")):
+            for idx, (x, target, labels, keys, strains, attr) in enumerate(tqdm(val_loader, ncols=80, desc="Val-steps")):
                 if idx >= num_val_batches:
                     break
                 x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
@@ -496,7 +497,7 @@ def load_flex_model(configpath=None, model_path=None):
     return model
 
 
-def run_training(configpath=None, model_path=None,
+def run_training(configpath=None, model_path=None, fname=None,
                  batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac=DATAFRAC):
     """
     Runs training with specified hyperparameters for a single model configuration!
@@ -506,9 +507,13 @@ def run_training(configpath=None, model_path=None,
     train_loader, val_loader = set_dataloaders(batch_size=batch_size)
     training(model, epochs=epochs, datafrac=datafrac, 
              train_loader=train_loader, val_loader=val_loader,
-             savemodel=True, savelosses=True)
+             savemodel=True, savelosses=True,
+             savedir='../trained-models/'+fname if fname is not None else '../trained-models/')
+    logging.info("Training completed and model saved.")
     model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
                              epochs=epochs, datafrac=datafrac)
+    logging.info(f"Model configuration saved to ../trained-models/modelconfig-flexcvae-{NOW}.json")
+    print("Training completed and model saved.")
     
 
 def optuna_objective(trial):
@@ -608,6 +613,9 @@ if __name__ == "__main__":
                         help="Path to JSON file containing model configuration for training")
     parser.add_argument('--model-path', type=str, default=None,
                         help="Path to pre-trained model checkpoint")
+    
+    parser.add_argument('--dummyrun', action='store_true',
+                        help="Run a dummy training with 10 batches for training loop testing and debugging!")
 
     parser.add_argument('-v', '--verbose', action='store_true',
                         help="Enable verbose logging")
@@ -644,7 +652,13 @@ if __name__ == "__main__":
 
     if args.optuna:
         run_optuna()
-    if args.train:
+    elif args.train:
+        logging.info("Running training with specified hyperparameters!")
         run_training(configpath=args.model_config,
                      model_path=args.model_path,
                      epochs=10, datafrac=1.0)
+    elif args.dummyrun:
+        logging.info("Running dummy training with 10 batches for training loop testing and debugging!")
+        run_training(configpath=args.model_config,
+                     model_path=args.model_path,
+                     epochs=1, datafrac=0.01, fname='dummyrun-')

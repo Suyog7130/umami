@@ -1068,12 +1068,16 @@ class FlexTwoC2E1D(nn.Module):
                 configfile[key] = convert_to_serializable(value)
             elif isinstance(value, tuple):
                 configfile[key] = list(value)  # Convert tuples to lists for JSON serialization
-            elif not isinstance(value, (str, int, float, bool, type(None))):
+            else:
                 configfile[key] = str(value)
 
+        # -- remove `_modules` from configfile, bcuz it is non-serializable in JSON
+        if '_modules' in configfile:
+            del configfile['_modules']
+
+        # print(configfile)
         with open(filepath, 'w') as f:
             json.dump(configfile, f, indent=4)
-        print(configfile)
         logging.info(f"Model configuration saved to {filepath}")
 
     def mismatch_loss_func(self, x, x_recon, zvars, strains, keys, attr):
