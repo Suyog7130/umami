@@ -637,7 +637,7 @@ class Test:
         """
         Load the trained FlexTwoC2E1D model from the specified path.
         """
-        from flexcvae import TwoC2E1D as FlexTwoC2E1D
+        from flexcvae import FlexTwoC2E1D, FlexCAE, FlexCAEPhase
 
         logging.info(f"Loading FlexTwoC2E1D model with config from: {configpath} and model weights from: {model_path}")
         if configpath is not None:
@@ -651,20 +651,30 @@ class Test:
             MODEL_CONFIG = json.load(open(configpath, 'r'))
         else:
             logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
-            MODEL_CONFIG = BASE_MODEL_CONFIG
+            MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
 
-        # Convert some hyperparameters from str to appropriate types if needed (e.g. lists, tuples)
+        # -- Load labels mean and std values if provided in MODEL_CONFIG
         if isinstance(MODEL_CONFIG['labels_mean'], str) and isinstance(MODEL_CONFIG['labels_std'], str):
             # print(MODEL_CONFIG['labels_std'])
             # print(MODEL_CONFIG['labels_std'].strip('[]').split(','))
             # print(float(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
             # print(type(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
             logging.info("Converting labels_mean and labels_std from str->lists to numpy arrays for model initialization.")
-            labels_mean = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
-            labels_std = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
-            MODEL_CONFIG['labels_mean'] = torch.tensor(labels_mean, dtype=getattr(torch, self.precision)).to(self.device)
-            MODEL_CONFIG['labels_std'] = torch.tensor(labels_std, dtype=getattr(torch, self.precision)).to(self.device)    
-        # logging.warning("Will still use predefined global params_mean and params_std for normalization for now.")
+            if MODEL_CONFIG['labels_mean'] == "None" or MODEL_CONFIG['labels_std'] == "None":
+                logging.warning("Labels mean or std is None in MODEL_CONFIG, skipping conversion and normalization.")
+                MODEL_CONFIG['labels_mean'] = None
+                MODEL_CONFIG['labels_std'] = None
+            else:
+                MODEL_CONFIG['labels_mean'] = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
+                MODEL_CONFIG['labels_std'] = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
+        if MODEL_CONFIG['labels_mean'] is not None and MODEL_CONFIG['labels_std'] is not None:
+            # logging.warning('For now we will use predefined global params_mean and params_std for normalization instead of converting from MODEL_CONFIG, since the conversion is not working well and giving NaN values for some reason. This needs to be fixed later.')
+            # labels_mean = params_mean.cpu().numpy()
+            # labels_std = params_std.cpu().numpy()
+            MODEL_CONFIG['labels_mean'] = torch.tensor(MODEL_CONFIG['labels_mean'], dtype=getattr(torch, PRECISION)).to(DEVICE)
+            MODEL_CONFIG['labels_std'] = torch.tensor(MODEL_CONFIG['labels_std'], dtype=getattr(torch, PRECISION)).to(DEVICE)
+
+        # Convert some hyperparameters from str to appropriate types if needed (e.g. lists, tuples)
         if isinstance(MODEL_CONFIG['input_shape'], str):
             logging.info("Converting input_shape from str to tuple for model initialization.")
             MODEL_CONFIG['input_shape'] = tuple(map(int, MODEL_CONFIG['input_shape'].strip('()').split(',')))
@@ -675,13 +685,56 @@ class Test:
             logging.info("Setting target to None for model initialization.")
             MODEL_CONFIG['target'] = None
 
-        model = FlexTwoC2E1D(
-            MODEL_CONFIG=MODEL_CONFIG,
-            input_shape=(2, PRESET_ARRAY_SIZE),
-            num_classes=4,
-            paramsnorm=True,
-        )
-        logging.info("Model architecture initialized. Now loading model weights.")
+        for k in MODEL_CONFIG:
+            if MODEL_CONFIG[k] == "None":
+                logging.info(f"Setting {k} to None for model initialization.")
+                MODEL_CONFIG[k] = None
+            if MODEL_CONFIG[k] == "False":
+                logging.info(f"Setting {k} to False for model initialization.")
+                MODEL_CONFIG[k] = False
+            if MODEL_CONFIG[k] == "True":
+                logging.info(f"Setting {k} to True for model initialization.")
+                MODEL_CONFIG[k] = True
+
+        if 'modeltype' not in MODEL_CONFIG:
+            logging.warning("modeltype not specified in MODEL_CONFIG, defaulting to 'flexcvae'.")
+            MODEL_CONFIG['modeltype'] = 'flexcvae'
+        if MODEL_CONFIG['modeltype'].lower() not in ['flexcvae', 'flexcae']:
+            logging.error(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', or 'flexcaephase'.")
+            raise ValueError(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', or 'flexcaephase'.")
+
+        if MODEL_CONFIG.get('target', None) is not None:
+            logging.info(f"Model will be initialized with target: {MODEL_CONFIG['target']}")
+
+        if MODEL_CONFIG['target'] == 'amp_phase':
+            logging.info("Initializing FlexCAEPhase model since target is 'amp_phase'.")
+            model = FlexCAEPhase(
+                MODEL_CONFIG=MODEL_CONFIG,
+                input_shape=(2, PRESET_ARRAY_SIZE),
+                num_classes=4,
+            )
+                # -- For amp-phase target, we need to set the loss function type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.
+            MODEL_CONFIG['loss_func_type'] = 'mismatch_nokl'
+            logging.warning("For 'amp_phase' target, setting loss_func_type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.")  
+        elif MODEL_CONFIG.get('modeltype', 'flexcvae').lower() == 'flexcae':
+            model = FlexCAE(
+                MODEL_CONFIG=MODEL_CONFIG,
+                input_shape=(2, PRESET_ARRAY_SIZE),
+                num_classes=4,
+            )
+        else:
+            model = FlexTwoC2E1D(
+                MODEL_CONFIG=MODEL_CONFIG,
+                input_shape=(2, PRESET_ARRAY_SIZE),
+                num_classes=4,
+            )
+        logging.info(f"Model architecture of type {model.__class__.__name__} initialized. Now loading model weights.")
+        logging.info(f"Model initialized with the following hyperparameters: {MODEL_CONFIG}")
+        # print(model)
+        print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
+        print(f"Total number of trainable parameters: \
+            {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
+    
         if not os.path.isfile(model_path):
             logging.error(f"Provided model path does not exist: {model_path}")
             raise FileNotFoundError(f"Model file not found at {model_path}")

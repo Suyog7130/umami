@@ -659,6 +659,7 @@ if __name__ == "__main__":
         run_training(configpath=args.model_config,
                      model_path=args.model_path,
                      epochs=args.epochs, datafrac=1.0)
+        
     elif args.dummyrun:
         logging.info("Running dummy training with 10 batches for training loop testing and debugging!")
         run_training(configpath=args.model_config,
