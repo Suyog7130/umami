@@ -160,7 +160,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         lcomps_names = ['recon_loss', 'kl_loss']
     elif loss_func_type == 'mismatch_nokl':
         lossfunction = model.mismatch_nokl_loss_func
-        lcomps_names = ['recon_loss', 'mmloss']
+        lcomps_names = ['recon_loss', 'mmloss', 'latent_loss']
     elif loss_func_type == 'mmloss':
         lossfunction = model.mismatch_loss_func
         lcomps_names = ['recon_loss', 'kl_loss', 'mmloss']

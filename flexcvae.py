@@ -1236,6 +1236,16 @@ class FlexTwoC2E1D(nn.Module):
             z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
         logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
             z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
+        
+        # latent loss between encoders and conditional encoders,
+        # to ensure that the same latent representation is learned.
+        # However, we simply calculate this as the MSE loss between the z_mu!
+        ll1 = F.mse_loss(z1_mean, z2_mean, reduction='mean')
+        ll2 = F.mse_loss(z1p_mean, z2p_mean, reduction='mean')
+        ll3 = F.mse_loss(z1_mean, z1p_mean, reduction='mean')
+        ll4 = F.mse_loss(z2_mean, z2p_mean, reduction='mean')
+        latent_loss = ll1 + ll2 + ll3 + ll4
+        logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         # TODO: What is the `reduction` thing doing here?
@@ -1282,8 +1292,8 @@ class FlexTwoC2E1D(nn.Module):
             mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
         
         logging.info(f'Total mismatch loss for the batch: {mmloss}')
-        total_loss = recon_loss + mmloss
-        return (total_loss, recon_loss, mmloss)
+        total_loss = recon_loss + mmloss + latent_loss
+        return (total_loss, recon_loss, mmloss, latent_loss)
 
 
 class FlexCAE(FlexTwoC2E1D):
@@ -1377,6 +1387,16 @@ class FlexCAEPhase(FlexCAE):
         logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
             z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
         
+        # latent loss between encoders and conditional encoders,
+        # to ensure that the same latent representation is learned.
+        # However, we simply calculate this as the MSE loss between the z_mu!
+        ll1 = F.mse_loss(z1_mean, z2_mean, reduction='mean')
+        ll2 = F.mse_loss(z1p_mean, z2p_mean, reduction='mean')
+        ll3 = F.mse_loss(z1_mean, z1p_mean, reduction='mean')
+        ll4 = F.mse_loss(z2_mean, z2p_mean, reduction='mean')
+        latent_loss = ll1 + ll2 + ll3 + ll4
+        logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
+
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         recon_loss = F.mse_loss(x_recon, x, reduction='mean')
 
@@ -1408,6 +1428,6 @@ class FlexCAEPhase(FlexCAE):
             mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
         
         logging.info(f'Total mismatch loss for the batch: {mmloss}')
-        total_loss = recon_loss + mmloss
-        return (total_loss, recon_loss, mmloss)
+        total_loss = recon_loss + mmloss + latent_loss
+        return (total_loss, recon_loss, mmloss, latent_loss)
         
