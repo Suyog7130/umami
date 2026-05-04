@@ -1242,9 +1242,7 @@ class FlexTwoC2E1D(nn.Module):
         # However, we simply calculate this as the MSE loss between the z_mu!
         ll1 = F.mse_loss(z1_mean, z2_mean, reduction='mean')
         ll2 = F.mse_loss(z1p_mean, z2p_mean, reduction='mean')
-        ll3 = F.mse_loss(z1_mean, z1p_mean, reduction='mean')
-        ll4 = F.mse_loss(z2_mean, z2p_mean, reduction='mean')
-        latent_loss = ll1 + ll2 + ll3 + ll4
+        latent_loss = ll1 + ll2
         logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
@@ -1392,9 +1390,7 @@ class FlexCAEPhase(FlexCAE):
         # However, we simply calculate this as the MSE loss between the z_mu!
         ll1 = F.mse_loss(z1_mean, z2_mean, reduction='mean')
         ll2 = F.mse_loss(z1p_mean, z2p_mean, reduction='mean')
-        ll3 = F.mse_loss(z1_mean, z1p_mean, reduction='mean')
-        ll4 = F.mse_loss(z2_mean, z2p_mean, reduction='mean')
-        latent_loss = ll1 + ll2 + ll3 + ll4
+        latent_loss = ll1 + ll2
         logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)

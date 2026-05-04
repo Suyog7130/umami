@@ -617,7 +617,7 @@ if __name__ == "__main__":
                         help="Number of epochs for training (default: EPOCHS)")
     
     parser.add_argument('--dummyrun', action='store_true',
-                        help="Run a dummy training with 10 batches for training loop testing and debugging!")
+                        help="Run a dummy training with 10 batches for training loop testing and debugging! 'dummy' also works for this flag, so you can use --dummy or --dummyrun (dunno why?)")
 
     parser.add_argument('-v', '--verbose', action='store_true',
                         help="Enable verbose logging")
