@@ -1220,6 +1220,11 @@ class FlexTwoC2E1D(nn.Module):
             Reconstructed input data.
         zvars : list of torch.Tensor
             List of latent variable means and log variances.
+            [z1_mean, z1_log_var, z2_mean, z2_log_var, z1p_mean, z1p_log_var, z2p_mean, z2p_log_var]
+            namely the means and log variances for the input data latent space (z1), 
+            the label-conditioned latent space for the input data (z1p), the key latent space (z2), 
+            and the label-conditioned latent space for the keys (z2p). Log variances are ignored 
+            when KL divergence is not calculated!
         keys : torch.Tensor
             Normalization keys for the input amplitude and frequency data.
 
