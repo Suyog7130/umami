@@ -1103,10 +1103,10 @@ class FlexTwoC2E1D(nn.Module):
         total_loss : torch.Tensor
             Total loss combining reconstruction, latent losses, and mismatch loss.
         """
-        z1_mean, z1_log_var, z2_mean, z2_log_var, \
-            z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
-        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
-            z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
+        zx_mu, zx_logvar, zy_mu, zy_logvar, \
+            zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
+        logging.debug(f'zx_mean={zx_mu}, zx_log_var={zx_logvar}, zy_mean={zy_mu}, zy_log_var={zy_logvar}, \
+            zkey_mean={zkey_mu}, zkey_log_var={zkey_logvar}, zykey_mean={zykey_mu}, zykey_log_var={zykey_logvar}')
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         # TODO: What is the `reduction` thing doing here?
@@ -1119,21 +1119,21 @@ class FlexTwoC2E1D(nn.Module):
         recon_loss = F.mse_loss(x_recon, x, reduction='mean')
 
         # KL divergence for each latent space
-        kl_loss_z1 = self.latent_loss(z1_mean, z1_log_var)
-        kl_loss_z2 = self.latent_loss(z2_mean, z2_log_var)
-        kl_loss_z1p = self.latent_loss(z1p_mean, z1p_log_var)
-        kl_loss_z2p = self.latent_loss(z2p_mean, z2p_log_var)
+        kl_loss_zx = self.latent_loss(zx_mu, zx_logvar)
+        kl_loss_zy = self.latent_loss(zy_mu, zy_logvar)
+        kl_loss_zkey = self.latent_loss(zkey_mu, zkey_logvar)
+        kl_loss_zykey = self.latent_loss(zykey_mu, zykey_logvar)
         # Print KL divergence losses for debugging
-        logging.info(f"KL Loss z1: {kl_loss_z1.item()}, KL Loss z2: {kl_loss_z2.item()}, "
-            f"KL Loss z1p: {kl_loss_z1p.item()}, KL Loss z2p: {kl_loss_z2p.item()}")
+        logging.info(f"KL Loss zx: {kl_loss_zx.item()}, KL Loss zy: {kl_loss_zy.item()}, "
+            f"KL Loss zkey: {kl_loss_zkey.item()}, KL Loss zykey: {kl_loss_zykey.item()}")
 
-        # Latent loss between encoders
-        ll1 = self.latent_loss_between_encoders(z1_mean, z1_log_var, z2_mean, z2_log_var)
-        ll2 = self.latent_loss_between_encoders(z1p_mean, z1p_log_var, z2p_mean, z2p_log_var)
+        # Latent loss between each encoder and their corresponding label-conditioned encoder
+        ll1 = self.latent_loss_between_encoders(zx_mu, zx_logvar, zy_mu, zy_logvar)
+        ll2 = self.latent_loss_between_encoders(zkey_mu, zkey_logvar, zykey_mu, zykey_logvar)
 
         # Total loss
         beta = 0.1   # Weighting factor for KL divergence
-        kl_loss = kl_loss_z1 + kl_loss_z2 + kl_loss_z1p + kl_loss_z2p + ll1 + ll2
+        kl_loss = kl_loss_zx + kl_loss_zy + kl_loss_zkey + kl_loss_zykey + ll1 + ll2
 
 
         # # -- Calculate the total mismatch loss for the batch
@@ -1237,16 +1237,20 @@ class FlexTwoC2E1D(nn.Module):
         mmloss : float
             Total mismatch loss for the batch.
         """
-        z1_mean, z1_log_var, z2_mean, z2_log_var, \
-            z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
-        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
-            z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
+        zx_mu, zx_logvar, zy_mu, zy_logvar, \
+            zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
+        logging.debug(f'zx_mu={zx_mu}, zx_logvar={zx_logvar}, zy_mu={zy_mu}, zy_logvar={zy_logvar}, \
+            zkey_mu={zkey_mu}, zkey_logvar={zkey_logvar}, zykey_mu={zykey_mu}, zykey_logvar={zykey_logvar}')
         
         # latent loss between encoders and conditional encoders,
         # to ensure that the same latent representation is learned.
-        # However, we simply calculate this as the MSE loss between the z_mu!
-        ll1 = F.mse_loss(z1_mean, z2_mean, reduction='mean')
-        ll2 = F.mse_loss(z1p_mean, z2p_mean, reduction='mean')
+        # However, we simply calculate this as the MSE loss between the encoder mean latents
+        # and their label-conditioned encoder mean latents, without considering the log variances, 
+        # since we are not calculating KL divergence in this loss function and thus the log variances 
+        # are simply ignored!
+        # TODO: Come up with a better model to simply have single latent output, just the mu for CAE!
+        ll1 = F.mse_loss(zx_mu, zy_mu, reduction='mean')
+        ll2 = F.mse_loss(zkey_mu, zykey_mu, reduction='mean')
         latent_loss = ll1 + ll2
         logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
 
@@ -1297,6 +1301,62 @@ class FlexTwoC2E1D(nn.Module):
         logging.info(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + mmloss + latent_loss
         return (total_loss, recon_loss, mmloss, latent_loss)
+    
+    def generate(self, labels=None):
+        """
+        From a trained model, generate new output waveforms using only the
+        conditional labels information, by sampling from the latent space and 
+        passing through the decoder.
+        """
+        if labels is None:
+            logging.warning("No labels provided for generation! Please provide labels!")
+
+        self.eval()  # Set model to evaluation mode
+        with torch.no_grad():
+            # Encode labels to get the mean and log variance of the latent space
+            zy_mu, zy_logvar = self.encode_label_for_x(labels)
+            zykey_mu, zykey_logvar = self.encode_label_for_key(labels)
+            if self.MODEL_CONFIG.get('modeltype', 'cvae') == 'cae':
+                # If it's a CAE, we don't do reparameterization and just use the means as the latent representations
+                zy = zy_mu
+                zykey = zykey_mu
+            else:            # If it's a CVAE, we do reparameterization to sample from the latent space
+                zy = self.reparameterize(zy_mu, zy_logvar)
+                zykey = self.reparameterize(zykey_mu, zykey_logvar)
+
+            # Generate output by passing the sampled latent variable and labels through the decoder
+            if self.embed_labels_in_decoder:
+                y_embed = self.conditional_x(labels)  # Use the label-conditioned encoder for x as the label embedding
+            else:
+                y_embed = None  # Use raw labels as input to the decoder
+
+            # Select decoder input based on the specified type
+            if self.decoder_input_type == 'sum':
+                z = zy + zykey
+            elif self.decoder_input_type == 'concat':
+                z = torch.cat([zy, zykey], dim=1)
+            elif self.decoder_input_type == 'onlyzx':
+                z = zy
+            elif self.decoder_input_type == 'onlyzkey':
+                z = zykey
+            elif self.decoder_input_type == 'weighted_sum':
+                alpha = 0.5  # This can be a hyperparameter to tune
+                # -- match size of z_key to z_x for weighted sum, 
+                # by projecting z_key to the same latent dimension as z_x using a linear layer
+                if zykey.size(1) != zy.size(1):
+                    projection = nn.Linear(zykey.size(1), zy.size(1)).to(zykey.device)
+                    zykey_proj = projection(zykey)
+                    z = alpha * zy + (1 - alpha) * zykey_proj
+                else:
+                    z = alpha * zy + (1 - alpha) * zykey
+            elif self.decoder_input_type == 'concat_all':
+                z = torch.cat([zy, zykey, zy_mu, zykey_mu], dim=1)
+            else:
+                z = torch.cat([zy, zykey], dim=1)  # default to concat if unknown type
+                logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of zy and zykey.")
+
+            generated_output = self.decode(z, labels, y_embed)
+            return generated_output
 
 
 class FlexCAE(FlexTwoC2E1D):
