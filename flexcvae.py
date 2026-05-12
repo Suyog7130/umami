@@ -1308,10 +1308,15 @@ class FlexTwoC2E1D(nn.Module):
         conditional labels information, by sampling from the latent space and 
         passing through the decoder.
         """
-        if labels is None:
-            logging.warning("No labels provided for generation! Please provide labels!")
+        if labels is not None:
+            # -- check dimensions of labels with MODEL_CONFIG['num_classes']
+            assert labels.size(1) == self.num_classes, f"Labels dimension {labels.size(1)} does not match MODEL_CONFIG['num_classes'] {self.num_classes}!"
+        else:
+            raise ValueError("Labels must be provided for generation, since the model is conditional on the labels!")
 
         self.eval()  # Set model to evaluation mode
+        logging.info("Model set to evaluation mode for generation.")
+
         with torch.no_grad():
             # Encode labels to get the mean and log variance of the latent space
             zy_mu, zy_logvar = self.encode_label_for_x(labels)
@@ -1355,8 +1360,32 @@ class FlexTwoC2E1D(nn.Module):
                 z = torch.cat([zy, zykey], dim=1)  # default to concat if unknown type
                 logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of zy and zykey.")
 
+            # Decode latent representation to get output Amplitude and Frequency series
             generated_output = self.decode(z, labels, y_embed)
-            return generated_output
+        
+        hphc = self.convert_output(generated_output)
+        return hphc
+    
+    def convert_output(self, output):
+        """
+        Converts the output of the decoder (Amplitude and Frequency series) to the polarizations (hp and hc).
+        This function is used in the generation step to convert the generated Amplitude and Frequency series to the polarizations, 
+        which are the actual waveforms that we want to generate.
+
+        NOTE: We assume the starting phase to be zero here! Which is not always correct and may result in
+        incorrect resultant waveform! This difficulty is resolved in the FlexCAEPhase model, where we directly output 
+        the phase instead of the frequency, and thus we can directly convert the [amp, phase] output to the polarizations 
+        without assuming any starting phase!
+        TODO: Remove dependency to detach the outputs from the device and numpy operations.
+        TODO: All of this calculation should be done on a GPU.
+        """
+        amp = output[:, 0].cpu().detach().numpy()
+        freq = output[:, 1].cpu().detach().numpy()
+        hphc = []
+        for i in range(output.size(0)):
+            hp, hc = polarizations_from_ampfreq(amp[i], freq[i], theta0=0.0)  # Assuming theta0=0 for generation
+            hphc.append((hp, hc))
+        return hphc
 
 
 class FlexCAE(FlexTwoC2E1D):
