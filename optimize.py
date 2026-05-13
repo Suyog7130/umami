@@ -44,7 +44,7 @@ elif torch.backends.mps.is_available():
 else:
     DEVICE = torch.device("cpu")
     PRECISION = 'float32'
-print(f"Using device: {DEVICE}, with precision: {PRECISION}")
+# print(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
 BASE_MODEL_CONFIG = {
     'latent_dim_x': 16,
@@ -90,8 +90,10 @@ def set_dataloaders(batch_size=BATCH_SIZE, target=BASE_MODEL_CONFIG['target']):
     valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=True,
                             hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION, 
                             target=target)
-    train_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
-    val_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=False)
+    train_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True,
+                                    num_workers=8, pin_memory=True)
+    val_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=False, 
+                                  num_workers=8, pin_memory=True)
     logging.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(valid_set)}")
     return train_loader, val_loader
 
@@ -127,8 +129,10 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         num_val_batches = len(val_loader)
     else:
         num_train_batches = int( len(train_loader) * datafrac )
+        num_train_batches = max(num_train_batches, 1)  # Ensure at least 1 batch is used
         logging.info(f"Using {num_train_batches} batches for training and validation based on data fraction {datafrac} out of {len(train_loader)} input batches.")
         num_val_batches = int( len(val_loader) * datafrac )
+        num_val_batches = max(num_val_batches, 1)  # Ensure at least 1 batch is used
         logging.info(f"Using {num_val_batches} batches for validation based on data fraction {datafrac} out of {len(val_loader)} input batches.")
 
     # Check if model parameters contain NaN or Inf before training
@@ -496,6 +500,9 @@ def load_flex_model(configpath=None, model_path=None):
         model.load_state_dict(torch.load(model_path, map_location=DEVICE))
         logging.info(f"Loaded model from {model_path}")
     # NOTE: Model is moved to desired device and precision during training!
+    if DEVICE.type == 'cuda':
+        model = torch.compile(model, mode='max-autotune')  # Compile the model for faster training (PyTorch 2.0+)
+        logging.info("Model compiled with torch.compile for faster training.")
     return model
 
 
@@ -654,6 +661,8 @@ if __name__ == "__main__":
         if isinstance(handler, logging.FileHandler):
             handler.setLevel(max(handler.level, logging.INFO))
 
+    print(f'Working on device: {DEVICE}, with precision: {PRECISION}')
+
     if args.optuna:
         run_optuna()
     elif args.train:
@@ -666,4 +675,5 @@ if __name__ == "__main__":
         logging.info("Running dummy training with 10 batches for training loop testing and debugging!")
         run_training(configpath=args.model_config,
                      model_path=args.model_path,
-                     epochs=1, datafrac=0.01, fname='dummyrun-')
+                     batch_size=1024,
+                     epochs=2, datafrac=0.01, fname='dummyrun-')

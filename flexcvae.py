@@ -143,7 +143,6 @@ class BaseCoder(nn.Module):
         # However, for devices like "mps" (Apple Silicon) we can use float32 since mps does not support float64 well.
         self.precision = kwargs.get('precision', 'float64')
 
-    # ----- basic bricks -----
     def linear_layer(self, in_features: int, out_features: int,
                      *, is_last: bool = False) -> nn.Sequential:
         seq = [nn.Linear(in_features, out_features)]
@@ -169,7 +168,6 @@ class BaseCoder(nn.Module):
             seq.append(self._drop)
         return nn.Sequential(*seq).to(getattr(torch, self.precision))  # ensure specified precision for all layers
 
-    # ----- stage builders (backwards-friendly) -----
     def fc(self, in_features: Sequence[int] = None, out_features: Sequence[int] = None, *,
            n_layers: Optional[int] = None,
            sizes: Optional[Sequence[int]] = None,
@@ -219,7 +217,7 @@ class BaseCoder(nn.Module):
             pool_kernel_size: Optional[Sequence[Optional[int]]] = None,
             n_layers: Optional[int] = None,
             use_last_activation: bool = False) -> nn.Sequential:
-        # Defensive: auto-expand single values to lists of n_layers length
+        
         def expand(val, n):
             if isinstance(val, (list, tuple)):
                 return list(val)
@@ -248,7 +246,6 @@ class BaseCoder(nn.Module):
         dil   = expand(dilation, n_layers)
         pool  = expand(pool_kernel_size if pool_kernel_size is not None else None, n_layers)
 
-        # Validate lengths
         if not (len(in_c) == len(out_c) == len(ksz) == len(dil) == len(pool) == n_layers):
             raise ValueError(f"CNN spec length mismatch: in_channels={in_c}, out_channels={out_c}, kernel_size={ksz}, dilation={dil}, pool_kernel_size={pool}, n_layers={n_layers}")
 
