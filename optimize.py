@@ -91,10 +91,11 @@ def set_dataloaders(batch_size=BATCH_SIZE, target=BASE_MODEL_CONFIG['target']):
     valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=True,
                             hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION, 
                             target=target)
+    # NOTE: 'pin_memory' doesn't work if we already passed the data to GPU inside the CustomDataset!
     train_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True,
-                                    num_workers=8, pin_memory=True)
+                                    num_workers=8, pin_memory=False)
     val_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=False, 
-                                  num_workers=8, pin_memory=True)
+                                  num_workers=8, pin_memory=False)
     logging.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(valid_set)}")
     return train_loader, val_loader
 
@@ -663,7 +664,7 @@ if __name__ == "__main__":
             handler.setLevel(max(handler.level, logging.INFO))
 
     print(f'Working on device: {DEVICE}, with precision: {PRECISION}')
-    
+
     mp.set_start_method('spawn')
 
     if args.optuna:
