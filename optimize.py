@@ -18,6 +18,7 @@ import optuna
 
 import torch
 import torch.nn.functional as F
+import torch.multiprocessing as mp
 import numpy as np
 
 from datacvae import CustomDataset, CustomDataLoader
@@ -662,6 +663,8 @@ if __name__ == "__main__":
             handler.setLevel(max(handler.level, logging.INFO))
 
     print(f'Working on device: {DEVICE}, with precision: {PRECISION}')
+ã   
+    mp.set_start_method('spawn')
 
     if args.optuna:
         run_optuna()
