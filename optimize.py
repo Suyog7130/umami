@@ -663,7 +663,7 @@ if __name__ == "__main__":
             handler.setLevel(max(handler.level, logging.INFO))
 
     print(f'Working on device: {DEVICE}, with precision: {PRECISION}')
-ã   
+    
     mp.set_start_method('spawn')
 
     if args.optuna:
