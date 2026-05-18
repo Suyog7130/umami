@@ -38,8 +38,8 @@ NOW = TODAY + '-' + TIME
 # -- define some constants for waveform generation
 SAMPLE_RATE = 8192  # Hz
 DURATION = 1.0  # seconds
-FMIN = 40.0  # Hz
-FREF = 40.0  # Hz
+FMIN = 20.0  # Hz
+FREF = 50.0  # Hz
 
 
 if torch.cuda.is_available():
@@ -144,40 +144,53 @@ def main(args, outdir='../results/{TODAY}', label='umamipe'):
     injection_generator = WaveformGenerator(
         duration=DURATION,
         sampling_frequency=SAMPLE_RATE,
-        time_domain_source_model=bilby.gw.source.lal_binary_black_hole,
+        # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
+        frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole,
         waveform_arguments=dict(
-            waveform_approximant="SEOBNRv4",
+            waveform_approximant="IMRPhenomPv2",
             reference_frequency=FREF,
             minimum_frequency=FMIN,
+            mode_array=[[2,2]],
+            catch_waveform_errors=True, 
         )
     )
     print("Injection generator initialized with SEOBNRv4 waveform model.")
     
     # -- Our ML model is only for [m1,m2,chi1z,chi2z], 
     # so we will just set all other parameters to some default values for now!
+    # injection_parameters = dict(
+    #     mass_1=60.0,
+    #     mass_2=60.0,
+    #     a_1=0.5,  # spin-magnitude of the primary black hole
+    #     a_2=0.5,  # spin-magnitude of the secondary black hole
+    #     tilt_1=0.0,  # tilt angle of the primary black hole's spin vector with respect to the orbital angular momentum
+    #     tilt_2=0.0,  # tilt angle of the secondary black hole's spin vector with respect to the orbital angular momentum
+    #     phi_12=0.0,  # azimuthal angle between the two spin vectors in the plane of the orbit
+    #     phi_jl=0.0,  # azimuthal angle between the total angular momentum and the orbital angular momentum in the plane of the orbit
+    #     luminosity_distance=400.0,
+    #     theta_jn=0.0,  # angle between the total angular momentum and the line of sight, aka inclination angle
+    #     # psi=2.659,
+    #     phase=0.0,
+    #     geocent_time=1126259642.413,
+    #     # ra=1.375,
+    #     # dec=-1.2108,
+    # )
     injection_parameters = dict(
-        mass_1=50.0,
-        mass_2=60.0,
-        a_1=0.5,  # spin-magnitude of the primary black hole
-        a_2=0.5,  # spin-magnitude of the secondary black hole
-        tilt_1=0.0,  # tilt angle of the primary black hole's spin vector with respect to the orbital angular momentum
-        tilt_2=0.0,  # tilt angle of the secondary black hole's spin vector with respect to the orbital angular momentum
-        phi_12=0.0,  # azimuthal angle between the two spin vectors in the plane of the orbit
-        phi_jl=0.0,  # azimuthal angle between the total angular momentum and the orbital angular momentum in the plane of the orbit
-        luminosity_distance=400.0,
-        theta_jn=0.0,  # angle between the total angular momentum and the line of sight, aka inclination angle
-        # psi=2.659,
-        phase=0.0,
-        geocent_time=1126259642.413,
-        # ra=1.375,
-        # dec=-1.2108,
-    )
-
-    # Fixed arguments passed into the source model
-    waveform_arguments = dict(
-        waveform_approximant="SEOBNRv4",
-        reference_frequency=FREF,
-        minimum_frequency=FMIN,
+    mass_1=36.0,
+    mass_2=29.0,
+    a_1=0.4,
+    a_2=0.3,
+    tilt_1=0.0,
+    tilt_2=0.0,
+    phi_12=0.0,
+    phi_jl=0.0,
+    luminosity_distance=2000.0,
+    theta_jn=0.4,
+    psi=2.659,
+    phase=1.3,
+    geocent_time=1126259642.413,
+    ra=1.375,
+    dec=-1.2108,
     )
 
     # Set up interferometers.  In this case we'll use two interferometers
@@ -191,7 +204,7 @@ def main(args, outdir='../results/{TODAY}', label='umamipe'):
     )
     ifos.inject_signal(
         waveform_generator=injection_generator,
-        parameters=injection_parameters
+        parameters=injection_parameters,
     )
     print("Signal injected into interferometer data.")
 
