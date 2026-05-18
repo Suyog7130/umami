@@ -73,9 +73,10 @@ from cvae import CVAE, CAE
 
 from utils import polarizations_from_ampfreq, calc_polarization_mismatch
 
-from data import SEOBNRv4
+# from data import SEOBNRv4
 
 import random
+
 markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
 
 if torch.cuda.is_available():
@@ -699,7 +700,7 @@ class Test:
         if 'modeltype' not in MODEL_CONFIG:
             logging.warning("modeltype not specified in MODEL_CONFIG, defaulting to 'flexcvae'.")
             MODEL_CONFIG['modeltype'] = 'flexcvae'
-        if MODEL_CONFIG['modeltype'].lower() not in ['flexcvae', 'flexcae']:
+        if MODEL_CONFIG['modeltype'].lower() not in ['flexcvae', 'flexcae', 'flexcaephase', 'original']:
             logging.error(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', or 'flexcaephase'.")
             raise ValueError(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', or 'flexcaephase'.")
 
@@ -716,12 +717,17 @@ class Test:
                 # -- For amp-phase target, we need to set the loss function type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.
             MODEL_CONFIG['loss_func_type'] = 'mismatch_nokl'
             logging.warning("For 'amp_phase' target, setting loss_func_type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.")  
-        elif MODEL_CONFIG.get('modeltype', 'flexcvae').lower() == 'flexcae':
+        elif MODEL_CONFIG['modeltype'].lower() == 'flexcae':
             model = FlexCAE(
                 MODEL_CONFIG=MODEL_CONFIG,
                 input_shape=(2, PRESET_ARRAY_SIZE),
                 num_classes=4,
             )
+        elif MODEL_CONFIG['modeltype'].lower() == 'original':
+            logging.info("Initializing original CVAE model architecture for testing.")
+            model = CVAE(input_shape=(2, 8190), 
+                         num_classes=4, key_shape=(2,2),
+                        MODEL_CONFIG=MODEL_CONFIG)
         else:
             model = FlexTwoC2E1D(
                 MODEL_CONFIG=MODEL_CONFIG,

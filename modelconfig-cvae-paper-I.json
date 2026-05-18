@@ -1,4 +1,5 @@
 {
+    "modeltype": "original",
     "batch_size": 50,
     "latent_dim_x": 8,
     "latent_dim_key": 3,
@@ -31,7 +32,7 @@
     "decoder_input_type": "concat",
     "embed_labels_in_decoder": false,
     "model_class": "TwoC2E1D",
-    "model_module": "flexcvae",
+    "model_module": "cvae",
     "labels_mean": [
         39.70482635498047,
         40.19491195678711,

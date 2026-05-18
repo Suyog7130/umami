@@ -25,6 +25,7 @@ from datacvae import CustomDataset, CustomDataLoader
 # from multicvae import TwoC2E1D
 
 from flexcvae import FlexTwoC2E1D, FlexCAE, FlexCAEPhase
+from cvae import CVAE
 
 
 TODAY = datetime.date.today().strftime("%Y%m%d")
@@ -449,9 +450,9 @@ def load_flex_model(configpath=None, model_path=None):
     if 'modeltype' not in MODEL_CONFIG:
         logging.warning("modeltype not specified in MODEL_CONFIG, defaulting to 'flexcvae'.")
         MODEL_CONFIG['modeltype'] = 'flexcvae'
-    if MODEL_CONFIG['modeltype'].lower() not in ['flexcvae', 'flexcae']:
-        logging.error(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', or 'flexcaephase'.")
-        raise ValueError(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', or 'flexcaephase'.")
+    if MODEL_CONFIG['modeltype'].lower() not in ['flexcvae', 'flexcae', 'flexcaephase', 'original']:
+        logging.error(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', 'flexcaephase', or 'original'.")
+        raise ValueError(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', 'flexcaephase', or 'original'.")
 
     if MODEL_CONFIG.get('target', None) is not None:
         logging.info(f"Model will be initialized with target: {MODEL_CONFIG['target']}")
@@ -466,12 +467,16 @@ def load_flex_model(configpath=None, model_path=None):
             # -- For amp-phase target, we need to set the loss function type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.
         MODEL_CONFIG['loss_func_type'] = 'mismatch_nokl'
         logging.warning("For 'amp_phase' target, setting loss_func_type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.")  
-    elif MODEL_CONFIG.get('modeltype', 'flexcvae').lower() == 'flexcae':
+    elif MODEL_CONFIG['modeltype'].lower() == 'flexcae':
         model = FlexCAE(
             MODEL_CONFIG=MODEL_CONFIG,
             input_shape=(2, PRESET_ARRAY_SIZE),
             num_classes=4,
         )
+    elif MODEL_CONFIG['modeltype'].lower() == 'original':
+        logging.info("Initializing original CVAE model architecture for testing.")
+        model = CVAE(input_shape=(2, 8190), 
+                    num_classes=4, key_shape=(2,2))
     else:
         model = FlexTwoC2E1D(
             MODEL_CONFIG=MODEL_CONFIG,
