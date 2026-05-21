@@ -20,6 +20,7 @@ import datetime
 
 import bilby
 from bilby.core.utils import logger
+from bilby.core import utils
 from bilby.gw import WaveformGenerator
 
 
@@ -54,19 +55,40 @@ else:
 print(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
 
-bilby.core.utils.setup_logger(outdir=f'../results/{TODAY}', label='umamipe', log_level="DEBUG")
+bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="DEBUG")
 
 # Set up a random seed for result reproducibility.  This is optional!
 bilby.core.utils.random.seed(42)
 
 
-def get_td_SEOBNRv4ml(parameters, mlmodel):
+def get_td_SEOBNRv4ml(time_array, mass_1, mass_2, spin_1z, spin_2z, **kwargs):
     """
     Generate a waveform using the ML model based on the input parameters.
+
+    Arguments
+    ---------
+        time_array: np.ndarray
+            The array of time points at which to evaluate the waveform.
+            This input is ignored by the waveform generator!
+        mass_1: float
+            The mass of the first compact object.
+        mass_2: float
+            The mass of the second compact object.
+        spin_1z: float
+            The z-component of the dimensionless spin of the first compact object.
+        spin_2z: float
+            The z-component of the dimensionless spin of the second compact object.
     """
+    mlmodel='../trained-models/model-20251004_072338-10'
+    print("Generating waveform using ML model for parameters:", locals())
+    print("Time array shape:", time_array.shape)
     # -- convert parameters to tensor and move to model device
-    labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
-                            dtype=torch.float32).unsqueeze(0).to(mlmodel.MODEL_CONFIG.device)
+    if type(parameters) is dict:
+        labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
+                                dtype=torch.float32).unsqueeze(0).to(mlmodel.MODEL_CONFIG.device)
+    else:
+        print(parameters.shape)
+        exit()
     # -- generate waveform using the model's generate method
     generated_waveform = mlmodel.generate(labels)
     return generated_waveform.cpu().numpy().flatten()  # Return as 1D numpy array
@@ -80,17 +102,122 @@ class MLWaveformGenerator(WaveformGenerator):
     We will use the `generate()` method of the ML model to produce the waveform, 
     and then return it in the format expected by Bilby.
     """
-    def __init__(self, mlmodel, **kwargs):
+    def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.mlmodel = mlmodel
-        logger.info(f"ML model loaded!")
     
-    def time_domain_strain(self, parameters: dict):
+    def time_domain_strain(self, parameters=None):
         """
         Override the time_domain_strain method to use the ML model for waveform generation.
         This method is called by Bilby to get the strain for given parameters.
         """
-        return self.time_domain_source_model(parameters, self.mlmodel)
+        print("Generating waveform using ML model for parameters:", parameters)
+        return self._calculate_strain(model=self.time_domain_source_model,
+                                      model_data_points=self.time_array,
+                                      parameters=parameters,
+                                      transformation_function=utils.infft,
+                                      transformed_model=self.frequency_domain_source_model,
+                                      transformed_model_data_points=self.frequency_array)
+
+    def frequency_domain_strain(self, parameters=None):
+        print("Generating waveform using ML model for parameters:", parameters)
+        return self._calculate_strain(model=self.frequency_domain_source_model,
+                                      model_data_points=self.frequency_array,
+                                      parameters=parameters,
+                                      transformation_function=utils.nfft,
+                                      transformed_model=self.time_domain_source_model,
+                                      transformed_model_data_points=self.time_array)
+    
+    def _strain_from_model(self, model_data_points, model, parameters):
+        print("Generating waveform using ML model for parameters:", parameters)
+        return model(model_data_points, **parameters)
+    
+    def _calculate_strain(self, model, model_data_points, transformation_function, transformed_model,
+                          transformed_model_data_points, parameters):
+        if parameters is None:
+            parameters = self.parameters
+        if parameters == self._cache['parameters'] and self._cache['model'] == model and \
+                self._cache['transformed_model'] == transformed_model:
+            return self._cache['waveform']
+        else:
+            self._cache['parameters'] = parameters.copy()
+            self._cache['model'] = model
+            self._cache['transformed_model'] = transformed_model
+        parameters = self._format_parameters(parameters)
+        print("Generating waveform using ML model for parameters:", parameters)
+        print(f"Using model: {model} and transformed model {transformed_model}")
+        if model is not None:
+            model_strain = self._strain_from_model(model_data_points, model, parameters)
+        elif transformed_model is not None:
+            model_strain = self._strain_from_transformed_model(transformed_model_data_points, transformed_model,
+                                                               transformation_function, parameters)
+        else:
+            raise RuntimeError("No source model given")
+        self._cache['waveform'] = model_strain
+        return model_strain
+
+    def _format_parameters(self, parameters):
+        """
+        Removes any parameters that are not in the source model's expected parameter keys, 
+        and adds any additional parameters that are needed for waveform generation (e.g., waveform_arguments)
+        """
+        if not isinstance(parameters, dict):
+            raise TypeError('"parameters" must be a dictionary.')
+        new_parameters = parameters.copy()
+        # convert parameters to lal BBH parameters using the provided conversion function
+        new_parameters, _ = self.parameter_conversion(new_parameters)
+        print("Formatted parameters for waveform generation:", new_parameters)
+
+        from bilby.gw.conversion import bilby_to_lalsimulation_spins
+
+        iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = bilby_to_lalsimulation_spins(
+            theta_jn=parameters["theta_jn"],
+            phi_jl=parameters["phi_jl"],
+            tilt_1=parameters["tilt_1"],
+            tilt_2=parameters["tilt_2"],
+            phi_12=parameters["phi_12"],
+            a_1=parameters["a_1"],
+            a_2=parameters["a_2"],
+            mass_1=new_parameters["mass_1"] * utils.solar_mass,
+            mass_2=new_parameters["mass_2"] * utils.solar_mass,
+            reference_frequency=FREF,
+            phase=parameters["phase"],
+        )
+        print("Converted spins and inclination:", iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z)
+
+        ml_parameters = {
+            "mass_1": new_parameters["mass_1"],
+            "mass_2": new_parameters["mass_2"],
+            "spin_1z": spin_1z,
+            "spin_2z": spin_2z,
+        }
+
+        for key in self.source_parameter_keys.symmetric_difference(
+            ml_parameters.keys()):
+            new_parameters.pop(key)
+        new_parameters.update(ml_parameters)
+        new_parameters.update(self.waveform_arguments)
+        return new_parameters
+
+    def _strain_from_transformed_model(
+        self, transformed_model_data_points, transformed_model, transformation_function, parameters
+    ):
+        print("Generating waveform using ML model for parameters:", parameters)
+        transformed_model_strain = self._strain_from_model(
+            transformed_model_data_points, transformed_model, parameters
+        )
+
+        if isinstance(transformed_model_strain, np.ndarray):
+            return transformation_function(transformed_model_strain, self.sampling_frequency)
+
+        model_strain = dict()
+        for key in transformed_model_strain:
+            if transformation_function == utils.nfft:
+                model_strain[key], _ = \
+                    transformation_function(transformed_model_strain[key], self.sampling_frequency)
+            else:
+                model_strain[key] = transformation_function(transformed_model_strain[key], self.sampling_frequency)
+        return model_strain
+
 
 
 
@@ -133,10 +260,9 @@ def main(args, outdir='../results/{TODAY}', label='umamipe'):
     # NOTE: We will only use this for the likelihood evaluation in the sampler!
     # Whereas, the injection is performed using LAL waveform!
     waveform_generator = MLWaveformGenerator(
-        mlmodel=model,
         duration=DURATION,
         sampling_frequency=SAMPLE_RATE,
-        time_domain_source_model=get_td_SEOBNRv4ml
+        time_domain_source_model=get_td_SEOBNRv4ml,
         )
     print("MLWaveformGenerator initialized with the loaded model.")
 
