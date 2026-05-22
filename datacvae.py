@@ -1314,15 +1314,13 @@ def save_params_from_hdf(hdf_fname, txt_fname='params'):
     os.makedirs(os.path.dirname(txt_fname), exist_ok=True)
     with h5py.File(hdf_fname, 'r') as hf, open(txt_fname, 'w') as f:
         logging.info(f'Reading parameters from {hdf_fname} and saving to {txt_fname}')
-        f.write("key,mass1,mass2,chi1z,chi2z\n")
+        attr_names = ['mass1', 'mass2', 'spin1z', 'spin2z', 'delta_t', 'f_lower', 'sample_rate', 'padded', 'truncated']
+        logging.info(f'Attributes found in HDF5 file: {attr_names}')
+        f.write(','.join(['sample'] + attr_names) + '\n')
         for key in hf.keys():
             grp = hf[key]
-            m1 = grp.attrs['mass1']
-            m2 = grp.attrs['mass2']
-            chi1 = grp.attrs['spin1z']
-            chi2 = grp.attrs['spin2z']
-            f.write(f"{key},{m1},{m2},{chi1},{chi2}\n")
-            logging.info(f'Wrote: {key},{m1},{m2},{chi1},{chi2}')
+            attr_values = [str(grp.attrs.get(attr, 'NA')) for attr in attr_names]
+            f.write(','.join([key] + attr_values) + '\n')
     logging.info(f"Saved parameters to {txt_fname} successfully.")
 
 
@@ -2557,8 +2555,6 @@ if __name__=="__main__":
                         help='Number of samples to generate for the specified operation.')
     parser.add_argument('--qlim', type=int, default=5,
                         help='Maximum mass ratio limit for generating waveforms.')
-    parser.add_argument('--qlim', type=int, default=5,
-                        help='Maximum mass ratio limit for generating waveforms.')
 
     parser.add_argument('--plotmass', action='store_true', default=False,
                         help='Plot mass distribution')
@@ -2570,8 +2566,6 @@ if __name__=="__main__":
                         help='Generate example frequency-domain strain data to check code.')
     parser.add_argument('--approximant', nargs='+', default=['IMRPhenomD'],
                         help='Approximant(s) to use. Can be a single value or a list.')
-    parser.add_argument('--otherparams', action='store_true', default=False,
-                        help='Use other parameters for the waveform generation.')
     
     parser.add_argument('--otherparams', action='store_true', default=False,
                         help='Use other parameters for the waveform generation.')
@@ -2596,8 +2590,6 @@ if __name__=="__main__":
                         help='Plot the duration of the waveform as a function of the sample rate.')
     parser.add_argument('--flower_duration_3d_plot', '-flower3d', action='store_true', default=False,
                         help='3D plot of duration as a function of m1, m2, and f_lower.')
-    parser.add_argument('--checkdatasets', action='store_true', default=False,
-                        help='Check the datasets obtained via changing f_cutoff and f_sample.')
     parser.add_argument('--checkdatasets', action='store_true', default=False,
                         help='Check the datasets obtained via changing f_cutoff and f_sample.')
 

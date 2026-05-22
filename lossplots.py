@@ -692,6 +692,28 @@ def plot_timecompare_from_file(fname=None, dir=DIR, time=TIME, fontsize=12, labe
 
 
 
+def read_params_from_file():
+    """
+    Reads the parameters of training data from a csv file,
+    and prints the summary of the parameters in a nice format. 
+    The parameters file columns are:
+        sample,mass1,mass2,spin1z,spin2z,delta_t,f_lower,sample_rate,padded,truncated
+    """
+    params_file = '../data/params-SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen.csv'
+    df = pd.read_csv(params_file, header=0)
+    logging.info(f"Summary of training data parameters from {params_file}:")
+    logging.info(f"Total samples: {len(df)}")
+    logging.info(f"Mass1: min={df['mass1'].min():.2f}, max={df['mass1'].max():.2f}, mean={df['mass1'].mean():.2f}, median={df['mass1'].median():.2f}")
+    logging.info(f"Mass2: min={df['mass2'].min():.2f}, max={df['mass2'].max():.2f}, mean={df['mass2'].mean():.2f}, median={df['mass2'].median():.2f}")
+    logging.info(f"Spin1z: min={df['spin1z'].min():.2f}, max={df['spin1z'].max():.2f}, mean={df['spin1z'].mean():.2f}, median={df['spin1z'].median():.2f}")
+    logging.info(f"Spin2z: min={df['spin2z'].min():.2f}, max={df['spin2z'].max():.2f}, mean={df['spin2z'].mean():.2f}, median={df['spin2z'].median():.2f}")
+    logging.info(f"Delta_t: min={df['delta_t'].min():.4f}, max={df['delta_t'].max():.4f}, mean={df['delta_t'].mean():.4f}, median={df['delta_t'].median():.4f}")
+    logging.info(f"F_lower: min={df['f_lower'].min():.2f}, max={df['f_lower'].max():.2f}, mean={df['f_lower'].mean():.2f}, median={df['f_lower'].median():.2f}")
+    logging.info(f"Sample_rate: min={df['sample_rate'].min():.2f}, max={df['sample_rate'].max():.2f}, mean={df['sample_rate'].mean():.2f}, median={df['sample_rate'].median():.2f}")
+    print(df.head())
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot training and validation loss from a file.")
     parser.add_argument('--histogram', action='store_true',
@@ -732,4 +754,6 @@ if __name__ == "__main__":
     # plot_timecompare_from_file()
     # plot_flexcvae_loss(dir=args.dir, time=args.time)
     # plot_uq_hist_from_file(datatype='nwaves')
-    plot_loss_from_file(onlyprintsteps=False)
+    # plot_loss_from_file(onlyprintsteps=False)
+    read_params_from_file()
+
