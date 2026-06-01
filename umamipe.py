@@ -123,15 +123,19 @@ def convert_to_ml_parameters(parameters):
         raise TypeError('"parameters" must be a dictionary.')
     new_parameters = parameters.copy()
 
-    if "mass_ratio" in parameters and "chirp_mass" in parameters:
+    m1 = parameters.get("mass_1", None)
+    m2 = parameters.get("mass_2", None)
+    if m1 is None or m2 is None:
+        if "mass_ratio" not in parameters or "chirp_mass" not in parameters:
+            raise ValueError("Missing 'mass_ratio' or 'chirp_mass' in parameters for mass conversion.")
         q = parameters["mass_ratio"]
         M_chirp = parameters["chirp_mass"]
         M_total = M_chirp * (q**(-3/5) + q**(2/5))**(5/3)
         m1 = M_total / (1 + q)
         m2 = M_total - m1
-        new_parameters["mass_1"] = m1
-        new_parameters["mass_2"] = m2
-    print(f"Converted (mass_ratio, chirp_mass) to (mass_1, mass_2): {m1}, {m2}")
+        print(f"Converted (mass_ratio, chirp_mass) to (mass_1, mass_2): {m1}, {m2}")
+    new_parameters["mass_1"] = m1
+    new_parameters["mass_2"] = m2
     # new_parameters.pop("mass_ratio", None)
     # new_parameters.pop("chirp_mass", None)
 
@@ -146,8 +150,8 @@ def convert_to_ml_parameters(parameters):
             phi_12=parameters["phi_12"],
             a_1=parameters["a_1"],
             a_2=parameters["a_2"],
-            mass_1=new_parameters.get("mass_1", parameters.get("mass_1")),
-            mass_2=new_parameters.get("mass_2", parameters.get("mass_2")),
+            mass_1=new_parameters["mass_1"] * utils.solar_mass,
+            mass_2=new_parameters["mass_2"] * utils.solar_mass,
             reference_frequency=FREF,
             phase=parameters.get("phase", 0.0),
         )
