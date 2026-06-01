@@ -87,7 +87,7 @@ def get_td_SEOBNRv4ml(time_array, mass_1, mass_2, spin_1z, spin_2z):
         np.ndarray
             The generated time-domain strain waveform as a 1D numpy array.
     """
-    mlmodel='../trained-models/model-20251004_072338-10'
+    mlmodel=f'{PROJECT_DIR}/trained-models/model-20251004_072338-10'
     print("Generating waveform using ML model for parameters:", locals())
     print("Time array shape:", time_array.shape)
     parameters = {
@@ -233,14 +233,17 @@ class MLWaveformGenerator(WaveformGenerator):
 
 
 
-def main(args, outdir='../results/{TODAY}', label='umamipe'):
+def main(args, label='umamipe'):
+    project_dir = '../' + args.project_dir + '/'
+    outdir = os.path.join(project_dir, f'results/{TODAY}')
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
-    if not args.model_path.startswith('../trained-models/'):
-        model_path = os.path.join('../trained-models/', args.model_path)
-    else:
-        model_path = args.model_path
+    model_path = os.path.join(project_dir, 'trained-models', args.model_name)
+    if not os.path.isfile(model_path):
+        logging.error(f"Provided MODEL_PATH does not exist: {model_path}")
+        raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
+    logging.info(f"Using MODEL_PATH: {model_path}")
 
     # configpath = args.model_config
     # if configpath is not None:
@@ -417,10 +420,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a CVAE model on GW waveforms")
     parser.add_argument('--label', type=str, default='umamipe',
                         help="Label for the analysis (default: umamipe)")
-    parser.add_argument('--model-config', type=str, default=None,
-                        help="Path to the model configuration JSON file (default: None)")
-    parser.add_argument('--model-path', type=str, default=None,
-                        help="Path to the trained model checkpoint (default: None)")
+    parser.add_argument('--project-dir', type=str, choices=['cvae@taiwan', 'v0p1', '@alvin', '@korea'], 
+                        default='v0p1',
+                        help="Base directory for the project (default: current directory)")
+    parser.add_argument('--model-config', type=str, default='modelconfig-cvae-paper-I',
+                        help="Name of the model configuration JSON file (default: None)")
+    parser.add_argument('--model-name', type=str, default='model-20251004_072338-10',
+                        help="Name of the trained model checkpoint (default: None)")
     
     parser.add_argument('--with-original-model', action='store_true',
                         help="Whether to use the original CVAE model instead of the FlexCVAE (default: False)")

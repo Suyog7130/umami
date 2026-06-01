@@ -495,8 +495,6 @@ def load_flex_model(configpath=None, model_path=None):
     if model_path is None:
         logging.info("No model path provided. Model will be initialized with random weights.")
     else:
-        model_dir = '../trained-models/'
-        model_path = model_dir + model_path if not model_path.startswith(model_dir) else model_path
         if not os.path.isfile(model_path):
             logging.error(f"Provided model path does not exist: {model_path}")
             raise FileNotFoundError(f"Model file not found at {model_path}")
