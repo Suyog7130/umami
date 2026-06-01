@@ -32,6 +32,8 @@ from flexcvae import FlexTwoC2E1D, FlexCAE, FlexCAEPhase
 from optimize import load_flex_model
 from cvae import CVAE
 
+PROJECT_DIR = 'v0p1'
+
 TODAY = datetime.date.today().strftime("%Y%m%d")
 TIME = datetime.datetime.now().strftime("%H%M%S")
 NOW = TODAY + '-' + TIME
@@ -61,7 +63,7 @@ bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_le
 bilby.core.utils.random.seed(42)
 
 
-def get_td_SEOBNRv4ml(time_array, mass_1, mass_2, spin_1z, spin_2z):
+def get_td_SEOBNRv4ml(time_array, **kwargs):
     """
     Generate a waveform using the ML model based on the input parameters.
 
@@ -71,30 +73,29 @@ def get_td_SEOBNRv4ml(time_array, mass_1, mass_2, spin_1z, spin_2z):
             The array of time points at which to evaluate the waveform.
             This input is ignored by the waveform generator!
 
-    NOTE: Bilby send a list of `*parameters` to the waveform generator function!
-    We assume this list contains the following parameters (after conversion to LAL format):
-        mass_1: float
-            Mass of the primary black hole in solar masses.
-        mass_2: float
-            Mass of the secondary black hole in solar masses.
-        spin_1z: float
-            Dimensionless spin of the primary black hole along the z-axis.
-        spin_2z: float
-            Dimensionless spin of the secondary black hole along the z-axis.
+    NOTE: Bilby sent a list of `*parameters` to the waveform generator function!
+    We assume this list contains either [m1, m2, chi1z, chi2z] or [mass_1, mass_2, spin_1z, spin_2z],
+    or ['mass_ratio', 'chirp_mass', 'a_1', 'a_2'] depending on how the parameters are formatted!
+    
+    NOTE: Additionally, the `**kwargs` should contain the `modelpath` and `configpath` for the ML model, 
+    which we will use to load the model and generate the waveform!
 
     Returns
     -------
         np.ndarray
             The generated time-domain strain waveform as a 1D numpy array.
     """
-    mlmodel=f'{PROJECT_DIR}/trained-models/model-20251004_072338-10'
+    print("Received parameters for waveform generation:", kwargs)
+    mlmodel=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
     print("Generating waveform using ML model for parameters:", locals())
     print("Time array shape:", time_array.shape)
+    if "model_path" not in kwargs or "config_path" not in kwargs:
+        raise ValueError("Missing 'model_path' or 'config_path' in kwargs for waveform generation.")
     parameters = {
-        "mass_1": mass_1,
-        "mass_2": mass_2,
-        "spin_1z": spin_1z,
-        "spin_2z": spin_2z,
+        "mass_1": mass1 if mass1 is not None else kwargs.get("mass_1", kwargs.get("m1")),
+        "mass_2": mass2 if mass2 is not None else kwargs.get("mass_2", kwargs.get("m2")),
+        "spin_1z": spin1z if spin1z is not None else kwargs.get("spin_1z", kwargs.get("chi1z")),
+        "spin_2z": spin2z if spin2z is not None else kwargs.get("spin_2z", kwargs.get("chi2z")),
     }
     # -- convert parameters to tensor and move to model device
     if type(parameters) is not dict:
@@ -104,6 +105,57 @@ def get_td_SEOBNRv4ml(time_array, mass_1, mass_2, spin_1z, spin_2z):
     exit(0)
     generated_waveform = mlmodel.generate(labels)
     return generated_waveform.cpu().numpy().flatten()  # Return as 1D numpy array
+
+def convert_to_ml_parameters(parameters):
+    """
+    Convert the input parameters from the format expected by Bilby to the format expected by the ML model.
+    The ML model expects parameters in the format [mass_1, mass_2, spin_1z, spin_2z], whereas Bilby may provide them in a different format (e.g., mass_ratio, chirp_mass, a_1, a_2, tilt_1, tilt_2, etc.).
+
+    Arguments
+    ---------
+        parameters: dict
+            The input parameters in the format expected by Bilby (e.g., mass_1, mass_2, spin_1z, spin_2z, etc.)
+    Returns
+        dict
+            The converted parameters in the format expected by the ML model (e.g., mass_1, mass_2, spin_1z, spin_2z)
+    """
+    if not isinstance(parameters, dict):
+        raise TypeError('"parameters" must be a dictionary.')
+    new_parameters = parameters.copy()
+
+    if "mass_ratio" in parameters and "chirp_mass" in parameters:
+        q = parameters["mass_ratio"]
+        M_chirp = parameters["chirp_mass"]
+        M_total = M_chirp * (q**(-3/5) + q**(2/5))**(5/3)
+        m1 = M_total / (1 + q)
+        m2 = M_total - m1
+        new_parameters["mass_1"] = m1
+        new_parameters["mass_2"] = m2
+    print(f"Converted (mass_ratio, chirp_mass) to (mass_1, mass_2): {m1}, {m2}")
+    # new_parameters.pop("mass_ratio", None)
+    # new_parameters.pop("chirp_mass", None)
+
+    if "a_1" in parameters and "a_2" in parameters and "tilt_1" in parameters and "tilt_2" in parameters and \
+        "phi_12" in parameters and "phi_jl" in parameters and "theta_jn" in parameters:
+        from bilby.gw.conversion import bilby_to_lalsimulation_spins
+        iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = bilby_to_lalsimulation_spins(
+            theta_jn=parameters["theta_jn"],
+            phi_jl=parameters["phi_jl"],
+            tilt_1=parameters["tilt_1"],
+            tilt_2=parameters["tilt_2"],
+            phi_12=parameters["phi_12"],
+            a_1=parameters["a_1"],
+            a_2=parameters["a_2"],
+            mass_1=new_parameters.get("mass_1", parameters.get("mass_1")),
+            mass_2=new_parameters.get("mass_2", parameters.get("mass_2")),
+            reference_frequency=FREF,
+            phase=parameters.get("phase", 0.0),
+        )
+        new_parameters["spin_1z"] = spin_1z
+        new_parameters["spin_2z"] = spin_2z
+    print(f"Converted (a_i, tilt_i, phi_i) to (spin_i_z): {spin_1z}, {spin_2z}")
+    # TODO: Can pop out original parameters that are not needed by ML model.
+    return (new_parameters, None)
 
 class MLWaveformGenerator(WaveformGenerator):
     """
@@ -179,35 +231,36 @@ class MLWaveformGenerator(WaveformGenerator):
         new_parameters, _ = self.parameter_conversion(new_parameters)
         print("Formatted parameters for waveform generation:", new_parameters)
 
-        from bilby.gw.conversion import bilby_to_lalsimulation_spins
+        # from bilby.gw.conversion import bilby_to_lalsimulation_spins
 
-        iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = bilby_to_lalsimulation_spins(
-            theta_jn=parameters["theta_jn"],
-            phi_jl=parameters["phi_jl"],
-            tilt_1=parameters["tilt_1"],
-            tilt_2=parameters["tilt_2"],
-            phi_12=parameters["phi_12"],
-            a_1=parameters["a_1"],
-            a_2=parameters["a_2"],
-            mass_1=new_parameters["mass_1"] * utils.solar_mass,
-            mass_2=new_parameters["mass_2"] * utils.solar_mass,
-            reference_frequency=FREF,
-            phase=parameters["phase"],
-        )
-        print("Converted spins and inclination:", iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z)
+        # iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = bilby_to_lalsimulation_spins(
+        #     theta_jn=parameters["theta_jn"],
+        #     phi_jl=parameters["phi_jl"],
+        #     tilt_1=parameters["tilt_1"],
+        #     tilt_2=parameters["tilt_2"],
+        #     phi_12=parameters["phi_12"],
+        #     a_1=parameters["a_1"],
+        #     a_2=parameters["a_2"],
+        #     mass_1=new_parameters["mass_1"] * utils.solar_mass,
+        #     mass_2=new_parameters["mass_2"] * utils.solar_mass,
+        #     reference_frequency=FREF,
+        #     phase=parameters["phase"],
+        # )
+        # print("Converted spins and inclination:", iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z)
 
-        ml_parameters = {
-            "mass_1": new_parameters["mass_1"],
-            "mass_2": new_parameters["mass_2"],
-            "spin_1z": spin_1z,
-            "spin_2z": spin_2z,
-        }
+        # ml_parameters = {
+        #     "mass_1": new_parameters["mass_1"],
+        #     "mass_2": new_parameters["mass_2"],
+        #     "spin_1z": spin_1z,
+        #     "spin_2z": spin_2z,
+        # }
 
-        for key in self.source_parameter_keys.symmetric_difference(
-            ml_parameters.keys()):
-            new_parameters.pop(key)
-        new_parameters.update(ml_parameters)
+        # for key in self.source_parameter_keys.symmetric_difference(
+        #     ml_parameters.keys()):
+        #     new_parameters.pop(key)
+        # new_parameters.update(ml_parameters)
         new_parameters.update(self.waveform_arguments)
+        print("Final parameters for waveform generation:", new_parameters)
         return new_parameters
 
     def _strain_from_transformed_model(
@@ -278,6 +331,8 @@ def main(args, label='umamipe'):
         duration=DURATION,
         sampling_frequency=SAMPLE_RATE,
         time_domain_source_model=get_td_SEOBNRv4ml,
+        parameter_conversion=convert_to_ml_parameters,
+        waveform_arguments={'model_path': model_path, 'config_path': args.model_config},
         )
     print("MLWaveformGenerator initialized with the loaded model.")
 
@@ -421,8 +476,7 @@ if __name__ == "__main__":
     parser.add_argument('--label', type=str, default='umamipe',
                         help="Label for the analysis (default: umamipe)")
     parser.add_argument('--project-dir', type=str, choices=['cvae@taiwan', 'v0p1', '@alvin', '@korea'], 
-                        default='v0p1',
-                        help="Base directory for the project (default: current directory)")
+                        default=PROJECT_DIR, help="Base directory for the project (default: current directory)")
     parser.add_argument('--model-config', type=str, default='modelconfig-cvae-paper-I',
                         help="Name of the model configuration JSON file (default: None)")
     parser.add_argument('--model-name', type=str, default='model-20251004_072338-10',
