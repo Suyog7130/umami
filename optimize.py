@@ -419,7 +419,9 @@ def load_flex_model(configpath=None, model_path=None):
             MODEL_CONFIG['labels_mean'] = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
             MODEL_CONFIG['labels_std'] = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
     if MODEL_CONFIG['labels_mean'] is not None and MODEL_CONFIG['labels_std'] is not None:
-        # logging.warning('For now we will use predefined global params_mean and params_std for normalization instead of converting from MODEL_CONFIG, since the conversion is not working well and giving NaN values for some reason. This needs to be fixed later.')
+        # logging.warning('For now we will use predefined global params_mean and params_std for normalization 
+        # instead of converting from MODEL_CONFIG, since the conversion is not working well and giving NaN values 
+        # for some reason. This needs to be fixed later.')
         # labels_mean = params_mean.cpu().numpy()
         # labels_std = params_std.cpu().numpy()
         MODEL_CONFIG['labels_mean'] = torch.tensor(MODEL_CONFIG['labels_mean'], dtype=getattr(torch, PRECISION)).to(DEVICE)
@@ -464,7 +466,7 @@ def load_flex_model(configpath=None, model_path=None):
             input_shape=(2, PRESET_ARRAY_SIZE),
             num_classes=4,
         )
-            # -- For amp-phase target, we need to set the loss function type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.
+            # -- For amp-phase target, we need to set the loss function type to 'mismatch_nokl'
         MODEL_CONFIG['loss_func_type'] = 'mismatch_nokl'
         logging.warning("For 'amp_phase' target, setting loss_func_type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.")  
     elif MODEL_CONFIG['modeltype'].lower() == 'flexcae':

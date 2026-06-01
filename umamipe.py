@@ -61,7 +61,7 @@ bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_le
 bilby.core.utils.random.seed(42)
 
 
-def get_td_SEOBNRv4ml(time_array, mass_1, mass_2, spin_1z, spin_2z, **kwargs):
+def get_td_SEOBNRv4ml(time_array, mass_1, mass_2, spin_1z, spin_2z):
     """
     Generate a waveform using the ML model based on the input parameters.
 
@@ -70,26 +70,38 @@ def get_td_SEOBNRv4ml(time_array, mass_1, mass_2, spin_1z, spin_2z, **kwargs):
         time_array: np.ndarray
             The array of time points at which to evaluate the waveform.
             This input is ignored by the waveform generator!
+
+    NOTE: Bilby send a list of `*parameters` to the waveform generator function!
+    We assume this list contains the following parameters (after conversion to LAL format):
         mass_1: float
-            The mass of the first compact object.
+            Mass of the primary black hole in solar masses.
         mass_2: float
-            The mass of the second compact object.
+            Mass of the secondary black hole in solar masses.
         spin_1z: float
-            The z-component of the dimensionless spin of the first compact object.
+            Dimensionless spin of the primary black hole along the z-axis.
         spin_2z: float
-            The z-component of the dimensionless spin of the second compact object.
+            Dimensionless spin of the secondary black hole along the z-axis.
+
+    Returns
+    -------
+        np.ndarray
+            The generated time-domain strain waveform as a 1D numpy array.
     """
     mlmodel='../trained-models/model-20251004_072338-10'
     print("Generating waveform using ML model for parameters:", locals())
     print("Time array shape:", time_array.shape)
+    parameters = {
+        "mass_1": mass_1,
+        "mass_2": mass_2,
+        "spin_1z": spin_1z,
+        "spin_2z": spin_2z,
+    }
     # -- convert parameters to tensor and move to model device
-    if type(parameters) is dict:
-        labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
-                                dtype=torch.float32).unsqueeze(0).to(mlmodel.MODEL_CONFIG.device)
-    else:
-        print(parameters.shape)
-        exit()
-    # -- generate waveform using the model's generate method
+    if type(parameters) is not dict:
+        raise TypeError("Expected parameters to be a dictionary, got {}".format(type(parameters)))
+    labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
+                            dtype=torch.float32).unsqueeze(0).to(mlmodel.MODEL_CONFIG.device)
+    exit(0)
     generated_waveform = mlmodel.generate(labels)
     return generated_waveform.cpu().numpy().flatten()  # Return as 1D numpy array
 
@@ -411,7 +423,7 @@ if __name__ == "__main__":
                         help="Path to the trained model checkpoint (default: None)")
     
     parser.add_argument('--with-original-model', action='store_true',
-                        help="Whether to use the original CVAE model instead of the FlexOne (default: False)")
+                        help="Whether to use the original CVAE model instead of the FlexCVAE (default: False)")
     
     parser.add_argument('--debug', action='store_true', help="Enable debug logging")
     parser.add_argument('--verbose', action='store_true', help="Enable verbose logging")
