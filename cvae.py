@@ -1,5 +1,6 @@
 import logging
 
+import json
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -925,7 +926,7 @@ class CVAE(nn.Module):
         total_loss = recon_loss + mmloss
         return (total_loss, recon_loss, mmloss)
     
-    def convert_output(self, output) -> np.ndarray:
+    def convert_output(self, output, keys_path=None) -> np.ndarray:
         """
         Converts the output of the decoder (Amplitude and Frequency series) to the polarizations (hp and hc).
         This function is used in the generation step to convert the generated Amplitude and Frequency series to the polarizations, 
@@ -954,6 +955,19 @@ class CVAE(nn.Module):
         # amp = (amp * amp_std[:, np.newaxis]) + amp_mean[:, np.newaxis]
         # freq = (freq * freq_std[:, np.newaxis]) + freq_mean[:, np.newaxis]
 
+        # Denormalize output waveforms using global mean key read from JSON file!
+        # NOTE: For now, this is the only thing we can do to bypass the issue of normalized output!
+        if keys_path is None:
+            amp_mean, amp_std = 29.8304, 10.6884
+            freq_mean, freq_std = 36.96, 44.795
+        else:
+            key_vals = json.load(open(keys_path, 'r'))
+            amp_mean, amp_std = key_vals['amp_mean']*10**20, key_vals['amp_std']*10**20
+            freq_mean, freq_std = key_vals['freq_mean'], key_vals['freq_std']
+        amp = (amp * amp_std) + amp_mean
+        freq = (freq * freq_std) + freq_mean
+        amp = amp / 10**20  # Scale down the amplitude back to the original range!
+        
         # NOTE: When loading the data using "CustomDataset", I append a dummy element at the start of the frequency array, to make it the same length as the amplitude array (by definition it will be one element less in length), just the output of the trained model contains an extra element at the start which we can remove.
         # -- remove the first dummy element from the frequency array
         freq = freq[:, 1:]
@@ -964,7 +978,7 @@ class CVAE(nn.Module):
             hphc[i] = np.stack([hp, hc])
         return hphc
 
-    def generate(self, labels=None) -> np.ndarray:
+    def generate(self, labels=None, keys_path=None) -> np.ndarray:
         """
         From a trained model, generate new output waveforms using only the
         conditional labels information, by sampling from the latent space and 
@@ -999,7 +1013,7 @@ class CVAE(nn.Module):
             # NOTE: In this original model, we do not have options to concatenate 
             generated_output = self.decode(zy, zykey, labels)
 
-        hphc = self.convert_output(generated_output)
+        hphc = self.convert_output(generated_output, keys_path=keys_path)
         return hphc
 
 

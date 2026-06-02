@@ -93,16 +93,14 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
         raise ValueError("Missing 'model_path' or 'config_path' in kwargs for waveform generation.")
     model = load_flex_model(model_path=kwargs['model_path'], 
                             configpath=kwargs['config_path'], device=DEVICE, precision=PRECISION)
-    print("Loaded ML model for waveform generation.")
     parameters = {model_param: kwargs[model_param] for model_param in ['mass_1', 'mass_2', 'spin_1z', 'spin_2z']}
     labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
                             dtype=torch.float32).unsqueeze(0).to(DEVICE)
-    print("Formatted labels for ML model:", labels)
     generated_waveform = model.generate(labels)  # has shape (1, 2=[hp,hc], sequence_length)!
-    print("Generated waveform from ML model:", generated_waveform)
-    print("Generated waveform shape:", generated_waveform.shape)
+
     waveforms = {'plus': generated_waveform[0][0], 
                  'cross': generated_waveform[0][1]}
+
     plt.plot(np.arange(len(waveforms['plus'])), waveforms['plus'], label='hp')
     plt.plot(np.arange(len(waveforms['cross'])), waveforms['cross'], label='hc')
     plt.legend()
