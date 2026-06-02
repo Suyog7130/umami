@@ -97,16 +97,23 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
                             dtype=torch.float32).unsqueeze(0).to(DEVICE)
     generated_waveform = model.generate(labels)  # has shape (1, 2=[hp,hc], sequence_length)!
+    print("Generated waveform from ML model with shape:", generated_waveform.shape)
 
-    waveforms = {'plus': generated_waveform[0][0], 
-                 'cross': generated_waveform[0][1]}
+    hplus, hcross = generated_waveform[0][0], generated_waveform[0][1]
 
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(np.arange(len(waveforms['plus'])), waveforms['plus'], label='hp')
-    ax.plot(np.arange(len(waveforms['cross'])), waveforms['cross'], label='hc')
-    ax.legend()
-    plt.savefig('check-global-denorming-outputs.png', dpi=300)
-    plt.show()
+    # -- add two dummy repeated value at the start to makeup for length req by Bilby Interferometer.
+    hplus = np.concatenate([[hplus[0],hplus[1]], hplus])
+    hcross = np.concatenate([[hcross[0],hcross[1]], hcross])
+    print(f"Waveform shapes after adding dummy element at the start: {hplus.shape}, {hcross.shape}")
+
+    waveforms = {'plus': hplus, 'cross': hcross}
+
+    # fig, ax = plt.subplots(figsize=(12, 5))
+    # ax.plot(np.arange(len(waveforms['plus'])), waveforms['plus'], label='hp')
+    # ax.plot(np.arange(len(waveforms['cross'])), waveforms['cross'], label='hc')
+    # ax.legend()
+    # plt.savefig('check-global-denorming-outputs.png', dpi=300)
+    # plt.show()
     return waveforms
 
 def convert_to_ml_parameters(parameters):
