@@ -23,6 +23,8 @@ from bilby.core.utils import logger
 from bilby.core import utils
 from bilby.gw import WaveformGenerator
 
+import matplotlib.pyplot as plt
+
 
 import torch
 import torch.nn.functional as F
@@ -96,10 +98,16 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
                             dtype=torch.float32).unsqueeze(0).to(DEVICE)
     print("Formatted labels for ML model:", labels)
-    generated_waveform = model.generate(labels)
+    generated_waveform = model.generate(labels)  # has shape (1, 2=[hp,hc], sequence_length)!
     print("Generated waveform from ML model:", generated_waveform)
-    exit(0)
-    return generated_waveform.cpu().numpy().flatten()  # Return as 1D numpy array
+    print("Generated waveform shape:", generated_waveform.shape)
+    waveforms = {'plus': generated_waveform[0][0], 
+                 'cross': generated_waveform[0][1]}
+    plt.plot(np.arange(len(waveforms['plus'])), waveforms['plus'], label='hp')
+    plt.plot(np.arange(len(waveforms['cross'])), waveforms['cross'], label='hc')
+    plt.legend()
+    plt.show()
+    return waveforms
 
 def convert_to_ml_parameters(parameters):
     """

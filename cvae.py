@@ -12,7 +12,7 @@ import numpy as np
 from datetime import datetime
 
 
-from .utils.gwutils import polarizations_from_ampfreq, calc_polarization_mismatch
+from utils.gwutils import polarizations_from_ampfreq, calc_polarization_mismatch
 
 
 class XEncoder(nn.Module):
@@ -925,7 +925,7 @@ class CVAE(nn.Module):
         total_loss = recon_loss + mmloss
         return (total_loss, recon_loss, mmloss)
     
-    def convert_output(self, output):
+    def convert_output(self, output) -> np.ndarray:
         """
         Converts the output of the decoder (Amplitude and Frequency series) to the polarizations (hp and hc).
         This function is used in the generation step to convert the generated Amplitude and Frequency series to the polarizations, 
@@ -937,6 +937,10 @@ class CVAE(nn.Module):
         without assuming any starting phase!
         TODO: Remove dependency to detach the outputs from the device and numpy operations.
         TODO: All of this calculation should be done on a GPU.
+
+        Returns:
+        --------
+        np.ndarray: Array of shape (batch_size, 2, sequence_length) containing the hp and hc polarizations for each sample in the batch.
         """
         print(f"Output shape: {output.shape}")
         amp = output[:, 0].cpu().detach().numpy()
@@ -946,17 +950,28 @@ class CVAE(nn.Module):
         # -- remove the first dummy element from the frequency array
         freq = freq[:, 1:]
 
-        hphc = []
+        hphc = np.zeros((output.size(0), 2, amp.shape[1]))  # Initialize array to hold hp and hc
         for i in range(output.size(0)):
             hp, hc = polarizations_from_ampfreq(amp[i], freq[i], theta0=0.0)  # Assuming theta0=0 for generation
-            hphc.append((hp, hc))
+            hphc[i] = np.stack([hp, hc])
         return hphc
 
-    def generate(self, labels=None):
+    def generate(self, labels=None) -> np.ndarray:
         """
         From a trained model, generate new output waveforms using only the
         conditional labels information, by sampling from the latent space and 
         passing through the decoder.
+
+        Arguments:
+        ---------    
+        labels: torch.Tensor
+            The conditional labels to generate waveforms for. Must be provided!
+
+        Returns:
+        --------
+        hphc: np.ndarray
+            The generated waveforms in the form of hp and hc polarizations, with shape 
+            (batch_size, 2, sequence_length).
         """
         if labels is not None:
             # -- check dimensions of labels with MODEL_CONFIG['num_classes']
