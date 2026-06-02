@@ -427,17 +427,17 @@ def main(args, label='umamipe'):
     # prior is a delta function at the true, injected value.  In reality, the
     # sampler implementation is smart enough to not sample any parameter that has
     # a delta-function prior.
-    # The above list does *not* include mass_1, mass_2, theta_jn and luminosity
-    # distance, which means those are the parameters that will be included in the
-    # sampler.  If we do nothing, then the default priors get used.
+    # The above list does *not* include mass_1, mass_2, a_1 and a_2, for which we
+    # want to do the parameter estimation!
+    # If we do nothing, then the default priors get used.
     priors = bilby.gw.prior.BBHPriorDict()
     for key in [
-        "a_1",
-        "a_2",
         "tilt_1",
         "tilt_2",
         "phi_12",
         "phi_jl",
+        "luminosity_distance",
+        "theta_jn",
         "psi",
         "ra",
         "dec",
@@ -445,6 +445,20 @@ def main(args, label='umamipe'):
         "phase",
     ]:
         priors[key] = injection_parameters[key]
+
+    # -- Set the priors for the parameters we want to estimate!
+    priors["mass_1"] = bilby.core.prior.Uniform(30, 75, name="mass_1", latex_label="$m_1$")
+    priors["mass_2"] = bilby.core.prior.Uniform(30, 75, name="mass_2", latex_label="$m_2$")
+    # priors["a_1"] = bilby.core.prior.Uniform(0, 0.80, name="a_1", latex_label="$\\chi_{1z}$")
+    # priors["a_2"] = bilby.core.prior.Uniform(0, 0.80, name="a_2", latex_label="$\\chi_{2z}$")
+    # priors["a_1"] = injection_parameters["a_1"]  
+    # priors["a_2"] = injection_parameters["a_2"]  
+    priors["a_1"] = bilby.core.prior.Uniform(-0.75, 0.75, name="a_1", latex_label="$\\chi_{1z}$")
+    priors["a_2"] = bilby.core.prior.Uniform(-0.75, 0.75, name="a_2", latex_label="$\\chi_{2z}$")
+    print(f"Priors: {priors}")
+    priors.pop("mass_ratio", None)
+    priors.pop("chirp_mass", None)
+    print(f"Priors: {priors}")
 
 
     # Perform a check that the prior does not extend to a parameter space longer than the data
