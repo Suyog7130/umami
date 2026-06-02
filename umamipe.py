@@ -359,7 +359,7 @@ def main(args, label='umamipe'):
         # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
         frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole,
         waveform_arguments=dict(
-            waveform_approximant="IMRPhenomPv2",
+            waveform_approximant="SEOBNRv4",      #"IMRPhenomPv2",
             reference_frequency=FREF,
             minimum_frequency=FMIN,
             mode_array=[[2,2]],
