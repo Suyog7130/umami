@@ -1187,7 +1187,12 @@ class FlexTwoC2E1D(nn.Module):
         freq_recon = freq_recon[:, 1:]
         freq_orig = freq_orig[:, 1:]
         
-        # -- Calculate phase (vectorized)
+        # -- Calculate phase
+        # NOTE: Here, I calculate the start phase, which was removed from the saved phase data,
+        # and use it as the reference phase (theta0) for the polarizations reconstructed from the
+        # amplitude and frequency series, in both original and reconstructed cases!
+        # TODO: We shouldn't need to do this, and the starting phase in the saved training data
+        # could be such that it is not zero, by using "remove_start_phase=False" flag!
         hp_hdf = strains[:, 0].cpu().detach().numpy()
         hc_hdf = strains[:, 1].cpu().detach().numpy()
         phase_hdf = np.unwrap(np.arctan2(hc_hdf, hp_hdf), axis=1)
@@ -1332,6 +1337,7 @@ class FlexTwoC2E1D(nn.Module):
             else:
                 y_embed = None  # Use raw labels as input to the decoder
 
+            # BUG: For CAE type, if we `concat_all`, then we are using the mean vals twice!
             # Select decoder input based on the specified type
             if self.decoder_input_type == 'sum':
                 z = zy + zykey
@@ -1373,6 +1379,12 @@ class FlexTwoC2E1D(nn.Module):
         incorrect resultant waveform! This difficulty is resolved in the FlexCAEPhase model, where we directly output 
         the phase instead of the frequency, and thus we can directly convert the [amp, phase] output to the polarizations 
         without assuming any starting phase!
+        If we used `phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc, remove_start_phase=False)` then the starting
+        phase would not have been set to 0.0, in which case we would need to caculate the starting phase from the original
+        waveforms, if the output of the model is [amp, freq] and not [amp, phase], since we need the starting phase to convert the [amp, freq] output to the polarizations! However, for my original [amp, freq] output model, I didn't know of 
+        that "remove_start_phase" option, so all waveforms have a starting phase of 0.0, and in this case we can use the 
+        `theta0=0.0` option in the `polarizations_from_ampfreq` function to set the starting phase to 0.0 for all generated waveforms, which is what I have done here. However, for the FlexCAEPhase model, since we directly output the phase, we can directly convert the [amp, phase] output to the polarizations without assuming any starting phase, since the phase output by the model will already include the starting phase information, and thus we can directly use the `polarizations_from_ampfreq` function without setting the `theta0` option, since the phase output by the model will already include the starting phase information.
+
         TODO: Remove dependency to detach the outputs from the device and numpy operations.
         TODO: All of this calculation should be done on a GPU.
         """

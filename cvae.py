@@ -12,7 +12,7 @@ import numpy as np
 from datetime import datetime
 
 
-from utils.gwutils import polarizations_from_ampfreq, calc_polarization_mismatch
+from .utils.gwutils import polarizations_from_ampfreq, calc_polarization_mismatch
 
 
 class XEncoder(nn.Module):
@@ -924,6 +924,60 @@ class CVAE(nn.Module):
         logging.info(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + mmloss
         return (total_loss, recon_loss, mmloss)
+    
+    def convert_output(self, output):
+        """
+        Converts the output of the decoder (Amplitude and Frequency series) to the polarizations (hp and hc).
+        This function is used in the generation step to convert the generated Amplitude and Frequency series to the polarizations, 
+        which are the actual waveforms that we want to generate.
+
+        NOTE: We assume the starting phase to be zero here! Which is not always correct and may result in
+        incorrect resultant waveform! This difficulty is resolved in the FlexCAEPhase model, where we directly output 
+        the phase instead of the frequency, and thus we can directly convert the [amp, phase] output to the polarizations 
+        without assuming any starting phase!
+        TODO: Remove dependency to detach the outputs from the device and numpy operations.
+        TODO: All of this calculation should be done on a GPU.
+        """
+        print(f"Output shape: {output.shape}")
+        amp = output[:, 0].cpu().detach().numpy()
+        freq = output[:, 1].cpu().detach().numpy()
+
+        # NOTE: When loading the data using "CustomDataset", I append a dummy element at the start of the frequency array, to make it the same length as the amplitude array (by definition it will be one element less in length), just the output of the trained model contains an extra element at the start which we can remove.
+        # -- remove the first dummy element from the frequency array
+        freq = freq[:, 1:]
+
+        hphc = []
+        for i in range(output.size(0)):
+            hp, hc = polarizations_from_ampfreq(amp[i], freq[i], theta0=0.0)  # Assuming theta0=0 for generation
+            hphc.append((hp, hc))
+        return hphc
+
+    def generate(self, labels=None):
+        """
+        From a trained model, generate new output waveforms using only the
+        conditional labels information, by sampling from the latent space and 
+        passing through the decoder.
+        """
+        if labels is not None:
+            # -- check dimensions of labels with MODEL_CONFIG['num_classes']
+            assert labels.size(1) == self.num_classes, f"Labels dimension {labels.size(1)} does not match MODEL_CONFIG['num_classes'] {self.num_classes}!"
+        else:
+            raise ValueError("Labels must be provided for generation, since the model is conditional on the labels!")
+
+        self.eval()  # Set model to evaluation mode
+        logging.info("Model set to evaluation mode for generation.")
+
+        with torch.no_grad():
+            # Encode labels to get the mean and log variance of the latent space
+            zy_mu, zy_logvar = self.encode_label_for_x(labels)
+            zykey_mu, zykey_logvar = self.encode_label_for_key(labels)
+            zy = self.reparameterize(zy_mu, zy_logvar)
+            zykey = self.reparameterize(zykey_mu, zykey_logvar)
+            # NOTE: In this original model, we do not have options to concatenate 
+            generated_output = self.decode(zy, zykey, labels)
+
+        hphc = self.convert_output(generated_output)
+        return hphc
 
 
 class CAE(CVAE):

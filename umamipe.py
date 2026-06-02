@@ -90,7 +90,7 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     if any(key not in kwargs for key in ['model_path', 'config_path']):
         raise ValueError("Missing 'model_path' or 'config_path' in kwargs for waveform generation.")
     model = load_flex_model(model_path=kwargs['model_path'], 
-                            configpath=kwargs['config_path'])
+                            configpath=kwargs['config_path'], device=DEVICE, precision=PRECISION)
     print("Loaded ML model for waveform generation.")
     parameters = {model_param: kwargs[model_param] for model_param in ['mass_1', 'mass_2', 'spin_1z', 'spin_2z']}
     labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 

@@ -373,6 +373,8 @@ class BaseWaveform:
                 hc = hc[diff:]
                 logging.debug(f'After trimming, len(hp)={len(hp)}, len(hc)={len(hc)}')
 
+            # TODO: We shouldn't need to do this, and the starting phase in the saved training data
+            # could be such that it is not zero, by using "remove_start_phase=False" flag!
             amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
             phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
             freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)

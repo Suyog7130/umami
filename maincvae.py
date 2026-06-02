@@ -1491,6 +1491,8 @@ class Test:
         Test the time complexity of the model for generating a 1-10e4 ish number of samples.
         This is useful for understanding the efficiency of the model in real-time
         applications.
+
+        TODO,BUG: We should include the time it takes to convert the generated amplitude and frequency series to hplus and hcross polarizations, since this is a necessary step for any real-time application of the model, and it can be a bottleneck in the generation process. We can use the `plot_polarization_mismatch` function to calculate the polarizations from the generated amplitude and frequency series, and then include this time in our time complexity calculation.
         """
         # Nruns = [1, 10, 50, 100, 500, 1e3, 5e3, 1e4]
         # Nruns = np.logspace(0, 5, num=num, dtype=int)

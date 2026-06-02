@@ -383,7 +383,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
 
 
-def load_flex_model(configpath=None, model_path=None):
+def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=PRECISION):
     """
     Load the trained FlexTwoC2E1D model from the specified path.
     """
@@ -500,13 +500,15 @@ def load_flex_model(configpath=None, model_path=None):
         # -- Check if model weights loaded are of the same precision as our initialized model.
         # -- If not, then convert loaded model to the correct precision before moving to device.
         for name, param in model.named_parameters():
-            if param.dtype != getattr(torch, PRECISION):
-                logging.info(f"Converting model parameter '{name}' from {param.dtype} to {getattr(torch, PRECISION)} for consistency with initialized model precision.")
-                param.data = param.data.to(getattr(torch, PRECISION))
-        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+            if param.dtype != getattr(torch, precision):
+                logging.info(f"Converting model parameter '{name}' from {param.dtype} to {getattr(torch, precision)} for consistency with initialized model precision.")
+                param.data = param.data.to(getattr(torch, precision))
+        model.load_state_dict(torch.load(model_path, map_location=device))
         logging.info(f"Loaded model from {model_path}")
-    # NOTE: Model is moved to desired device and precision during training!
-    if DEVICE.type == 'cuda':
+    # Send model to device and convert to desired precision
+    model = model.to(getattr(torch, precision))
+    model.to(device)
+    if device.type == 'cuda':
         model = torch.compile(model, mode='max-autotune')  # Compile the model for faster training (PyTorch 2.0+)
         logging.info("Model compiled with torch.compile for faster training.")
     return model

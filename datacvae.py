@@ -2788,6 +2788,7 @@ if __name__=="__main__":
         check_datasets()
 
     if args.checkampfreq:
+        # NOTE: This checks the round-trip error of the conversion from strain to amplitude and frequency and back to strain again, by reading the data from the saved HDF5 datafile. The error should ideally be very small, about 1e-14 ish, and should only be due to numerical errors in the conversion process.
         fname = 'SEOBNRv4-train-100-fcutoff-uniform-aligned'
         # NOTE: The values I saved for phase, used the default params
         # for the `phase_from_polarizations` func, which made
