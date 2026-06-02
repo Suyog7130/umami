@@ -938,6 +938,8 @@ class CVAE(nn.Module):
         TODO: Remove dependency to detach the outputs from the device and numpy operations.
         TODO: All of this calculation should be done on a GPU.
 
+        BUG: The hell, we do not have access to the keys in the generation step, because the output of the model are just the normalized amp/freq. Hell, I should have been saving the global normalization params into the model, as done for the labels mean/std, and then these could have easily been used to obtain back denormalized outputs from the model.
+
         Returns:
         --------
         np.ndarray: Array of shape (batch_size, 2, sequence_length) containing the hp and hc polarizations for each sample in the batch.
@@ -945,6 +947,12 @@ class CVAE(nn.Module):
         print(f"Output shape: {output.shape}")
         amp = output[:, 0].cpu().detach().numpy()
         freq = output[:, 1].cpu().detach().numpy()
+
+        # # -- Denormalize amp and freq using the keys
+        # amp_mean, amp_std = self.keys[:, 0, 0].cpu().detach().numpy(), self.keys[:, 0, 1].cpu().detach().numpy()
+        # freq_mean, freq_std = self.keys[:, 1, 0].cpu().detach().numpy(), self.keys[:, 1, 1].cpu().detach().numpy()
+        # amp = (amp * amp_std[:, np.newaxis]) + amp_mean[:, np.newaxis]
+        # freq = (freq * freq_std[:, np.newaxis]) + freq_mean[:, np.newaxis]
 
         # NOTE: When loading the data using "CustomDataset", I append a dummy element at the start of the frequency array, to make it the same length as the amplitude array (by definition it will be one element less in length), just the output of the trained model contains an extra element at the start which we can remove.
         # -- remove the first dummy element from the frequency array
