@@ -945,7 +945,6 @@ class CVAE(nn.Module):
         --------
         np.ndarray: Array of shape (batch_size, 2, sequence_length) containing the hp and hc polarizations for each sample in the batch.
         """
-        print(f"Output shape: {output.shape}")
         amp = output[:, 0].cpu().detach().numpy()
         freq = output[:, 1].cpu().detach().numpy()
 
@@ -967,7 +966,7 @@ class CVAE(nn.Module):
         amp = (amp * amp_std) + amp_mean
         freq = (freq * freq_std) + freq_mean
         amp = amp / 10**20  # Scale down the amplitude back to the original range!
-        
+
         # NOTE: When loading the data using "CustomDataset", I append a dummy element at the start of the frequency array, to make it the same length as the amplitude array (by definition it will be one element less in length), just the output of the trained model contains an extra element at the start which we can remove.
         # -- remove the first dummy element from the frequency array
         freq = freq[:, 1:]

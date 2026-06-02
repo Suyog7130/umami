@@ -487,8 +487,8 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
     logging.info(f"Model architecture of type {model.__class__.__name__} initialized. Now loading model weights.")
     logging.info(f"Model initialized with the following hyperparameters: {MODEL_CONFIG}")
     # print(model)
-    print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
-    print(f"Total number of trainable parameters: \
+    logging.info(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
+    logging.info(f"Total number of trainable parameters: \
           {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     
     if model_path is None:
