@@ -86,24 +86,19 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
             The generated time-domain strain waveform as a 1D numpy array.
     """
     print("Received parameters for waveform generation:", kwargs)
-    mlmodel=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
-    print("Generating waveform using ML model for parameters:", locals())
-    print("Time array shape:", time_array.shape)
-    if "model_path" not in kwargs or "config_path" not in kwargs:
+    # mlmodel=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
+    if any(key not in kwargs for key in ['model_path', 'config_path']):
         raise ValueError("Missing 'model_path' or 'config_path' in kwargs for waveform generation.")
-    parameters = {
-        "mass_1": mass1 if mass1 is not None else kwargs.get("mass_1", kwargs.get("m1")),
-        "mass_2": mass2 if mass2 is not None else kwargs.get("mass_2", kwargs.get("m2")),
-        "spin_1z": spin1z if spin1z is not None else kwargs.get("spin_1z", kwargs.get("chi1z")),
-        "spin_2z": spin2z if spin2z is not None else kwargs.get("spin_2z", kwargs.get("chi2z")),
-    }
-    # -- convert parameters to tensor and move to model device
-    if type(parameters) is not dict:
-        raise TypeError("Expected parameters to be a dictionary, got {}".format(type(parameters)))
+    model = load_flex_model(model_path=kwargs['model_path'], 
+                            configpath=kwargs['config_path'])
+    print("Loaded ML model for waveform generation.")
+    parameters = {model_param: kwargs[model_param] for model_param in ['mass_1', 'mass_2', 'spin_1z', 'spin_2z']}
     labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
-                            dtype=torch.float32).unsqueeze(0).to(mlmodel.MODEL_CONFIG.device)
+                            dtype=torch.float32).unsqueeze(0).to(DEVICE)
+    print("Formatted labels for ML model:", labels)
+    generated_waveform = model.generate(labels)
+    print("Generated waveform from ML model:", generated_waveform)
     exit(0)
-    generated_waveform = mlmodel.generate(labels)
     return generated_waveform.cpu().numpy().flatten()  # Return as 1D numpy array
 
 def convert_to_ml_parameters(parameters):

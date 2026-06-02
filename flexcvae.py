@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import numpy as np
 from datetime import datetime
 
-from utils import polarizations_from_ampfreq, calc_polarization_mismatch
+from utils.gwutils import polarizations_from_ampfreq, calc_polarization_mismatch
 
 from typing import List, Sequence, Optional, Union, Callable
 

@@ -12,7 +12,7 @@ import numpy as np
 from datetime import datetime
 
 
-from utils import polarizations_from_ampfreq, calc_polarization_mismatch
+from utils.gwutils import polarizations_from_ampfreq, calc_polarization_mismatch
 
 
 class XEncoder(nn.Module):

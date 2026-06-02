@@ -477,8 +477,7 @@ def load_flex_model(configpath=None, model_path=None):
         )
     elif MODEL_CONFIG['modeltype'].lower() == 'original':
         logging.info("Initializing original CVAE model architecture for testing.")
-        model = CVAE(input_shape=(2, 8190), 
-                    num_classes=4, key_shape=(2,2))
+        model = CVAE(input_shape=(2, 8190), num_classes=4, key_shape=(2,2))
     else:
         model = FlexTwoC2E1D(
             MODEL_CONFIG=MODEL_CONFIG,
