@@ -978,6 +978,8 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
         logging.info(f"Data written to {fname+'.hdf'} successfully.")
         hf.close()
 
+
+
 def check_hdf(fname, noshow=False):
     """
     Read the data from the HDF5 file.
@@ -1003,6 +1005,66 @@ def check_hdf(fname, noshow=False):
                     plt.savefig(f'checkhdf-{key}_{name}_plot.png', dpi=300)
                     plt.show()
     return hf
+
+
+def calc_mean_key_values(fname):
+    """
+    Calculate the mean values of the keys (mean and std of hp and hc) across all samples in the HDF5 file. This is useful for normalizing the data later on, since the hell the the original model we
+    had outputs normalized [amp,freq] data. Thus, in the inference or generation mode, the hell this
+    model cannot be directly used! These global mean values for the keys will aid in denormalizing the
+    outputs of the model.
+    """
+    import json
+    if not fname.endswith('.hdf'):
+        fname += '.hdf'
+    print(f'Calculating mean key values for normalization from file: {fname}')
+    indices = []
+    amp_means, amp_stds = [], []
+    freq_means, freq_stds = [], []
+    with h5py.File(fname, 'r') as hf:
+        for idx in tqdm(hf.keys(), desc='Calculated', ncols=100):
+            data = hf[idx]
+            amp = np.array(data['amp'][:])
+            freq = np.array(data['freq'][:])
+            amp_means.append(amp.mean())
+            amp_stds.append(amp.std())
+            freq_means.append(freq.mean())
+            freq_stds.append(freq.std())
+            indices.append(idx)
+    mean_amp_mean = np.mean(amp_means)
+    mean_amp_std = np.mean(amp_stds)
+    mean_freq_mean = np.mean(freq_means)
+    mean_freq_std = np.mean(freq_stds)
+    print(f'Mean amp mean: {mean_amp_mean}, Mean amp std: {mean_amp_std}')
+    print(f'Mean freq mean: {mean_freq_mean}, Mean freq std: {mean_freq_std}')
+
+    # Save mean key values to a JSON file for later use in normalization/denormalization
+    mean_key_values = {
+        'mean_amp_mean': mean_amp_mean,
+        'mean_amp_std': mean_amp_std,
+        'mean_freq_mean': mean_freq_mean,
+        'mean_freq_std': mean_freq_std,
+        'amp_scaling_factor': 10**20,  # since amp was rescaled by this factor during data generation
+    }
+    # Convert any numpy types to native Python types for JSON serialization
+    # Also, convert any `float64` or `float32` to `float`, and `int64` or `int32` to `int`.
+    for key, value in mean_key_values.items():
+        if isinstance(value, np.generic):
+            mean_key_values[key] = value.item()
+        if isinstance(value, np.float64) or isinstance(value, np.float32):
+            mean_key_values[key] = float(value)
+        if isinstance(value, np.int64) or isinstance(value, np.int32):
+            mean_key_values[key] = int(value)
+    savename = fname.split('.hdf')[0] + '_mean_key_values.json'
+    with open(savename, 'w') as f:
+        json.dump(mean_key_values, f, indent=4)
+
+    # Save full mean key values to CSV file for later use if required
+    df = pd.DataFrame(columns=['sample_idx', 'amp_mean', 'amp_std', 'freq_mean', 'freq_std'],
+                      data=[[indices, mean_amp_mean, mean_amp_std, mean_freq_mean, mean_freq_std]])
+    savename_csv = fname.split('.hdf')[0] + '_key_values.csv'
+    df.to_csv(savename_csv, index=False)
+    return print(f'Mean amp mean: {mean_amp_mean}, Mean amp std: {mean_amp_std}')
 
 
 
@@ -2604,6 +2666,8 @@ if __name__=="__main__":
 
     parser.add_argument('--save-params-from-hdf', action='store_true', default=False,
                         help='Save the parameters from the HDF5 file to a text file for reference.')
+    parser.add_argument('--calc-mean-key-vals', action='store_true', default=False,
+                        help='Calculate and print the mean values of key parameters from the HDF5 file.')
     
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
                         help='Increase verbosity of the output.')
@@ -2808,3 +2872,13 @@ if __name__=="__main__":
         hdf_fname = '../data/' + fname
         txt_fname = '../data/' + 'params-' + fname
         save_params_from_hdf(hdf_fname, txt_fname=txt_fname)
+
+    if args.calc_mean_key_vals:
+        if type(args.approximant) is list:
+            args.approximant = args.approximant[0]
+        if args.fname == '':
+            fname = args.approximant + '-train-100000-fcutoff-uniform-aligned-regen'
+        else:
+            fname = args.fname
+        hdf_fname = '../data/' + fname
+        calc_mean_key_values(hdf_fname)
