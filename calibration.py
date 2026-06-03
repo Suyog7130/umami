@@ -209,12 +209,29 @@ def get_calibrator_input(wfmodel, originals, labels):
     return calibrator_input, (target_amp_residual, target_freq_residual)
             
         
+def merger_weighted_mse_loss_func(true, predicted, amp_ml):
+    """
+    A custom loss function that computes a weighted MSE loss, where the weights are based on the amplitude of the ML generated waveform.
+    The idea is to give more weight to the parts of the waveform where the amplitude is higher, since those parts are more important for the overall waveform shape and the mismatch calculation. The weights are computed as a function of the normalized amplitude of the ML generated waveform, with a minimum weight to ensure that we don't completely ignore the low amplitude parts of the waveform. The gamma parameter can be used to control how much more weight we give to the high amplitude parts compared to the low amplitude parts. This loss function can help the calibrator model focus on learning the residuals in the parts of the waveform that matter the most for improving the overall waveform accuracy, while still allowing it to learn from the entire waveform.
+    """
+    eps = 1e-12
+    w_min = 0.05
+    gamma = 1.0  # try 1.0 first, then 2.0 if needed
+
+    # amp_ml shape: (batch, n)
+    amp_norm = torch.abs(amp_ml) / (torch.amax(torch.abs(amp_ml), dim=-1, keepdim=True) + eps)
+
+    weights = w_min + (1.0 - w_min) * amp_norm**gamma
+    # shape: (batch, n)
+
+    loss = torch.sum(weights * (predicted - true)**2) / torch.sum(weights)
+    return loss
     
 
-def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_072338-10', 
+def train_calibrator(wfmodel_modelpath=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10', 
                      wfmodel_configpath='modelconfig-cvae-paper-I.json',
-                     approximant='SEOBNRv4', batch_size=64, num_epochs=100,
-                     dummyrun=True):
+                     approximant='SEOBNRv4', batch_size=64, num_epochs=25,
+                     dummyrun=False):
     """
     Train the residual calibrator model.
 
@@ -294,8 +311,9 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
     loss_fn = torch.nn.MSELoss()
     logger.info(f"Starting training loop for {num_epochs} epochs...")
 
-    epoch_losses = pd.DataFrame(columns=['epoch', 'train_loss_amp', 'train_loss_freq', 'val_loss_amp', 'val_loss_freq'])
-    fname = PROJECT_DIR + f'/results/{TODAY}'
+    epoch_losses = pd.DataFrame(columns=['epoch', 'train_loss_amp', 'train_loss_freq', 'val_loss_amp', 'val_loss_freq'],
+                                index=range(num_epochs))
+    fname = f'../{PROJECT_DIR}/results/{TODAY}'
     os.makedirs(fname, exist_ok=True)
     running_train_loss_file = open(f'{fname}/calibrator_running_train_losses_{NOW}.csv', 'w')
     running_train_loss_file.write(','.join(['epoch', 'train_loss_amp', 'train_loss_freq']) + '\n')
@@ -316,7 +334,7 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
         counter = 0
         for originals, _, labels, keys, _, attr in tqdm(training_loader, total=len(training_loader), desc='Steps/Batchs'):
             counter += 1
-            if dummyrun and counter > 5:
+            if dummyrun and counter > 2:
                 break
 
             originals = originals.to(DEVICE)
@@ -329,8 +347,11 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
             pred_amp_residual, pred_freq_residual = out[:, 0, :], out[:, 1, :]
 
             # -- compute loss and backprop
-            amp_loss = loss_fn(pred_amp_residual, target_amp_residual)
-            freq_loss = loss_fn(pred_freq_residual, target_freq_residual)
+            # amp_loss = loss_fn(pred_amp_residual, target_amp_residual)
+            # freq_loss = loss_fn(pred_freq_residual, target_freq_residual)
+            amp_loss = merger_weighted_mse_loss_func(target_amp_residual, pred_amp_residual, calibrator_input[:, 0, :])
+            freq_loss = merger_weighted_mse_loss_func(target_freq_residual, pred_freq_residual, calibrator_input[:, 0, :])
+
             loss = amp_loss + freq_loss
             optimizer.zero_grad()
             loss.backward()
@@ -341,7 +362,7 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
             running_train_loss_file.flush()
             train_loss_amp += amp_loss.item()
             train_loss_freq += freq_loss.item()
-            logger.debug(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {amp_loss.item()}, Freq Loss: {freq_loss.item()}")
+        logger.info(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {amp_loss.item()}, Freq Loss: {freq_loss.item()}")
 
         # validation loop
         calmodel.eval()
@@ -351,7 +372,7 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
             counter = 0
             for originals, _, labels, keys, _, attr in tqdm(validation_loader, total=len(validation_loader), desc='Validation Steps'):
                 counter += 1
-                if dummyrun and counter > 5:
+                if dummyrun and counter > 2:
                     break
 
                 originals = originals.to(DEVICE)
@@ -363,37 +384,40 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
                 out = calmodel(calibrator_input)  # shape: (batch, 2, n)
                 pred_amp_residual, pred_freq_residual = out[:, 0, :], out[:, 1, :]
 
-                val_amp_loss = loss_fn(pred_amp_residual, target_amp_residual)
-                val_freq_loss = loss_fn(pred_freq_residual, target_freq_residual)
+                # val_amp_loss = loss_fn(pred_amp_residual, target_amp_residual)
+                # val_freq_loss = loss_fn(pred_freq_residual, target_freq_residual)
+                val_amp_loss = merger_weighted_mse_loss_func(target_amp_residual, pred_amp_residual, calibrator_input[:, 0, :])
+                val_freq_loss = merger_weighted_mse_loss_func(target_freq_residual, pred_freq_residual, calibrator_input[:, 0, :])
                 val_loss = val_loss_amp + val_loss_freq
 
                 # -- log validation loss for this batch
-                logger.debug(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {val_amp_loss.item()}, Val Freq Loss: {val_freq_loss.item()}")
                 running_val_loss_file.write(f"{epoch+1},{val_amp_loss.item()},{val_freq_loss.item()}\n")
                 running_val_loss_file.flush()
                 val_loss_amp += val_amp_loss.item()
                 val_loss_freq += val_freq_loss.item()
+            logger.info(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {val_amp_loss.item()}, Val Freq Loss: {val_freq_loss.item()}")
 
         # -- take a step in the learning rate scheduler based on the validation loss
         scheduler.step(val_loss)
 
         # -- log epoch losses
-        epoch_losses = epoch_losses.append({
+        epoch_losses.iloc[epoch] = {
             'epoch': epoch+1,
             'train_loss_amp': train_loss_amp/len(training_loader),
             'train_loss_freq': train_loss_freq/len(training_loader),
             'val_loss_amp': val_loss_amp/len(validation_loader),
             'val_loss_freq': val_loss_freq/len(validation_loader),
-        }, ignore_index=True)
+        }
         logger.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
 
         # -- every 10 epochs, save the model checkpoint
         if (epoch + 1) % 10 == 0:
-            outpath = PROJECT_DIR + f'/trained-models/calibrator_model_{NOW}_epoch_{epoch+1}.pt'
+            outpath = f'../{PROJECT_DIR}/trained-models/calibrator_model_{NOW}_epoch_{epoch+1}.pt'
             torch.save(calmodel.state_dict(), outpath)
 
     # -- save the trained calibrator model
-    outpath = PROJECT_DIR + f'/trained-models/calibrator_model_{NOW}.pt'
+    outpath = f'../{PROJECT_DIR}/trained-models/calibrator_model_{NOW}.pt'
+    os.makedirs(os.path.dirname(outpath), exist_ok=True)
     torch.save(calmodel.state_dict(), outpath)
     # -- save the epoch losses to a CSV file
     epoch_losses.to_csv(f'{fname}/calibrator_epoch_losses_{NOW}.csv', index=False)
