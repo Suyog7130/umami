@@ -5,6 +5,7 @@ between the generated [amp,freq] and the target [amp,freq], for example.
 """
 
 import numpy as np
+import pandas as pd
 import datetime
 
 import torch
@@ -232,7 +233,7 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
         kernel_size=7,
         dropout=0.0,
     )
-    calmodel.to(DEVICE)
+    calmodel.to(device=DEVICE, dtype=getattr(torch, PRECISION))
     logger.info(f"Calibrator model architecture: {calmodel}")
 
     train_set = CustomDataset(forwhat='train', approximant=approximant, returnattr=True,
@@ -261,6 +262,8 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
     loss_fn = torch.nn.MSELoss()
     logger.info(f"Starting training loop for {num_epochs} epochs...")
 
+    epoch_losses = pd.DataFrame(columns=['epoch', 'train_loss_amp', 'train_loss_freq', 'val_loss_amp', 'val_loss_freq'])
+    running_losses = pd.DataFrame(columns=['epoch', 'train_loss_amp', 'train_loss_freq', 'val_loss_amp', 'val_loss_freq'])
     for epoch in tqdm(range(num_epochs), desc='Epoch'):
         calmodel.train(True)
 
@@ -275,18 +278,25 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
             pred_amp_residual, pred_freq_residual = out[:, 0, :], out[:, 1, :]
 
             # -- compute loss and backprop
-            loss = loss_fn(pred_amp_residual, target_amp_residual) + loss_fn(pred_freq_residual, target_freq_residual)
+            amp_loss = loss_fn(pred_amp_residual, target_amp_residual)
+            freq_loss = loss_fn(pred_freq_residual, target_freq_residual)
+            loss = amp_loss + freq_loss
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-        scheduler.step(loss)
+            # -- log training loss for this batch
+            running_losses = running_losses.append({
+                'epoch': epoch+1,
+                'train_loss_amp': amp_loss.item(),
+                'train_loss_freq': freq_loss.item(),
+            }, ignore_index=True)
 
         # validation loop
         calmodel.eval()
         with torch.no_grad():
             val_loss = 0.0
-            for originals, _, labels, keys, _, attr in validation_loader:
+            for originals, _, labels, keys, _, attr in tqdm(validation_loader, total=len(validation_loader), desc='Validation Steps'):
                 originals = originals.to(DEVICE)
                 labels = labels.to(DEVICE)
 
@@ -298,7 +308,28 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
 
                 loss = loss_fn(pred_amp_residual, target_amp_residual) + loss_fn(pred_freq_residual, target_freq_residual)
                 val_loss += loss.item()
+
+                running_losses = running_losses.append({
+                    'epoch': epoch+1,
+                    'val_loss_amp': loss_fn(pred_amp_residual, target_amp_residual).item(),
+                    'val_loss_freq': loss_fn(pred_freq_residual, target_freq_residual).item(),
+                }, ignore_index=True)
+        
+        # -- take a step in the learning rate scheduler based on the validation loss
+        scheduler.step(val_loss)
+
+        # -- log epoch losses
+        epoch_losses = epoch_losses.append({
+            'epoch': epoch+1,
+            'train_loss_amp': running_losses[running_losses['epoch'] == epoch+1]['train_loss_amp'].mean(),
+            'train_loss_freq': running_losses[running_losses['epoch'] == epoch+1]['train_loss_freq'].mean(),
+            'val_loss_amp': running_losses[running_losses['epoch'] == epoch+1]['val_loss_amp'].mean(),
+            'val_loss_freq': running_losses[running_losses['epoch'] == epoch+1]['val_loss_freq'].mean(),
+        }, ignore_index=True)
         logger.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
+
+    
+    print("Training complete!")
 
 
 
