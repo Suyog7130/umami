@@ -228,7 +228,7 @@ def merger_weighted_mse_loss_func(true, predicted, amp_ml):
     return loss
     
 
-def train_calibrator(wfmodel_modelpath=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10', 
+def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338-10', 
                      wfmodel_configpath='modelconfig-cvae-paper-I.json',
                      approximant='SEOBNRv4', batch_size=64, num_epochs=25,
                      dummyrun=False):
@@ -262,7 +262,7 @@ def train_calibrator(wfmodel_modelpath=f'../{PROJECT_DIR}/trained-models/model-2
                                 configpath=wfmodel_configpath, 
                                 device=DEVICE, precision=PRECISION,)
     except FileNotFoundError:
-        wfmodel_modelpath = '../trained-models/model-20251004_072338-10'
+        wfmodel_modelpath = f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
         wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
                                 configpath=wfmodel_configpath, 
                                 device=DEVICE, precision=PRECISION,)
