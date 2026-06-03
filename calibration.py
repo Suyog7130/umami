@@ -4,7 +4,6 @@ We will use the training data to calibrate the generated outputs, by predicting 
 between the generated [amp,freq] and the target [amp,freq], for example.
 """
 
-import tqdm
 import numpy as np
 import logging
 import datetime
@@ -13,9 +12,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from tqdm import tqdm
+
 from datacvae import CustomDataset, CustomDataLoader
-
-
 from optimize import load_flex_model
 
 
@@ -154,13 +153,20 @@ def get_calibrator_input(wfmodel, originals, labels):
 
     # -- get the ml predictions for this batch
     with torch.no_grad():
-        ml_amp, ml_freq = wfmodel.generate(labels, convert_to_hphc=False)
+        ml_outputs = wfmodel.generate(labels, convert_to_hphc=False)  # shape: (batch, 2, n)
+    ml_amp, ml_freq = ml_outputs[:, 0, :], ml_outputs[:, 1, :]
+
+    # -- repeat first element in ML generated outputs which have shape (batch, 2, 8190),
+    # -- while original [amp,freq] are of shape (batch, 2, 8191)!
+    ml_amp = torch.cat([ml_amp[:, 0:1], ml_amp], dim=1)  # shape: (batch, n+1)
+    ml_freq = torch.cat([ml_freq[:, 0:1], ml_freq], dim=1)  # shape: (batch, n+1)
+
+    assert ml_amp.shape == orig_amp.shape, f"ML generated amplitude shape {ml_amp.shape} does not match original amplitude shape {orig_amp.shape}"
+    assert ml_freq.shape == orig_freq.shape, f"ML generated frequency shape {ml_freq.shape} does not match original frequency shape {orig_freq.shape}"
 
     target_amp_residual = orig_amp - ml_amp
     target_freq_residual = orig_freq - ml_freq
-
-    assert target_amp_residual.shape == ml_amp.shape == orig_amp.shape
-    assert target_freq_residual.shape == ml_freq.shape == orig_freq.shape
+    logging.debug(f"Target amplitude residual shape: {target_amp_residual.shape}, Target frequency residual shape: {target_freq_residual.shape}")
 
     # -- calibrator takes in ml generated [amp,freq] and the parameters, and predicts the residuals
     calibrator_input = torch.stack([ml_amp, ml_freq], dim=1)  # shape: (batch, 2, n)
@@ -174,6 +180,7 @@ def get_calibrator_input(wfmodel, originals, labels):
 
     calibrator_input = torch.cat([calibrator_input, param_m1.unsqueeze(1), param_m2.unsqueeze(1),
                                 param_s1z.unsqueeze(1), param_s2z.unsqueeze(1)], dim=1)  # shape: (batch, 6, n)
+    logging.debug(f"Calibrator input shape: {calibrator_input.shape}")
     return calibrator_input, (target_amp_residual, target_freq_residual)
             
         
@@ -182,14 +189,37 @@ def get_calibrator_input(wfmodel, originals, labels):
 def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_072338-10', 
                      wfmodel_configpath='modelconfig-cvae-paper-I.json',
                      approximant='SEOBNRv4', batch_size=128, num_epochs=100):
+    """
+    Train the residual calibrator model.
 
+    NOTE: ML generated waveforms have shape (batch, 2, 8190), for the Paper-I model,
+    likely due to the way data was preprocessed for it. Whereas, the saved waveforms
+    in the `regen` HDF files have shape (batch, 2, 8191). This is because the `regen` 
+    HDF files were generated such that one element from the amplitude array is removed
+    to match the shape of the frequency array, which is one element shorter by definition.
+    Something else happended in the ML model training that caused the generated waveforms
+    to have one less element in the time dimension, which is not ideal but we can work with it for now.
+
+    I bypassed this issue when caculating the mismatch for the ML waveforms earlier, by removing
+    one element from the frequency array before calculating the phase, and then adding a start
+    phase to the calculated phase, so that it matches the shape of the amplitude array. Still,
+    I think that time I didn't use the `regen` version of the HDF files, so that the original
+    waveforms and [amp,freq] were also of 8190 length.
+
+    For now, we just repeat the first element twice for the ML generated [amp,freq] and train
+    the calibrator to predict the residuals for a waveform of length 8191 instead of 8190. This
+    allows us to directly compare the calibrated waveforms with the original waveforms in the `regen`
+    HDF files, without having to worry about the shape mismatch issue. We can always retrain the ML 
+    model later with the correct shape of the waveforms, and then retrain the calibrator on top of that.
+    """
+    logging.info(f"Training residual calibrator model with ML waveform model from {wfmodel_modelpath} and config from {wfmodel_configpath}")
     # -- init waveform model
     wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
                               configpath=wfmodel_configpath, 
                               device=DEVICE, precision=PRECISION,)
     
     trainhdf = '../data/SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen.hdf'
-    valhdf = '../data/SEOBNRv4-val-10000-fcutoff-uniform-aligned-regen.hdf'
+    valhdf = '../data/SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen.hdf'
 
     calmodel = ResidualCalibrationCNN(
         input_channels=6,  # [ml_amp, ml_freq, param_m1, param_m2, param_s1z, param_s2z]
@@ -199,8 +229,10 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
         kernel_size=7,
         dropout=0.0,
     )
+    calmodel.to(DEVICE)
+    logging.info(f"Calibrator model architecture: {calmodel}")
 
-    train_set = CustomDataset(forwhat='train', approximant='', returnattr=True,
+    train_set = CustomDataset(forwhat='train', approximant=approximant, returnattr=True,
                             convert=False, hdf_fname=trainhdf, 
                             train_device=DEVICE, precision=PRECISION)
     logging.info(f'Reading validation data from {valhdf}.hdf')
@@ -224,6 +256,7 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
         patience=20,
     )
     loss_fn = torch.nn.MSELoss()
+    logging.info(f"Starting training loop for {num_epochs} epochs...")
 
     for epoch in tqdm(range(num_epochs), desc='Epoch'):
         calmodel.train(True)
@@ -262,10 +295,11 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
 
                 loss = loss_fn(pred_amp_residual, target_amp_residual) + loss_fn(pred_freq_residual, target_freq_residual)
                 val_loss += loss.item()
+        logging.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
 
 
 
 
 
 if __name__ == "__main__":
-    main()
+    train_calibrator()
