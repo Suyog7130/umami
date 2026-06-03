@@ -14,6 +14,7 @@ def init_logging(args, log_dir='logs'):
     Levels:
     --trace   : DEBUG everywhere (Current file + Imports + Transitive deps)
     --debug   : DEBUG current file + Direct Imports. INFO for Transitive.
+    --describe: DEBUG current file + INFO on imports. WARNING for others.
     --verbose : INFO current file + Direct Imports. WARNING for others.
     Default   : INFO current file. WARNING for imports.
     --quiet   : WARNING/ERROR only everywhere.
@@ -27,6 +28,8 @@ def init_logging(args, log_dir='logs'):
         levels = (logging.DEBUG, logging.DEBUG, logging.DEBUG)
     elif args.debug:
         levels = (logging.DEBUG, logging.DEBUG, logging.INFO)
+    elif args.describe:
+        levels = (logging.DEBUG, logging.INFO, logging.INFO)
     elif args.verbose:
         levels = (logging.INFO, logging.INFO, logging.WARNING)
     elif args.quiet:
@@ -116,6 +119,14 @@ def init_verbosity_args(parser: argparse.ArgumentParser = None) -> argparse.Argu
     """
     Attaches a mutually exclusive logging verbosity group to an existing parser instance.
     Import this from your utils module across projects.
+
+    The allowed flags are:
+    --trace   : DEBUG everywhere (Current file + Imports + Transitive deps)
+    --debug   : DEBUG current file + Direct Imports. INFO for Transitive.
+    --describe: DEBUG current file + INFO on imports. WARNING for others.
+    --verbose : INFO current file + Direct Imports. WARNING for others.
+    Default   : INFO current file. WARNING for imports.
+    --quiet   : WARNING/ERROR only everywhere.
     """
     if parser is None:
         parser = argparse.ArgumentParser(description="Parser with mutually exclusive verbosity arguments.")
@@ -132,6 +143,11 @@ def init_verbosity_args(parser: argparse.ArgumentParser = None) -> argparse.Argu
         "--debug", 
         action="store_true", 
         help="Standard debugging (Current file + Direct internal imports)"
+    )
+    verbosity_group.add_argument(
+        "--describe", 
+        action="store_true", 
+        help="Standard debugging (Current file + INFO on imports)"
     )
     verbosity_group.add_argument(
         "-v",
