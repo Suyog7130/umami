@@ -1498,15 +1498,11 @@ class CustomDataset(Dataset):
         return self.nsamples
     
     def _find_nsamples(self):
-        with h5py.File(self.hdf_fname+'.hdf', 'r') as hf:
+        self.hdf_fname = self.hdf_fname if self.hdf_fname.endswith('.hdf') else self.hdf_fname + '.hdf'
+        with h5py.File(self.hdf_fname, 'r') as hf:
             self.nsamples = len(hf.keys())
             logging.info(f'Set nsamples to {self.nsamples}')
         return self.nsamples
-    
-    def _find_nsamples(self):
-        with h5py.File(self.hdf_fname+'.hdf', 'r') as hf:
-            self.nsamples = len(hf.keys())
-            logging.info(f'Set nsamples to {self.nsamples}')
     
     def _get_data_old(self, n_samples=1000, masses=get_mass(), approximant='IMRPhenomD', paramsonly=False):
         """
@@ -1582,11 +1578,6 @@ class CustomDataset(Dataset):
         self.n_samples = len(masses)
         self.masses = masses
 
-    def make_strain(self, idx, custom_batch=None):
-        if custom_batch is not None:
-            m1, m2 = custom_batch[idx]
-        else:
-            m1, m2 = self.masses[idx]
     def make_strain(self, idx, custom_batch=None):
         if custom_batch is not None:
             m1, m2 = custom_batch[idx]
@@ -1700,7 +1691,8 @@ class CustomDataset(Dataset):
             open_mode = 'r+'
         else:
             open_mode = 'r'
-        with h5py.File(self.hdf_fname+'.hdf', open_mode) as hf:
+        self.hdf_fname = self.hdf_fname if self.hdf_fname.endswith('.hdf') else self.hdf_fname+'.hdf'
+        with h5py.File(self.hdf_fname, open_mode) as hf:
             data = hf[f'sample{idx}']
             logging.debug(f'keys: {data.keys()}')
 

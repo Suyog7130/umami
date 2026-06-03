@@ -5,7 +5,6 @@ between the generated [amp,freq] and the target [amp,freq], for example.
 """
 
 import numpy as np
-import logging
 import datetime
 
 import torch
@@ -17,7 +16,11 @@ from tqdm import tqdm
 from datacvae import CustomDataset, CustomDataLoader
 from optimize import load_flex_model
 
+from utils.generic import init_logging, init_verbosity_args
 
+parser = init_verbosity_args()
+args = parser.parse_args()
+logger = init_logging(args)
 
 PROJECT_DIR = 'v0p1'
 
@@ -41,7 +44,7 @@ elif torch.backends.mps.is_available():
 else:
     DEVICE = torch.device("cpu")
     PRECISION = 'float64'  # Use double precision for CPU
-logging.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
+logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
 
 
@@ -166,7 +169,7 @@ def get_calibrator_input(wfmodel, originals, labels):
 
     target_amp_residual = orig_amp - ml_amp
     target_freq_residual = orig_freq - ml_freq
-    logging.debug(f"Target amplitude residual shape: {target_amp_residual.shape}, Target frequency residual shape: {target_freq_residual.shape}")
+    logger.debug(f"Target amplitude residual shape: {target_amp_residual.shape}, Target frequency residual shape: {target_freq_residual.shape}")
 
     # -- calibrator takes in ml generated [amp,freq] and the parameters, and predicts the residuals
     calibrator_input = torch.stack([ml_amp, ml_freq], dim=1)  # shape: (batch, 2, n)
@@ -180,7 +183,7 @@ def get_calibrator_input(wfmodel, originals, labels):
 
     calibrator_input = torch.cat([calibrator_input, param_m1.unsqueeze(1), param_m2.unsqueeze(1),
                                 param_s1z.unsqueeze(1), param_s2z.unsqueeze(1)], dim=1)  # shape: (batch, 6, n)
-    logging.debug(f"Calibrator input shape: {calibrator_input.shape}")
+    logger.debug(f"Calibrator input shape: {calibrator_input.shape}")
     return calibrator_input, (target_amp_residual, target_freq_residual)
             
         
@@ -188,7 +191,7 @@ def get_calibrator_input(wfmodel, originals, labels):
 
 def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_072338-10', 
                      wfmodel_configpath='modelconfig-cvae-paper-I.json',
-                     approximant='SEOBNRv4', batch_size=128, num_epochs=100):
+                     approximant='SEOBNRv4', batch_size=64, num_epochs=100):
     """
     Train the residual calibrator model.
 
@@ -212,7 +215,7 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
     HDF files, without having to worry about the shape mismatch issue. We can always retrain the ML 
     model later with the correct shape of the waveforms, and then retrain the calibrator on top of that.
     """
-    logging.info(f"Training residual calibrator model with ML waveform model from {wfmodel_modelpath} and config from {wfmodel_configpath}")
+    logger.info(f"Training residual calibrator model with ML waveform model from {wfmodel_modelpath} and config from {wfmodel_configpath}")
     # -- init waveform model
     wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
                               configpath=wfmodel_configpath, 
@@ -230,23 +233,23 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
         dropout=0.0,
     )
     calmodel.to(DEVICE)
-    logging.info(f"Calibrator model architecture: {calmodel}")
+    logger.info(f"Calibrator model architecture: {calmodel}")
 
     train_set = CustomDataset(forwhat='train', approximant=approximant, returnattr=True,
                             convert=False, hdf_fname=trainhdf, 
                             train_device=DEVICE, precision=PRECISION)
-    logging.info(f'Reading validation data from {valhdf}.hdf')
+    logger.info(f'Reading validation data from {valhdf}.hdf')
     valid_set = CustomDataset(forwhat='valid', approximant=approximant, returnattr=True,
                             convert=False, hdf_fname=valhdf, 
                             train_device=DEVICE, precision=PRECISION)
     
     training_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
     validation_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=True)
-    logging.info(training_loader.__dict__)
+    logger.info(training_loader.__dict__)
     ntbatches = len(training_loader)
     nvbatches = len(validation_loader)
-    logging.info(f'Number of Training batches: {ntbatches}')  # this doesn't return the batchsize!
-    logging.info(f'Number of Validationg batches: {nvbatches}')
+    logger.info(f'Number of Training batches: {ntbatches}')  # this doesn't return the batchsize!
+    logger.info(f'Number of Validationg batches: {nvbatches}')
 
     optimizer = torch.optim.AdamW(calmodel.parameters(), lr=1e-3, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
@@ -256,7 +259,7 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
         patience=20,
     )
     loss_fn = torch.nn.MSELoss()
-    logging.info(f"Starting training loop for {num_epochs} epochs...")
+    logger.info(f"Starting training loop for {num_epochs} epochs...")
 
     for epoch in tqdm(range(num_epochs), desc='Epoch'):
         calmodel.train(True)
@@ -295,7 +298,7 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
 
                 loss = loss_fn(pred_amp_residual, target_amp_residual) + loss_fn(pred_freq_residual, target_freq_residual)
                 val_loss += loss.item()
-        logging.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
+        logger.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
 
 
 

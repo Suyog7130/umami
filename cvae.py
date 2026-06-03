@@ -977,7 +977,7 @@ class CVAE(nn.Module):
             hphc[i] = np.stack([hp, hc])
         return hphc
 
-    def generate(self, labels=None, keys_path=None) -> np.ndarray:
+    def generate(self, labels=None, keys_path=None, convert_to_hphc=True) -> np.ndarray:
         """
         From a trained model, generate new output waveforms using only the
         conditional labels information, by sampling from the latent space and 
@@ -987,12 +987,18 @@ class CVAE(nn.Module):
         ---------    
         labels: torch.Tensor
             The conditional labels to generate waveforms for. Must be provided!
+        keys_path: str
+            Path to the JSON file containing the global normalization parameters for 
+            amplitude and frequency. If None, default values will be used.
+        convert_to_hphc: bool
+            Whether to convert the generated amplitude and frequency series to hp and hc 
+            polarizations. Default is True.
 
         Returns:
         --------
-        hphc: np.ndarray
-            The generated waveforms in the form of hp and hc polarizations, with shape 
-            (batch_size, 2, sequence_length).
+        np.ndarray: Array of shape (batch_size, 2, sequence_length) containing the generated 
+        hp and hc polarizations for each sample in the batch if convert_to_hphc is True, 
+        otherwise returns the generated amplitude and frequency series as a numpy array.
         """
         if labels is not None:
             # -- check dimensions of labels with MODEL_CONFIG['num_classes']
@@ -1011,9 +1017,13 @@ class CVAE(nn.Module):
             zykey = self.reparameterize(zykey_mu, zykey_logvar)
             # NOTE: In this original model, we do not have options to concatenate 
             generated_output = self.decode(zy, zykey, labels)
+        
+        if convert_to_hphc:
+            hphc = self.convert_output(generated_output, keys_path=keys_path)
+            return hphc
+        else:
+            return generated_output
 
-        hphc = self.convert_output(generated_output, keys_path=keys_path)
-        return hphc
 
 
 class CAE(CVAE):
