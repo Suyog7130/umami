@@ -362,7 +362,7 @@ def train_calibrator(wfmodel_modelpath=f'../{PROJECT_DIR}/trained-models/model-2
             running_train_loss_file.flush()
             train_loss_amp += amp_loss.item()
             train_loss_freq += freq_loss.item()
-        logger.info(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {amp_loss.item()}, Freq Loss: {freq_loss.item()}")
+        logger.debug(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {amp_loss.item()}, Freq Loss: {freq_loss.item()}")
 
         # validation loop
         calmodel.eval()
@@ -395,7 +395,7 @@ def train_calibrator(wfmodel_modelpath=f'../{PROJECT_DIR}/trained-models/model-2
                 running_val_loss_file.flush()
                 val_loss_amp += val_amp_loss.item()
                 val_loss_freq += val_freq_loss.item()
-            logger.info(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {val_amp_loss.item()}, Val Freq Loss: {val_freq_loss.item()}")
+            logger.debug(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {val_amp_loss.item()}, Val Freq Loss: {val_freq_loss.item()}")
 
         # -- take a step in the learning rate scheduler based on the validation loss
         scheduler.step(val_loss)
