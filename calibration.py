@@ -394,7 +394,7 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             freq_loss = merger_weighted_mse_loss_func(target_freq_residual, pred_freq_residual, calibrator_input[:, 0, :])
 
             loss = amp_loss + freq_loss
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 
