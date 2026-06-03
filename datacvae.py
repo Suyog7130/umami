@@ -1422,7 +1422,7 @@ class CustomDataset(Dataset):
     precision : {'float32', 'float64'}
         The precision to use for the data. Default is 'float64'.
     target : {'unnorm_ampfreq', 'logamp_freq', 'amp_phase', 'logamp_phase'}
-        The target format for the data. Default is None (return original polarizations).
+        The target format for the data. Default is 'None' and returns [normed-amp, normed-freq] data.
     
 
     Methods
