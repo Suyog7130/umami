@@ -5,6 +5,7 @@ between the generated [amp,freq] and the target [amp,freq], for example.
 """
 
 import os
+import h5py
 import numpy as np
 import pandas as pd
 import datetime
@@ -134,7 +135,7 @@ class ResidualCalibrationCNN(nn.Module):
     
 
 
-def get_calibrator_input(wfmodel, originals, labels):
+def get_calibrator_input(wfmodel, originals, labels, save_data_to_disk=True):
     """
     Function to obtain the input and target for the calibrator model, 
     given the originals waveforms, the parameters, and the trained waveform model.
@@ -207,6 +208,45 @@ def get_calibrator_input(wfmodel, originals, labels):
     calibrator_input = torch.cat([calibrator_input, param_m1.unsqueeze(1), param_m2.unsqueeze(1),
                                 param_s1z.unsqueeze(1), param_s2z.unsqueeze(1)], dim=1)  # shape: (batch, 6, n)
     logger.debug(f"Calibrator input shape: {calibrator_input.shape}")
+    if save_data_to_disk:
+        # Save calibaration input, target residuals, and parameters the first time, so that we can reuse them next time!
+        # Save this data to a HDF file repeatedly appending to it every time we call this function, 
+        # and then we can load this data directly in the calibrator training loop, instead of having to 
+        # generate it on the fly every time, which is computationally expensive since it requires running the ML model inference every time.
+        outpath = f'../data/calibrator_input_data_{NOW}.hdf'
+        with h5py.File(outpath, 'a') as f:
+            if 'calibrator_input' not in f:
+                f.create_dataset('calibrator_input', data=calibrator_input.cpu().numpy(), 
+                                 maxshape=(None, calibrator_input.shape[1], calibrator_input.shape[2]), chunks=(1, calibrator_input.shape[1], calibrator_input.shape[2]))
+                f.create_dataset('target_amp_residual', data=target_amp_residual.cpu().numpy(), 
+                                 maxshape=(None, target_amp_residual.shape[1], target_amp_residual.shape[2]), chunks=(1, target_amp_residual.shape[1], target_amp_residual.shape[2]))
+                f.create_dataset('target_freq_residual', data=target_freq_residual.cpu().numpy(), 
+                                 maxshape=(None, target_freq_residual.shape[1], target_freq_residual.shape[2]), chunks=(1, target_freq_residual.shape[1], target_freq_residual.shape[2]))
+                f.create_group('parameters')
+                f['parameters'].create_dataset('param_m1', data=param_m1.cpu().numpy(), 
+                                              maxshape=(None, param_m1.shape[1]), chunks=(1, param_m1.shape[1]))
+                f['parameters'].create_dataset('param_m2', data=param_m2.cpu().numpy(), 
+                                              maxshape=(None, param_m2.shape[1]), chunks=(1, param_m2.shape[1]))
+                f['parameters'].create_dataset('param_s1z', data=param_s1z.cpu().numpy(), 
+                                              maxshape=(None, param_s1z.shape[1]), chunks=(1, param_s1z.shape[1]))
+                f['parameters'].create_dataset('param_s2z', data=param_s2z.cpu().numpy(), 
+                                              maxshape=(None, param_s2z.shape[1]), chunks=(1, param_s2z.shape[1]))
+            else:
+                f['calibrator_input'].resize(f['calibrator_input'].shape[0] + calibrator_input.shape[0], axis=0)
+                f['calibrator_input'][-calibrator_input.shape[0]:] = calibrator_input.cpu().numpy()
+                f['target_amp_residual'].resize(f['target_amp_residual'].shape[0] + target_amp_residual.shape[0], axis=0)
+                f['target_amp_residual'][-target_amp_residual.shape[0]:] = target_amp_residual.cpu().numpy()
+                f['target_freq_residual'].resize(f['target_freq_residual'].shape[0] + target_freq_residual.shape[0], axis=0)
+                f['target_freq_residual'][-target_freq_residual.shape[0]:] = target_freq_residual.cpu().numpy()
+                f['parameters'].resize(f['parameters'].shape[0] + param_m1.shape[0], axis=0)
+                f['parameters'][-param_m1.shape[0]:] = param_m1.cpu().numpy()
+                f['parameters'].resize(f['parameters'].shape[0] + param_m2.shape[0], axis=0)
+                f['parameters'][-param_m2.shape[0]:] = param_m2.cpu().numpy()
+                f['parameters'].resize(f['parameters'].shape[0] + param_s1z.shape[0], axis=0)
+                f['parameters'][-param_s1z.shape[0]:] = param_s1z.cpu().numpy()
+                f['parameters'].resize(f['parameters'].shape[0] + param_s2z.shape[0], axis=0)
+                f['parameters'][-param_s2z.shape[0]:] = param_s2z.cpu().numpy()
+        logger.info(f"Saved calibrator input and target residuals to {outpath}")
     return calibrator_input, (target_amp_residual, target_freq_residual)
             
         
