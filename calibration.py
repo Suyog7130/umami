@@ -4,6 +4,7 @@ We will use the training data to calibrate the generated outputs, by predicting 
 between the generated [amp,freq] and the target [amp,freq], for example.
 """
 
+import os
 import numpy as np
 import pandas as pd
 import datetime
@@ -11,6 +12,7 @@ import datetime
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
 from tqdm import tqdm
 
@@ -182,6 +184,25 @@ def get_calibrator_input(wfmodel, originals, labels):
     param_s1z = param_s1z.unsqueeze(-1).expand(-1, ml_amp.shape[-1])
     param_s2z = param_s2z.unsqueeze(-1).expand(-1, ml_amp.shape[-1])
 
+    # fig, ax = plt.subplots(4, 1, figsize=(12, 12))
+    # ax[0].plot(ml_amp[0].cpu().numpy(), label='ML Amp')
+    # ax[0].plot(orig_amp[0].cpu().numpy(), label='Original Amp')
+    # ax[0].set_title('ML Generated Amplitude vs Original Amplitude')
+    # ax[0].legend()
+    # ax[1].plot(ml_freq[0].cpu().numpy(), label='ML Freq')
+    # ax[1].plot(orig_freq[0].cpu().numpy(), label='Original Freq')
+    # ax[1].set_title('ML Generated Frequency vs Original Frequency')
+    # ax[1].legend()
+    # ax[2].plot(target_amp_residual[0].cpu().numpy(), label='Target Amp Residual')
+    # ax[2].set_title('Target Amplitude Residual')
+    # ax[2].legend()
+    # ax[3].plot(target_freq_residual[0].cpu().numpy(), label='Target Freq Residual')
+    # ax[3].set_title('Target Frequency Residual')
+    # ax[3].legend()
+    # plt.tight_layout()
+    # plt.savefig(f'calibrator_input_example_{NOW}.png')
+    # plt.close()
+
     calibrator_input = torch.cat([calibrator_input, param_m1.unsqueeze(1), param_m2.unsqueeze(1),
                                 param_s1z.unsqueeze(1), param_s2z.unsqueeze(1)], dim=1)  # shape: (batch, 6, n)
     logger.debug(f"Calibrator input shape: {calibrator_input.shape}")
@@ -192,7 +213,8 @@ def get_calibrator_input(wfmodel, originals, labels):
 
 def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_072338-10', 
                      wfmodel_configpath='modelconfig-cvae-paper-I.json',
-                     approximant='SEOBNRv4', batch_size=64, num_epochs=100):
+                     approximant='SEOBNRv4', batch_size=64, num_epochs=100,
+                     dummyrun=True):
     """
     Train the residual calibrator model.
 
@@ -218,9 +240,16 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
     """
     logger.info(f"Training residual calibrator model with ML waveform model from {wfmodel_modelpath} and config from {wfmodel_configpath}")
     # -- init waveform model
-    wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
-                              configpath=wfmodel_configpath, 
-                              device=DEVICE, precision=PRECISION,)
+    try:
+        wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
+                                configpath=wfmodel_configpath, 
+                                device=DEVICE, precision=PRECISION,)
+    except FileNotFoundError:
+        wfmodel_modelpath = '../trained-models/model-20251004_072338-10'
+        wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
+                                configpath=wfmodel_configpath, 
+                                device=DEVICE, precision=PRECISION,)
+    wfmodel.eval()  # set to eval mode since we are only using it for inference to generate the calibrator inputs
     
     trainhdf = '../data/SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen.hdf'
     valhdf = '../data/SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen.hdf'
@@ -234,6 +263,9 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
         dropout=0.0,
     )
     calmodel.to(device=DEVICE, dtype=getattr(torch, PRECISION))
+    if DEVICE==torch.device("cuda"):
+        # calmodel = torch.nn.DataParallel(calmodel)
+        calmodel.compile() # compile the model for faster training on CUDA
     logger.info(f"Calibrator model architecture: {calmodel}")
 
     train_set = CustomDataset(forwhat='train', approximant=approximant, returnattr=True,
@@ -263,11 +295,30 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
     logger.info(f"Starting training loop for {num_epochs} epochs...")
 
     epoch_losses = pd.DataFrame(columns=['epoch', 'train_loss_amp', 'train_loss_freq', 'val_loss_amp', 'val_loss_freq'])
-    running_losses = pd.DataFrame(columns=['epoch', 'train_loss_amp', 'train_loss_freq', 'val_loss_amp', 'val_loss_freq'])
+    fname = PROJECT_DIR + f'/results/{TODAY}'
+    os.makedirs(fname, exist_ok=True)
+    running_train_loss_file = open(f'{fname}/calibrator_running_train_losses_{NOW}.csv', 'w')
+    running_train_loss_file.write(','.join(['epoch', 'train_loss_amp', 'train_loss_freq']) + '\n')
+    running_val_loss_file = open(f'{fname}/calibrator_running_val_losses_{NOW}.csv', 'w')
+    running_val_loss_file.write(','.join(['epoch', 'val_loss_amp', 'val_loss_freq']) + '\n')
+
+    if dummyrun:
+        logger.info("Running in dummy mode for quick testing...")
+        num_epochs = 1
+        training_loader = CustomDataLoader(train_set, batch_size=16, shuffle=True)
+        validation_loader = CustomDataLoader(valid_set, batch_size=16, shuffle=True)
+
     for epoch in tqdm(range(num_epochs), desc='Epoch'):
         calmodel.train(True)
 
+        train_loss_amp = 0.0
+        train_loss_freq = 0.0
+        counter = 0
         for originals, _, labels, keys, _, attr in tqdm(training_loader, total=len(training_loader), desc='Steps/Batchs'):
+            counter += 1
+            if dummyrun and counter > 5:
+                break
+
             originals = originals.to(DEVICE)
             labels = labels.to(DEVICE)
 
@@ -286,17 +337,23 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
             optimizer.step()
 
             # -- log training loss for this batch
-            running_losses = running_losses.append({
-                'epoch': epoch+1,
-                'train_loss_amp': amp_loss.item(),
-                'train_loss_freq': freq_loss.item(),
-            }, ignore_index=True)
+            running_train_loss_file.write(f"{epoch+1},{amp_loss.item()},{freq_loss.item()}\n")
+            running_train_loss_file.flush()
+            train_loss_amp += amp_loss.item()
+            train_loss_freq += freq_loss.item()
+            logger.debug(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {amp_loss.item()}, Freq Loss: {freq_loss.item()}")
 
         # validation loop
         calmodel.eval()
         with torch.no_grad():
-            val_loss = 0.0
+            val_loss_amp = 0.0
+            val_loss_freq = 0.0
+            counter = 0
             for originals, _, labels, keys, _, attr in tqdm(validation_loader, total=len(validation_loader), desc='Validation Steps'):
+                counter += 1
+                if dummyrun and counter > 5:
+                    break
+
                 originals = originals.to(DEVICE)
                 labels = labels.to(DEVICE)
 
@@ -306,29 +363,43 @@ def train_calibrator(wfmodel_modelpath='../v0p1/trained-models/model-20251004_07
                 out = calmodel(calibrator_input)  # shape: (batch, 2, n)
                 pred_amp_residual, pred_freq_residual = out[:, 0, :], out[:, 1, :]
 
-                loss = loss_fn(pred_amp_residual, target_amp_residual) + loss_fn(pred_freq_residual, target_freq_residual)
-                val_loss += loss.item()
+                val_amp_loss = loss_fn(pred_amp_residual, target_amp_residual)
+                val_freq_loss = loss_fn(pred_freq_residual, target_freq_residual)
+                val_loss = val_loss_amp + val_loss_freq
 
-                running_losses = running_losses.append({
-                    'epoch': epoch+1,
-                    'val_loss_amp': loss_fn(pred_amp_residual, target_amp_residual).item(),
-                    'val_loss_freq': loss_fn(pred_freq_residual, target_freq_residual).item(),
-                }, ignore_index=True)
-        
+                # -- log validation loss for this batch
+                logger.debug(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {val_amp_loss.item()}, Val Freq Loss: {val_freq_loss.item()}")
+                running_val_loss_file.write(f"{epoch+1},{val_amp_loss.item()},{val_freq_loss.item()}\n")
+                running_val_loss_file.flush()
+                val_loss_amp += val_amp_loss.item()
+                val_loss_freq += val_freq_loss.item()
+
         # -- take a step in the learning rate scheduler based on the validation loss
         scheduler.step(val_loss)
 
         # -- log epoch losses
         epoch_losses = epoch_losses.append({
             'epoch': epoch+1,
-            'train_loss_amp': running_losses[running_losses['epoch'] == epoch+1]['train_loss_amp'].mean(),
-            'train_loss_freq': running_losses[running_losses['epoch'] == epoch+1]['train_loss_freq'].mean(),
-            'val_loss_amp': running_losses[running_losses['epoch'] == epoch+1]['val_loss_amp'].mean(),
-            'val_loss_freq': running_losses[running_losses['epoch'] == epoch+1]['val_loss_freq'].mean(),
+            'train_loss_amp': train_loss_amp/len(training_loader),
+            'train_loss_freq': train_loss_freq/len(training_loader),
+            'val_loss_amp': val_loss_amp/len(validation_loader),
+            'val_loss_freq': val_loss_freq/len(validation_loader),
         }, ignore_index=True)
         logger.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
 
-    
+        # -- every 10 epochs, save the model checkpoint
+        if (epoch + 1) % 10 == 0:
+            outpath = PROJECT_DIR + f'/trained-models/calibrator_model_{NOW}_epoch_{epoch+1}.pt'
+            torch.save(calmodel.state_dict(), outpath)
+
+    # -- save the trained calibrator model
+    outpath = PROJECT_DIR + f'/trained-models/calibrator_model_{NOW}.pt'
+    torch.save(calmodel.state_dict(), outpath)
+    # -- save the epoch losses to a CSV file
+    epoch_losses.to_csv(f'{fname}/calibrator_epoch_losses_{NOW}.csv', index=False)
+    # -- close the running loss files
+    running_train_loss_file.close()
+    running_val_loss_file.close()
     print("Training complete!")
 
 
