@@ -1800,7 +1800,8 @@ class CustomDataset(Dataset):
             if self.returnattr:
                 returnables.append(out_attr)
             if self.return_sample_indices:
-                returnables.append(f'sample{idx}')
+                # -- return only numeric sample index as a numpy array, `collate_fn` converts to tensor later on.
+                returnables.append(np.array(idx))  
                 
             if self.target=='unnorm_ampfreq':
                 logging.debug("Returning normalized amp and freq as input, and unnormalized amp and freq as target since `unnorm_target` is True.")
@@ -1843,8 +1844,8 @@ class CustomDataset(Dataset):
         # Determine the maximum number of tags in the batch
         if self.forwhat=='test' or self.returnattr:
             max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the feature dict
-        elif self.return_sample_indices:
-            max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the sample index, since it a string and not a tag
+        # elif self.return_sample_indices:
+        #     max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the sample index, since it a string and not a tag
         else:
             max_tags = max(len(sample) for sample in batch)
 
@@ -1862,9 +1863,9 @@ class CustomDataset(Dataset):
                     if key not in feat_dict_batch:
                         feat_dict_batch[key] = []
                     feat_dict_batch[key].append(value)
-            elif self.return_sample_indices:
-                *tags, sample_index = sample
-                logging.debug(f'Number of tags: {len(tags)}, Sample index: {sample_index}')
+            # elif self.return_sample_indices:
+            #     *tags, sample_index = sample
+            #     logging.debug(f'Number of tags: {len(tags)}, Sample index: {sample_index}')
             else:
                 tags = sample
 
@@ -1880,8 +1881,8 @@ class CustomDataset(Dataset):
         # Ensure all tensors are of the same shape
         if self.forwhat=='test' or self.returnattr:
             return (*tag_batches, feat_dict_batch)
-        elif self.return_sample_indices:
-            return (*tag_batches, sample_index)
+        # elif self.return_sample_indices:
+        #     return (*tag_batches, sample_index)
         return tag_batches
 
     def __getitem__(self, idx, custom_batch=None):

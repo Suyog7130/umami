@@ -206,11 +206,9 @@ def get_calibrator_input(wfmodel, originals, labels,
     calibrator_input = torch.cat([calibrator_input, param_m1.unsqueeze(1), param_m2.unsqueeze(1),
                                 param_s1z.unsqueeze(1), param_s2z.unsqueeze(1)], dim=1)  # shape: (batch, 6, n)
     logger.debug(f"Calibrator input shape: {calibrator_input.shape}")
-    print(indices)
 
     if data_save_hdf is not None and indices is not None:
-        logger.info(f"Saving calibrator input and target residuals to {data_save_hdf} for this batch...")
-        print(indices)
+        # logger.debug(f"Saving calibrator input and target residuals to {data_save_hdf} for this batch...")
         savename = f'../data/{data_save_hdf.strip(".hdf")}_{NOW}.hdf'
         os.makedirs(os.path.dirname(savename), exist_ok=True)
         # Save calibaration input, target residuals, and parameters the first time, so that we can reuse them next time!
@@ -221,7 +219,7 @@ def get_calibrator_input(wfmodel, originals, labels,
             # -- create a new group for each data waveform in the batch, with datasets for:
             # -- [ml_amp, ml_freq, target_amp_residual, target_freq_residual, param_m1, param_m2, param_s1z, param_s2z]
             for i in range(calibrator_input.shape[0]):
-                group_name = str(indices[i])  # use the original sample index from the dataset as the group name
+                group_name = f'sample{indices[i]}'  # use the original sample index from the dataset as the group name
                 if group_name in f:
                     del f[group_name]  # delete existing group if it exists, to avoid appending to old data
                 grp = f.create_group(group_name)
@@ -233,7 +231,7 @@ def get_calibrator_input(wfmodel, originals, labels,
                 grp.create_dataset('param_m2', data=param_m2[i, 0].cpu().numpy())
                 grp.create_dataset('param_s1z', data=param_s1z[i, 0].cpu().numpy())
                 grp.create_dataset('param_s2z', data=param_s2z[i, 0].cpu().numpy())
-        logger.info(f"Saved calibrator input and target residuals to {savename}")
+        # logger.debug(f"Saved calibrator input and target residuals to {savename}")
     return calibrator_input, (target_amp_residual, target_freq_residual)
             
         
@@ -347,6 +345,8 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
     running_train_loss_file.write(','.join(['epoch', 'train_loss_amp', 'train_loss_freq']) + '\n')
     running_val_loss_file = open(f'{savename}/calibrator_running_val_losses_{NOW}.csv', 'w')
     running_val_loss_file.write(','.join(['epoch', 'val_loss_amp', 'val_loss_freq']) + '\n')
+
+    logger.info(f"Training calibrator model for {num_epochs} epochs with batch size {batch_size}...")
 
     if dummyrun:
         logger.info("Running in dummy mode for quick testing...")
