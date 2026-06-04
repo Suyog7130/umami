@@ -526,4 +526,29 @@ if __name__ == "__main__":
     # elif args.verbose:
     #     log_level = logging.INFO
     # else:
-    #     log_level = logging
+    #     log_level = logging.WARNING
+
+    # logfname = f"umamipe-{NOW}.log"
+    # log_dir = f'../logs/{TODAY}/'
+    # os.makedirs(log_dir, exist_ok=True)
+    # log_file = os.path.join(log_dir, logfname)
+    # logging.basicConfig(
+    #     format='%(asctime)s: %(levelname)s: %(message)s',
+    #     level=log_level,
+    #     datefmt='%y-%m-%d %H:%M:%S',
+    #     force=True,
+    #     handlers=[
+    #         logging.StreamHandler(),  # Log to console
+    #         logging.FileHandler(log_file)  # Log to file
+    #     ]
+    # )
+    
+    # # Set FileHandler to always be at least INFO level
+    # for handler in logging.root.handlers:
+    #     if isinstance(handler, logging.FileHandler):
+    #         handler.setLevel(max(handler.level, logging.INFO))
+
+    logging.info(f'Working on device: {DEVICE}, with precision: {PRECISION}')
+
+    main(args, label=args.label)
+
