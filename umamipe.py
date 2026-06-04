@@ -495,7 +495,7 @@ def main(args, label='umamipe'):
     result.plot_waveform_posterior(n_samples=1000)
 
     # Make a corner plot.
-    result.plot_corner()
+    result.plot_corner(save=True, filename=f'{label}_corner.png')
 
 
 
