@@ -262,10 +262,11 @@ def read_calibrator_input(data_hdf, indices):
         The target residuals for amplitude and frequency, each of shape: (batch, 2, n)
     """
     data_hdf = data_hdf + '.hdf' if not data_hdf.endswith('.hdf') else data_hdf
+    data_path = f'../data/{data_hdf}'
     calibrator_inputs = []
     target_amp_residuals = []
     target_freq_residuals = []
-    with h5py.File(data_hdf, 'r') as f:
+    with h5py.File(data_path, 'r') as f:
         for i in range(len(indices)):
             group_name = f'sample{int(indices[i])}'
             ml_amp = torch.tensor(f[group_name]['ml_amp'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
@@ -403,6 +404,11 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
 
     logger.info(f"Training calibrator model for {num_epochs} epochs with batch size {batch_size}...")
 
+    calibrator_training_data_hdf = f'calibrator_training_data_{timestamp}.hdf'
+    calibrator_val_data_hdf = f'calibrator_validation_data_{timestamp}.hdf'
+    logger.info(f"Calibrator training data will be saved to {calibrator_training_data_hdf}, \
+                and validation data will be saved to {calibrator_val_data_hdf}")
+
     if dummyrun:
         logger.info("Running in dummy mode for quick testing...")
         num_epochs = 1
@@ -429,7 +435,6 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             originals = originals.to(DEVICE)
             labels = labels.to(DEVICE)
 
-            calibrator_training_data_hdf = f'calibrator_training_data_{timestamp}.hdf'
             if epoch == 0:
                 try:
                     calibrator_input, calibrator_target = read_calibrator_input(
@@ -482,7 +487,6 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
                 originals = originals.to(DEVICE)
                 labels = labels.to(DEVICE)
 
-                calibrator_val_data_hdf = f'calibrator_validation_data_{timestamp}.hdf'
                 if epoch == 0:
                     try:
                         calibrator_input, calibrator_target = read_calibrator_input(
