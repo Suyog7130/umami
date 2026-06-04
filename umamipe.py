@@ -309,9 +309,15 @@ def main(args, label='umamipe'):
         os.makedirs(outdir)
 
     model_path = os.path.join(project_dir, 'trained-models', args.model_name)
-    if not os.path.isfile(model_path):
-        logging.error(f"Provided MODEL_PATH does not exist: {model_path}")
-        raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
+    try:
+        if not os.path.isfile(model_path):
+            logging.error(f"Provided MODEL_PATH does not exist: {model_path}")
+            raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
+    except Exception as e:
+        model_path = os.path.join('./', 'trained-models', args.model_name)
+        if not os.path.isfile(model_path):
+            logging.error(f"Provided MODEL_PATH does not exist: {model_path}")
+            raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
     logging.info(f"Using MODEL_PATH: {model_path}")
 
     # configpath = args.model_config
