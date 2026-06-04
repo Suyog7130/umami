@@ -293,6 +293,10 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
                                 configpath=wfmodel_configpath, 
                                 device=DEVICE, precision=PRECISION,)
     wfmodel.eval()  # set to eval mode since we are only using it for inference to generate the calibrator inputs
+
+    savename = f'../{PROJECT_DIR}/results/{TODAY}'
+    os.makedirs(savename, exist_ok=True)
+    os.makedirs(f'../{PROJECT_DIR}/trained-models', exist_ok=True)
     
     trainhdf = '../data/SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen.hdf'
     valhdf = '../data/SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen.hdf'
@@ -339,11 +343,9 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
 
     epoch_losses = pd.DataFrame(columns=['epoch', 'train_loss_amp', 'train_loss_freq', 'val_loss_amp', 'val_loss_freq'],
                                 index=range(num_epochs))
-    fname = f'../{PROJECT_DIR}/results/{TODAY}'
-    os.makedirs(fname, exist_ok=True)
-    running_train_loss_file = open(f'{fname}/calibrator_running_train_losses_{NOW}.csv', 'w')
+    running_train_loss_file = open(f'{savename}/calibrator_running_train_losses_{NOW}.csv', 'w')
     running_train_loss_file.write(','.join(['epoch', 'train_loss_amp', 'train_loss_freq']) + '\n')
-    running_val_loss_file = open(f'{fname}/calibrator_running_val_losses_{NOW}.csv', 'w')
+    running_val_loss_file = open(f'{savename}/calibrator_running_val_losses_{NOW}.csv', 'w')
     running_val_loss_file.write(','.join(['epoch', 'val_loss_amp', 'val_loss_freq']) + '\n')
 
     if dummyrun:
@@ -436,17 +438,16 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
         }
         logger.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
 
-        # -- every 10 epochs, save the model checkpoint
-        if (epoch + 1) % 10 == 0:
+        # -- every 5 epochs, save the model checkpoint
+        if (epoch + 1) % 5 == 0:
             outpath = f'../{PROJECT_DIR}/trained-models/calibrator_model_{NOW}_epoch_{epoch+1}.pt'
             torch.save(calmodel.state_dict(), outpath)
 
     # -- save the trained calibrator model
     outpath = f'../{PROJECT_DIR}/trained-models/calibrator_model_{NOW}.pt'
-    os.makedirs(os.path.dirname(outpath), exist_ok=True)
     torch.save(calmodel.state_dict(), outpath)
     # -- save the epoch losses to a CSV file
-    epoch_losses.to_csv(f'{fname}/calibrator_epoch_losses_{NOW}.csv', index=False)
+    epoch_losses.to_csv(f'{savename}/calibrator_epoch_losses_{NOW}.csv', index=False)
     # -- close the running loss files
     running_train_loss_file.close()
     running_val_loss_file.close()
