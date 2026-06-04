@@ -65,7 +65,7 @@ bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_le
 bilby.core.utils.random.seed(42)
 
 
-def get_td_SEOBNRv4ml(time_array, **kwargs):
+def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
     """
     Generate a waveform using the ML model based on the input parameters.
 
@@ -88,11 +88,14 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
             The generated time-domain strain waveform as a 1D numpy array.
     """
     logging.info(f"Received parameters for waveform generation: {kwargs}")
-    # mlmodel=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
-    if any(key not in kwargs for key in ['model_path', 'config_path']):
-        raise ValueError("Missing 'model_path' or 'config_path' in kwargs for waveform generation.")
-    model = load_flex_model(model_path=kwargs['model_path'], 
-                            configpath=kwargs['config_path'], device=DEVICE, precision=PRECISION)
+    if model is None:
+        logger.warning("No ML model provided to get_td_SEOBNRv4ml. We will initialize the model using the provided model_path and config_path in kwargs!")
+        # mlmodel=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
+        if any(key not in kwargs for key in ['model_path', 'config_path']):
+            raise ValueError("Missing 'model_path' or 'config_path' in kwargs for waveform generation.")
+        model = load_flex_model(model_path=kwargs['model_path'], 
+                                configpath=kwargs['config_path'], 
+                                device=DEVICE, precision=PRECISION)
     
     parameters = {model_param: kwargs[model_param] for model_param in ['mass_1', 'mass_2', 'spin_1z', 'spin_2z']}
     labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
@@ -183,7 +186,29 @@ class MLWaveformGenerator(WaveformGenerator):
     and then return it in the format expected by Bilby.
     """
     def __init__(self, **kwargs):
+        time_domain_source_model = kwargs.get('time_domain_source_model', None)
+        frequency_domain_source_model = kwargs.get('frequency_domain_source_model', None)
+        model_path = kwargs['waveform_arguments'].get('model_path', None) if 'waveform_arguments' in kwargs else None
+        config_path = kwargs['waveform_arguments'].get('config_path', None) if 'waveform_arguments' in kwargs else None
+        if time_domain_source_model is None and frequency_domain_source_model is None:
+            logger.warning("No source model provided to MLWaveformGenerator. We will initialize our ML model!")
+            if model_path is None or config_path is None:
+                raise ValueError("Missing 'model_path' or 'config_path' in waveform_arguments for ML model initialization.")
+            self.init_mlmodel(model_path=model_path, config_path=config_path)
+        # -- add `time_domain_source_model` to kwargs so that they can be used in the super class!
+        kwargs['time_domain_source_model'] = self.time_domain_source_model
+        # -- init __super__ class after initializing the ML model, so that the model can be used in the time_domain_strain method!
         super().__init__(**kwargs)
+
+    def init_mlmodel(self, model_path, config_path):
+        """
+        Initialize the ML model for waveform generation. This method can be called to load the model after the generator is initialized.
+        """
+        logging.info(f"Initializing ML model with model_path: {model_path} and config_path: {config_path}")
+        mlmodel = load_flex_model(model_path=model_path, configpath=config_path, device=DEVICE, precision=PRECISION)
+        self.time_domain_source_model = lambda time_array, **kwargs: get_td_SEOBNRv4ml(time_array, model=mlmodel, **kwargs)
+        self.frequency_domain_source_model = None  # We will only use the time-domain model for now!
+        logging.info("ML model initialized for waveform generation in MLWaveformGenerator.")
     
     def time_domain_strain(self, parameters=None):
         """
@@ -314,7 +339,7 @@ def main(args, label='umamipe'):
             logging.error(f"Provided MODEL_PATH does not exist: {model_path}")
             raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
     except Exception as e:
-        model_path = os.path.join('./', 'trained-models', args.model_name)
+        model_path = os.path.join('../', 'trained-models', args.model_name)
         if not os.path.isfile(model_path):
             logging.error(f"Provided MODEL_PATH does not exist: {model_path}")
             raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
@@ -343,8 +368,8 @@ def main(args, label='umamipe'):
     #     logging.info("Model loaded and set to evaluation mode.")
 
     # else:
-    model = load_flex_model(model_path=model_path, 
-                            configpath=args.model_config)
+    # model = load_flex_model(model_path=model_path, 
+    #                         configpath=args.model_config)
 
     # -- initialize the ML waveform generator with the loaded model
     # NOTE: We will only use this for the likelihood evaluation in the sampler!
@@ -352,7 +377,7 @@ def main(args, label='umamipe'):
     waveform_generator = MLWaveformGenerator(
         duration=DURATION,
         sampling_frequency=SAMPLE_RATE,
-        time_domain_source_model=get_td_SEOBNRv4ml,
+        time_domain_source_model=None,   # We will load ML model at initialization!
         parameter_conversion=convert_to_ml_parameters,
         waveform_arguments={'model_path': model_path, 'config_path': args.model_config},
         )
