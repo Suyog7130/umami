@@ -477,7 +477,11 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
         )
     elif MODEL_CONFIG['modeltype'].lower() == 'original':
         logging.info("Initializing original CVAE model architecture for testing.")
-        model = CVAE(input_shape=(2, 8190), num_classes=4, key_shape=(2,2))
+        # -- NOTE: Original trained model `state_dict` doesn't have labels_mean/labels_std, so we do not pass
+        # -- the MODEL_CONFIG to CVAE model.
+        model = CVAE(input_shape=(2, 8190), 
+                     num_classes=4, 
+                     key_shape=(2,2))
     else:
         model = FlexTwoC2E1D(
             MODEL_CONFIG=MODEL_CONFIG,
