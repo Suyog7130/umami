@@ -1445,6 +1445,7 @@ class CustomDataset(Dataset):
                  approximant: str = 'IMRPhenomD',
                  plot: bool = False, convert: bool = False, nokeys: bool = False, hdf_fname: str = None, 
                  returnattr: bool = False, 
+                 return_sample_indices: bool = False,
                  precision: {'float32', 'float64'} = 'float64', 
                  target: {'unnorm_ampfreq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = None,
                  **kwargs):
@@ -1458,6 +1459,11 @@ class CustomDataset(Dataset):
         self.nokeys = nokeys
         self.hdf_fname = hdf_fname
         self.returnattr = kwargs.get('returnattr', returnattr)
+        if return_sample_indices:
+            logging.warning('return_sample_indices is set to True. The __getitem__ method will return the sample index along \
+                            with the data and labels. We will not return `attr` in this case!')
+            self.return_sample_indices = return_sample_indices
+            self.returnattr = False
         self.precision = kwargs.get('precision', precision)
         self.target = kwargs.get('target', target)
 
@@ -1793,6 +1799,8 @@ class CustomDataset(Dataset):
             returnables = [out_labels, out_keys, out_strains]
             if self.returnattr:
                 returnables.append(out_attr)
+            if self.return_sample_indices:
+                returnables.append(f'sample{idx}')
                 
             if self.target=='unnorm_ampfreq':
                 logging.debug("Returning normalized amp and freq as input, and unnormalized amp and freq as target since `unnorm_target` is True.")
@@ -1835,6 +1843,8 @@ class CustomDataset(Dataset):
         # Determine the maximum number of tags in the batch
         if self.forwhat=='test' or self.returnattr:
             max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the feature dict
+        elif self.return_sample_indices:
+            max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the sample index, since it a string and not a tag
         else:
             max_tags = max(len(sample) for sample in batch)
 
@@ -1852,6 +1862,9 @@ class CustomDataset(Dataset):
                     if key not in feat_dict_batch:
                         feat_dict_batch[key] = []
                     feat_dict_batch[key].append(value)
+            elif self.return_sample_indices:
+                *tags, sample_index = sample
+                logging.debug(f'Number of tags: {len(tags)}, Sample index: {sample_index}')
             else:
                 tags = sample
 
@@ -1867,6 +1880,8 @@ class CustomDataset(Dataset):
         # Ensure all tensors are of the same shape
         if self.forwhat=='test' or self.returnattr:
             return (*tag_batches, feat_dict_batch)
+        elif self.return_sample_indices:
+            return (*tag_batches, sample_index)
         return tag_batches
 
     def __getitem__(self, idx, custom_batch=None):

@@ -132,7 +132,8 @@ class ResidualCalibrationCNN(nn.Module):
     
 
 
-def get_calibrator_input(wfmodel, originals, labels, save_data_to_disk=False):
+def get_calibrator_input(wfmodel, originals, labels, 
+                         data_save_hdf=None, indices=None):
     """
     Function to obtain the input and target for the calibrator model, 
     given the originals waveforms, the parameters, and the trained waveform model.
@@ -205,30 +206,34 @@ def get_calibrator_input(wfmodel, originals, labels, save_data_to_disk=False):
     calibrator_input = torch.cat([calibrator_input, param_m1.unsqueeze(1), param_m2.unsqueeze(1),
                                 param_s1z.unsqueeze(1), param_s2z.unsqueeze(1)], dim=1)  # shape: (batch, 6, n)
     logger.debug(f"Calibrator input shape: {calibrator_input.shape}")
-    # TODO: Can save data separately later!
-    # if save_data_to_disk:
-    #     # Save calibaration input, target residuals, and parameters the first time, so that we can reuse them next time!
-    #     # Save this data to a HDF file repeatedly appending to it every time we call this function, 
-    #     # and then we can load this data directly in the calibrator training loop, instead of having to 
-    #     # generate it on the fly every time, which is computationally expensive since it requires running the ML model inference every time.
-    #     outpath = f'../data/calibrator_input_data_{NOW}.hdf'
-    #     with h5py.File(outpath, 'a') as f:
-    #         # -- create a new group for each data waveform in the batch, with datasets for:
-    #         # -- [ml_amp, ml_freq, target_amp_residual, target_freq_residual, param_m1, param_m2, param_s1z, param_s2z]
-    #         for i in range(calibrator_input.shape[0]):
-    #             group_name = f"data_{i}"
-    #             if group_name in f:
-    #                 del f[group_name]  # delete existing group if it exists, to avoid appending to old data
-    #             grp = f.create_group(group_name)
-    #             grp.create_dataset('ml_amp', data=calibrator_input[i, 0, :].cpu().numpy())
-    #             grp.create_dataset('ml_freq', data=calibrator_input[i, 1, :].cpu().numpy())
-    #             grp.create_dataset('target_amp_residual', data=target_amp_residual[i].cpu().numpy())
-    #             grp.create_dataset('target_freq_residual', data=target_freq_residual[i].cpu().numpy())
-    #             grp.create_dataset('param_m1', data=param_m1[i, 0].cpu().numpy())
-    #             grp.create_dataset('param_m2', data=param_m2[i, 0].cpu().numpy())
-    #             grp.create_dataset('param_s1z', data=param_s1z[i, 0].cpu().numpy())
-    #             grp.create_dataset('param_s2z', data=param_s2z[i, 0].cpu().numpy())
-    #     logger.info(f"Saved calibrator input and target residuals to {outpath}")
+    print(indices)
+
+    if data_save_hdf is not None and indices is not None:
+        logger.info(f"Saving calibrator input and target residuals to {data_save_hdf} for this batch...")
+        print(indices)
+        savename = f'../data/{data_save_hdf.strip(".hdf")}_{NOW}.hdf'
+        os.makedirs(os.path.dirname(savename), exist_ok=True)
+        # Save calibaration input, target residuals, and parameters the first time, so that we can reuse them next time!
+        # Save this data to a HDF file repeatedly appending to it every time we call this function, 
+        # and then we can load this data directly in the calibrator training loop, instead of having to 
+        # generate it on the fly every time, which is computationally expensive since it requires running the ML model inference every time.
+        with h5py.File(savename, 'a') as f:
+            # -- create a new group for each data waveform in the batch, with datasets for:
+            # -- [ml_amp, ml_freq, target_amp_residual, target_freq_residual, param_m1, param_m2, param_s1z, param_s2z]
+            for i in range(calibrator_input.shape[0]):
+                group_name = str(indices[i])  # use the original sample index from the dataset as the group name
+                if group_name in f:
+                    del f[group_name]  # delete existing group if it exists, to avoid appending to old data
+                grp = f.create_group(group_name)
+                grp.create_dataset('ml_amp', data=calibrator_input[i, 0, :].cpu().numpy())
+                grp.create_dataset('ml_freq', data=calibrator_input[i, 1, :].cpu().numpy())
+                grp.create_dataset('target_amp_residual', data=target_amp_residual[i].cpu().numpy())
+                grp.create_dataset('target_freq_residual', data=target_freq_residual[i].cpu().numpy())
+                grp.create_dataset('param_m1', data=param_m1[i, 0].cpu().numpy())
+                grp.create_dataset('param_m2', data=param_m2[i, 0].cpu().numpy())
+                grp.create_dataset('param_s1z', data=param_s1z[i, 0].cpu().numpy())
+                grp.create_dataset('param_s2z', data=param_s2z[i, 0].cpu().numpy())
+        logger.info(f"Saved calibrator input and target residuals to {savename}")
     return calibrator_input, (target_amp_residual, target_freq_residual)
             
         
@@ -312,14 +317,12 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
         calmodel.compile() # compile the model for faster training on CUDA
     logger.info(f"Calibrator model architecture: {calmodel}")
 
-    train_set = CustomDataset(forwhat='train', approximant=approximant, returnattr=True,
-                            convert=False, hdf_fname=trainhdf, 
-                            train_device=DEVICE, precision=PRECISION)
+    train_set = CustomDataset(forwhat='train', approximant=approximant, hdf_fname=trainhdf, 
+                            train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
     logger.info(f'Reading validation data from {valhdf}.hdf')
-    valid_set = CustomDataset(forwhat='valid', approximant=approximant, returnattr=True,
-                            convert=False, hdf_fname=valhdf, 
-                            train_device=DEVICE, precision=PRECISION)
-    
+    valid_set = CustomDataset(forwhat='valid', approximant=approximant, hdf_fname=valhdf, 
+                            train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
+
     training_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
     validation_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=True)
     logger.info(training_loader.__dict__)
@@ -357,7 +360,7 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
         train_loss_amp = 0.0
         train_loss_freq = 0.0
         counter = 0
-        for originals, _, labels, keys, _, attr in tqdm(training_loader, total=len(training_loader), desc='Steps/Batchs'):
+        for originals, _, labels, keys, _, indices in tqdm(training_loader, total=len(training_loader), desc='Steps/Batchs'):
             counter += 1
             if dummyrun and counter > 2:
                 break
@@ -365,7 +368,9 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             originals = originals.to(DEVICE)
             labels = labels.to(DEVICE)
 
-            calibrator_input, calibrator_target = get_calibrator_input(wfmodel, originals, labels)
+            calibrator_input, calibrator_target = get_calibrator_input(wfmodel, originals, labels, 
+                                                                        data_save_hdf='calibrator_training_data.hdf',
+                                                                        indices=indices)
             target_amp_residual, target_freq_residual = calibrator_target
 
             out = calmodel(calibrator_input)  # shape: (batch, 2, n)
@@ -395,7 +400,7 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             val_loss_amp = 0.0
             val_loss_freq = 0.0
             counter = 0
-            for originals, _, labels, keys, _, attr in tqdm(validation_loader, total=len(validation_loader), desc='Validation Steps'):
+            for originals, _, labels, keys, _, indices in tqdm(validation_loader, total=len(validation_loader), desc='Validation Steps'):
                 counter += 1
                 if dummyrun and counter > 2:
                     break
@@ -403,7 +408,9 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
                 originals = originals.to(DEVICE)
                 labels = labels.to(DEVICE)
 
-                calibrator_input, calibrator_target = get_calibrator_input(wfmodel, originals, labels)
+                calibrator_input, calibrator_target = get_calibrator_input(wfmodel, originals, labels, 
+                                                                           data_save_hdf='calibrator_validation_data.hdf',
+                                                                           indices=indices)
                 target_amp_residual, target_freq_residual = calibrator_target
 
                 out = calmodel(calibrator_input)  # shape: (batch, 2, n)
