@@ -133,7 +133,7 @@ class ResidualCalibrationCNN(nn.Module):
 
 
 def get_calibrator_input(wfmodel, originals, labels, 
-                         data_save_hdf=None, indices=None):
+                         data_hdf=None, indices=None):
     """
     Function to obtain the input and target for the calibrator model, 
     given the originals waveforms, the parameters, and the trained waveform model.
@@ -146,6 +146,12 @@ def get_calibrator_input(wfmodel, originals, labels,
         The originals waveforms in the form of [amp,freq], shape: (batch, 2, n)
     labels : torch.Tensor
         The parameters corresponding to the waveforms, shape: (batch, num_params)
+    data_hdf : str, optional
+        The name of the HDF file to save the calibrator input and target residuals, by default None. 
+        If None, the data will not be saved or read from the HDF file.
+    indices : torch.Tensor, optional
+        The original sample indices from the dataset for this batch, shape: (batch,), used for saving 
+        the data to HDF file with unique group names, by default None.
 
     Returns:
     --------
@@ -207,9 +213,9 @@ def get_calibrator_input(wfmodel, originals, labels,
                                 param_s1z.unsqueeze(1), param_s2z.unsqueeze(1)], dim=1)  # shape: (batch, 6, n)
     logger.debug(f"Calibrator input shape: {calibrator_input.shape}")
 
-    if data_save_hdf is not None and indices is not None:
-        # logger.debug(f"Saving calibrator input and target residuals to {data_save_hdf} for this batch...")
-        savename = f'../data/{data_save_hdf.strip(".hdf")}_{NOW}.hdf'
+    if data_hdf is not None and indices is not None:
+        # logger.debug(f"Saving calibrator input and target residuals to {data_hdf} for this batch...")
+        savename = f'../data/{data_hdf.strip(".hdf")}_{NOW}.hdf'
         os.makedirs(os.path.dirname(savename), exist_ok=True)
         # Save calibaration input, target residuals, and parameters the first time, so that we can reuse them next time!
         # Save this data to a HDF file repeatedly appending to it every time we call this function, 
@@ -233,6 +239,54 @@ def get_calibrator_input(wfmodel, originals, labels,
                 grp.create_dataset('param_s2z', data=param_s2z[i, 0].cpu().numpy())
         # logger.debug(f"Saved calibrator input and target residuals to {savename}")
     return calibrator_input, (target_amp_residual, target_freq_residual)
+
+
+def read_calibrator_input(data_hdf, indices):
+    """
+    Read Calibrator input and target residuals data from HDF file.
+
+    Arguments:
+    ----------
+    data_hdf : str
+        The name of the HDF file to read the calibrator input and target residuals from.
+    indices : torch.Tensor
+        The original sample indices from the dataset for this batch, shape: (batch,), used for reading 
+        the data from HDF file with unique group names.
+
+    Returns:
+    --------
+    calibrator_input : torch.Tensor
+        The input to the calibrator model, which includes the ML generated [amp,freq] and the parameters, 
+        shape: (batch, input_channels, n)
+    calibrator_target : tuple of torch.Tensor
+        The target residuals for amplitude and frequency, each of shape: (batch, 2, n)
+    """
+    data_hdf = data_hdf + '.hdf' if not data_hdf.endswith('.hdf') else data_hdf
+    calibrator_inputs = []
+    target_amp_residuals = []
+    target_freq_residuals = []
+    with h5py.File(data_hdf, 'r') as f:
+        for i in range(len(indices)):
+            group_name = f'sample{int(indices[i])}'
+            ml_amp = torch.tensor(f[group_name]['ml_amp'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+            ml_freq = torch.tensor(f[group_name]['ml_freq'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+            param_m1 = torch.tensor(f[group_name]['param_m1'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+            param_m2 = torch.tensor(f[group_name]['param_m2'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+            param_s1z = torch.tensor(f[group_name]['param_s1z'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+            param_s2z = torch.tensor(f[group_name]['param_s2z'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+            target_amp_residual = torch.tensor(f[group_name]['target_amp_residual'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+            target_freq_residual = torch.tensor(f[group_name]['target_freq_residual'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+
+            calibrator_input = torch.stack([ml_amp, ml_freq, param_m1, param_m2, param_s1z, param_s2z], dim=0)  # shape: (input_channels, n)
+            calibrator_inputs.append(calibrator_input)
+            target_amp_residuals.append(target_amp_residual)
+            target_freq_residuals.append(target_freq_residual)
+
+    calibrator_inputs = torch.stack(calibrator_inputs, dim=0)  # shape: (batch, input_channels, n)
+    target_amp_residuals = torch.stack(target_amp_residuals, dim=0)  # shape: (batch, n)
+    target_freq_residuals = torch.stack(target_freq_residuals, dim=0)  # shape: (batch, n)
+
+    return calibrator_inputs, (target_amp_residuals, target_freq_residuals)
             
         
 def merger_weighted_mse_loss_func(true, predicted, amp_ml):
@@ -257,6 +311,7 @@ def merger_weighted_mse_loss_func(true, predicted, amp_ml):
 def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338-10', 
                      wfmodel_configpath='modelconfig-cvae-paper-I.json',
                      approximant='SEOBNRv4', batch_size=64, num_epochs=25,
+                     timestamp=NOW,
                      dummyrun=False):
     """
     Train the residual calibrator model.
@@ -368,9 +423,22 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             originals = originals.to(DEVICE)
             labels = labels.to(DEVICE)
 
-            calibrator_input, calibrator_target = get_calibrator_input(wfmodel, originals, labels, 
-                                                                        data_save_hdf='calibrator_training_data.hdf',
-                                                                        indices=indices)
+            calibrator_training_data_hdf = f'calibrator_training_data_{timestamp}.hdf'
+            if epoch == 0:
+                try:
+                    calibrator_input, calibrator_target = read_calibrator_input(
+                        data_hdf=calibrator_training_data_hdf,          
+                        indices=indices)
+                except FileNotFoundError:
+                    logger.warning("Calibrator input data not found, generating new data...")
+                    calibrator_input, calibrator_target = get_calibrator_input(
+                        wfmodel, originals, labels, 
+                        data_hdf=calibrator_training_data_hdf, 
+                        indices=indices)
+            else:
+                calibrator_input, calibrator_target = read_calibrator_input(
+                    data_hdf=calibrator_training_data_hdf,          
+                    indices=indices)
             target_amp_residual, target_freq_residual = calibrator_target
 
             out = calmodel(calibrator_input)  # shape: (batch, 2, n)
@@ -400,7 +468,7 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             val_loss_amp = 0.0
             val_loss_freq = 0.0
             counter = 0
-            for originals, _, labels, keys, _, indices in tqdm(validation_loader, total=len(validation_loader), desc='Validation Steps'):
+            for originals, _, labels, keys, _, indices in tqdm(validation_loader, total=len(validation_loader), desc='Val Steps'):
                 counter += 1
                 if dummyrun and counter > 2:
                     break
@@ -408,9 +476,22 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
                 originals = originals.to(DEVICE)
                 labels = labels.to(DEVICE)
 
-                calibrator_input, calibrator_target = get_calibrator_input(wfmodel, originals, labels, 
-                                                                           data_save_hdf='calibrator_validation_data.hdf',
-                                                                           indices=indices)
+                calibrator_val_data_hdf = f'calibrator_validation_data_{timestamp}.hdf'
+                if epoch == 0:
+                    try:
+                        calibrator_input, calibrator_target = read_calibrator_input(
+                            data_hdf=calibrator_val_data_hdf,          
+                            indices=indices)
+                    except FileNotFoundError:
+                        logger.warning("Calibrator input data not found, generating new data...")
+                        calibrator_input, calibrator_target = get_calibrator_input(
+                            wfmodel, originals, labels, 
+                            data_hdf=calibrator_val_data_hdf, 
+                            indices=indices)
+                else:
+                    calibrator_input, calibrator_target = read_calibrator_input(
+                        data_hdf=calibrator_val_data_hdf,          
+                        indices=indices)
                 target_amp_residual, target_freq_residual = calibrator_target
 
                 out = calmodel(calibrator_input)  # shape: (batch, 2, n)
@@ -464,9 +545,14 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Train the residual calibrator model for waveform generation.")
-    parser.add_argument('--batch-size', type=int, default=64, help='Batch size for training the calibrator model.')
-    parser.add_argument('--num-epochs', type=int, default=25, help='Number of epochs to train the calibrator model.')
-    parser.add_argument('--dummy-run', action='store_true', help='If set, runs a quick dummy training loop for testing purposes.')
+    parser.add_argument('--batch-size', type=int, default=64, 
+                        help='Batch size for training the calibrator model.')
+    parser.add_argument('--num-epochs', type=int, default=25, 
+                        help='Number of epochs to train the calibrator model.')
+    parser.add_argument('--timestamp', type=str, default=NOW, 
+                        help='Timestamp string to use for saving outputs, default is current date and time.')
+    parser.add_argument('--dummy-run', action='store_true', 
+                        help='If set, runs a quick dummy training loop for testing purposes.')
 
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
@@ -477,4 +563,5 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         num_epochs=args.num_epochs,
         dummyrun=args.dummy_run,
+        timestamp=args.timestamp,
     )
