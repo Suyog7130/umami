@@ -626,12 +626,13 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
         train_loss_freq = 0.0
         counter = 0
         
-        # for originals, _, labels, keys, _, indices in tqdm(training_loader, total=len(training_loader), desc='Steps/Batchs'):
-        for batch in tqdm(training_loader, total=len(training_loader), desc='Train Steps'):
+        for databatch in tqdm(training_loader, total=len(training_loader), desc='Train Steps'):
             counter += 1
             if dummyrun and counter > 2:
                 break
 
+
+            # originals, _, labels, keys, _, indices = databatch
             # originals = originals.to(DEVICE)
             # labels = labels.to(DEVICE)
 
@@ -652,7 +653,7 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             #         indices=indices, params_mean=params_mean, params_std=params_std)
             # target_amp_residual, target_freq_residual = calibrator_target
 
-            calibrator_input, target_amp_residual, target_freq_residual = batch
+            calibrator_input, target_amp_residual, target_freq_residual = databatch
 
             out = calmodel(calibrator_input)  # shape: (batch, 2, n)
             pred_amp_residual, pred_freq_residual = out[:, 0, :], out[:, 1, :]
@@ -682,14 +683,14 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             val_loss_freq = 0.0
             counter = 0
 
-            # for originals, _, labels, keys, _, indices in tqdm(validation_loader, total=len(validation_loader), desc='Val Steps'):
-            for batch in tqdm(validation_loader, total=len(validation_loader), desc='Val Steps'):
+            for databatch in tqdm(validation_loader, total=len(validation_loader), desc='Val Steps'):
                 counter += 1
                 if dummyrun and counter > 2:
                     break
 
-                calibrator_input, target_amp_residual, target_freq_residual = batch
+                calibrator_input, target_amp_residual, target_freq_residual = databatch
 
+                # originals, _, labels, keys, _, indices = databatch
                 # originals = originals.to(DEVICE)
                 # labels = labels.to(DEVICE)
 
