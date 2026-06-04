@@ -271,14 +271,20 @@ def read_calibrator_input(data_hdf, indices):
             group_name = f'sample{int(indices[i])}'
             ml_amp = torch.tensor(f[group_name]['ml_amp'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
             ml_freq = torch.tensor(f[group_name]['ml_freq'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
-            param_m1 = torch.tensor(f[group_name]['param_m1'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
-            param_m2 = torch.tensor(f[group_name]['param_m2'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
-            param_s1z = torch.tensor(f[group_name]['param_s1z'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
-            param_s2z = torch.tensor(f[group_name]['param_s2z'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
             target_amp_residual = torch.tensor(f[group_name]['target_amp_residual'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
             target_freq_residual = torch.tensor(f[group_name]['target_freq_residual'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
 
-            calibrator_input = torch.stack([ml_amp, ml_freq, param_m1, param_m2, param_s1z, param_s2z], dim=0)  # shape: (input_channels, n)
+            # -- parameter values are scalars for each data, so we don't convert them to tensors until we read them, and then we repeat them across the time dimension to match the shape of ml_amp/ml_freq, which is (n,)
+            # -- Scalar values in HDF datasets are available via ellipsis indexing `[...]`
+            param_m1 = f[group_name]['param_m1'][...].astype(getattr(np, PRECISION)).item()
+            param_m2 = f[group_name]['param_m2'][...].astype(getattr(np, PRECISION)).item()
+            param_s1z = f[group_name]['param_s1z'][...].astype(getattr(np, PRECISION)).item()
+            param_s2z = f[group_name]['param_s2z'][...].astype(getattr(np, PRECISION)).item()
+
+            params = torch.tensor([param_m1, param_m2, param_s1z, param_s2z], dtype=getattr(torch, PRECISION), device=DEVICE)
+            params = params.unsqueeze(-1).expand(-1, ml_amp.shape[-1])  # shape: (4, n)
+
+            calibrator_input = torch.stack([ml_amp, ml_freq, params[0], params[1], params[2], params[3]], dim=0)  # shape: (6, n)
             calibrator_inputs.append(calibrator_input)
             target_amp_residuals.append(target_amp_residual)
             target_freq_residuals.append(target_freq_residual)
