@@ -340,6 +340,7 @@ class CalibratorDataset(torch.utils.data.Dataset):
         # -- check if the HDF file exists, if not, create an empty HDF file with the same name, so that we can write to it later on in the `get_calibrator_input` function without having to worry about file not found errors.
         data_hdf = self.data_hdf + '.hdf' if not self.data_hdf.endswith('.hdf') else self.data_hdf
         data_path = f'../data/{data_hdf}'
+
         if not os.path.exists(data_path):
             with h5py.File(data_path, 'w') as f:
                 pass  # just create an empty HDF file
@@ -349,6 +350,7 @@ class CalibratorDataset(torch.utils.data.Dataset):
 
         # open the HDF file for reading in the dataset initialization, so that we can read from it in the `__getitem__` method without having to open and close the file every time, which is inefficient. We will keep this file open for the lifetime of the dataset, and close it when the dataset is deleted.
         self.data_file = h5py.File(data_path, 'r')
+        logger.info(f"Opened HDF file {data_path} for reading calibrator input and target residuals in the CalibratorDataset.")
 
     def close_hdf(self):
         # close the HDF file when the dataset is deleted, to free up resources
@@ -557,9 +559,11 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
     if DEVICE==torch.device("cuda"):
         # calmodel = torch.nn.DataParallel(calmodel)
         calmodel.compile() # compile the model for faster training on CUDA
+        logger.info("Compiled the calibrator model for faster training on CUDA.")
     logger.info(f"Calibrator model architecture: {calmodel}")
 
     if use_calibrator_dataloaders:
+        logger.info("Using CalibratorDataset and CalibratorDataLoader for training the calibrator model, which read the calibrator input and target residuals from HDF files.")
         train_set = CalibratorDataset(data_hdf=f'calibrator_training_data_{timestamp}', 
                                       params_mean=params_mean, params_std=params_std)
         valid_set = CalibratorDataset(data_hdf=f'calibrator_validation_data_{timestamp}', 
@@ -567,6 +571,7 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
         training_loader = CalibratorDataLoader(train_set, batch_size=batch_size, shuffle=True)
         validation_loader = CalibratorDataLoader(valid_set, batch_size=batch_size, shuffle=True)
     else:
+        logger.info("Using CustomDataset and CustomDataLoader for training the calibrator model, which generate the calibrator input and target residuals on the fly by running the ML model inference every time. This is computationally expensive, so it's recommended to use the CalibratorDataset and CalibratorDataLoader instead, which read the pre-generated data from HDF files.")
         train_set = CustomDataset(forwhat='train', approximant=approximant, hdf_fname=trainhdf, 
                                 train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
         valid_set = CustomDataset(forwhat='valid', approximant=approximant, hdf_fname=valhdf, 
