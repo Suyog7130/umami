@@ -219,7 +219,7 @@ def get_calibrator_input(wfmodel, originals, labels,
             # -- create a new group for each data waveform in the batch, with datasets for:
             # -- [ml_amp, ml_freq, target_amp_residual, target_freq_residual, param_m1, param_m2, param_s1z, param_s2z]
             for i in range(calibrator_input.shape[0]):
-                group_name = f'sample{indices[i]}'  # use the original sample index from the dataset as the group name
+                group_name = f'sample{int(indices[i])}'  # use the original sample index from the dataset as the group name
                 if group_name in f:
                     del f[group_name]  # delete existing group if it exists, to avoid appending to old data
                 grp = f.create_group(group_name)
