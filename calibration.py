@@ -6,6 +6,7 @@ between the generated [amp,freq] and the target [amp,freq], for example.
 
 import os
 import h5py
+import argparse
 import numpy as np
 import pandas as pd
 import datetime
@@ -21,10 +22,8 @@ from datacvae import CustomDataset, CustomDataLoader
 from optimize import load_flex_model
 
 from utils.generic import init_logging, init_verbosity_args
+global logger
 
-parser = init_verbosity_args()
-args = parser.parse_args()
-logger = init_logging(args)
 
 PROJECT_DIR = 'v0p1'
 
@@ -49,8 +48,6 @@ elif torch.backends.mps.is_available():
 else:
     DEVICE = torch.device("cpu")
     PRECISION = 'float32'  # Use double precision for CPU
-logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
-
 
 
 
@@ -458,4 +455,19 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
 
 
 if __name__ == "__main__":
-    train_calibrator()
+
+    parser = argparse.ArgumentParser(description="Train the residual calibrator model for waveform generation.")
+    parser.add_argument('--batch-size', type=int, default=64, help='Batch size for training the calibrator model.')
+    parser.add_argument('--num-epochs', type=int, default=25, help='Number of epochs to train the calibrator model.')
+    parser.add_argument('--dummy-run', action='store_true', help='If set, runs a quick dummy training loop for testing purposes.')
+
+    parser = init_verbosity_args(parser)
+    args = parser.parse_args()
+    logger = init_logging(args)
+
+    logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
+    train_calibrator(
+        batch_size=args.batch_size,
+        num_epochs=args.num_epochs,
+        dummyrun=args.dummy_run,
+    )
