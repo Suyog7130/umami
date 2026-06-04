@@ -409,8 +409,14 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
         training_loader = CustomDataLoader(train_set, batch_size=16, shuffle=True)
         validation_loader = CustomDataLoader(valid_set, batch_size=16, shuffle=True)
 
+    best_val_loss = float('inf')
     for epoch in tqdm(range(num_epochs), desc='Epoch'):
         calmodel.train(True)
+
+        # -- lower learning rate after some epochs, so that model doesn't diverge after reaching a good loss value!
+        if epoch >= 8:
+            for group in optimizer.param_groups:
+                group["lr"] = 3e-4
 
         train_loss_amp = 0.0
         train_loss_freq = 0.0
@@ -523,9 +529,15 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
         }
         logger.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
 
-        # -- every 5 epochs, save the model checkpoint
-        if (epoch + 1) % 5 == 0:
-            outpath = f'../{PROJECT_DIR}/trained-models/calibrator_model_{NOW}_epoch_{epoch+1}.pt'
+        # # -- every 5 epochs, save the model checkpoint
+        # if (epoch + 1) % 5 == 0:
+        #     outpath = f'../{PROJECT_DIR}/trained-models/calibrator_model_{NOW}_epoch{epoch+1}.pt'
+        #     torch.save(calmodel.state_dict(), outpath)
+
+        # -- save the best model checkpoint based on validation loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            outpath = f'../{PROJECT_DIR}/trained-models/calibrator_model_{NOW}_epoch{epoch+1}.pt'
             torch.save(calmodel.state_dict(), outpath)
 
     # -- save the trained calibrator model
