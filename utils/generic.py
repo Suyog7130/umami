@@ -29,14 +29,14 @@ def init_logging(args, log_dir='logs'):
     elif args.debug:
         levels = (logging.DEBUG, logging.DEBUG, logging.INFO)
     elif args.describe:
-        levels = (logging.DEBUG, logging.INFO, logging.INFO)
+        levels = (logging.DEBUG, logging.INFO, logging.WARNING)
     elif args.verbose:
         levels = (logging.INFO, logging.INFO, logging.WARNING)
     elif args.quiet:
-        levels = (logging.WARNING, logging.WARNING, logging.ERROR)
+        levels = (logging.INFO, logging.WARNING, logging.WARNING)
     else:
         # Default: Standard Production
-        levels = (logging.WARNING, logging.WARNING, logging.WARNING)
+        levels = (logging.WARNING, logging.WARNING, logging.ERROR)
         
     root_level, direct_import_level, deep_import_level = levels
 
@@ -53,7 +53,7 @@ def init_logging(args, log_dir='logs'):
     os.makedirs(log_dir, exist_ok=True)
     fname = os.path.join(log_dir, f'session_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
     file_handler = logging.FileHandler(fname, mode='w')
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(logging.DEBUG)   # -- saved logs should be as detailed as possible!
 
     # 3. Initialize Root Logger (The "Catch-All")
     # We set basicConfig to the lowest logical level so handlers can filter up
