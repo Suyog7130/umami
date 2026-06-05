@@ -555,23 +555,22 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
     wf_valid_set = CustomDataset(forwhat='valid', approximant=approximant, hdf_fname=valhdf, 
                                 train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
 
-    # -- make sure that calibarator HDF datagroups match those in the waveform HDF!
-    match_data_between_wf_and_calibrator_hdfs(
-        wf_hdf=trainhdf, 
-        calibrator_hdf=f'calibrator_training_data_{timestamp}.hdf', 
-        wfmodel=wfmodel,
-        wf_dataset_obj=wf_train_set,
-        params_mean=params_mean, params_std=params_std
-    )
-    match_data_between_wf_and_calibrator_hdfs(
-        wf_hdf=valhdf, 
-        calibrator_hdf=f'calibrator_validation_data_{timestamp}.hdf', 
-        wfmodel=wfmodel,
-        wf_dataset_obj=wf_valid_set,
-        params_mean=params_mean, params_std=params_std
-    )
-
     if use_calibrator_dataloaders:
+        # -- make sure that calibarator HDF datagroups match those in the waveform HDF!
+        match_data_between_wf_and_calibrator_hdfs(
+            wf_hdf=trainhdf, 
+            calibrator_hdf=f'calibrator_training_data_{timestamp}.hdf', 
+            wfmodel=wfmodel,
+            wf_dataset_obj=wf_train_set,
+            params_mean=params_mean, params_std=params_std
+        )
+        match_data_between_wf_and_calibrator_hdfs(
+            wf_hdf=valhdf, 
+            calibrator_hdf=f'calibrator_validation_data_{timestamp}.hdf', 
+            wfmodel=wfmodel,
+            wf_dataset_obj=wf_valid_set,
+            params_mean=params_mean, params_std=params_std
+        )
         train_set = CalibratorDataset(data_hdf=f'calibrator_training_data_{timestamp}', 
                                         params_mean=params_mean, params_std=params_std)
         valid_set = CalibratorDataset(data_hdf=f'calibrator_validation_data_{timestamp}', 

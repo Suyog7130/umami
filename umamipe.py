@@ -205,10 +205,13 @@ class MLWaveformGenerator(WaveformGenerator):
         Initialize the ML model for waveform generation. This method can be called to load the model after the generator is initialized.
         """
         logging.info(f"Initializing ML model with model_path: {model_path} and config_path: {config_path}")
-        mlmodel = load_flex_model(model_path=model_path, configpath=config_path, device=DEVICE, precision=PRECISION)
-        self.time_domain_source_model = lambda time_array, **kwargs: get_td_SEOBNRv4ml(time_array, model=mlmodel, **kwargs)
+        self.loaded_mlmodel = load_flex_model(model_path=model_path, configpath=config_path, device=DEVICE, precision=PRECISION)
+        self.time_domain_source_model = self.get_ml_waveform
         self.frequency_domain_source_model = None  # We will only use the time-domain model for now!
         logging.info("ML model initialized for waveform generation in MLWaveformGenerator.")
+
+    def get_ml_waveform(self, time_array, **kwargs):
+        return get_td_SEOBNRv4ml(time_array, model=self.loaded_mlmodel, **kwargs)
     
     def time_domain_strain(self, parameters=None):
         """
@@ -526,12 +529,15 @@ def main(args, label='umamipe', multiprocessing=True):
         nlive=1000,
         naccept=60,
         sample="acceptance-walk",
-        npool=nworkers,
         injection_parameters=injection_parameters,
         outdir=outdir,
         label=label,
         conversion_function=bilby.gw.conversion.generate_all_bbh_parameters,
         result_class=bilby.gw.result.CBCResult,
+        npool=1,  # -- switch off Bilby's standard multiprocessing
+        # -- instead pass multiprocessing args direct to nessai sampler!
+        pytorch_threads=1,
+        max_threads=nworkers,
     )
 
     # Plot the inferred waveform superposed on the actual data.
