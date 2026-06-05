@@ -26,13 +26,14 @@ from bilby.gw import WaveformGenerator
 
 import matplotlib.pyplot as plt
 
-
 import torch
 import torch.multiprocessing as mp
 
 from flexcvae import FlexTwoC2E1D, FlexCAE, FlexCAEPhase
 from optimize import load_flex_model
 from cvae import CVAE
+
+logger = logging.getLogger(__name__)
 
 PROJECT_DIR = 'v0p1'
 
@@ -56,10 +57,10 @@ elif torch.backends.mps.is_available():
 else:
     DEVICE = torch.device("cpu")
     PRECISION = 'float32'  # Use float32 for CPU
-logging.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
+logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
 
-bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="DEBUG")
+bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="INFO")
 
 # Set up a random seed for result reproducibility.  This is optional!
 bilby.core.utils.random.seed(42)
@@ -87,7 +88,7 @@ def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
         np.ndarray
             The generated time-domain strain waveform as a 1D numpy array.
     """
-    logging.info(f"Received parameters for waveform generation: {kwargs}")
+    logger.info(f"Received parameters for waveform generation: {kwargs}")
     if model is None:
         logger.warning("No ML model provided to get_td_SEOBNRv4ml. We will initialize the model using the provided model_path and config_path in kwargs!")
         # mlmodel=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
@@ -102,14 +103,14 @@ def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
                             dtype=torch.float32).unsqueeze(0).to(DEVICE)
     
     generated_waveform = model.generate(labels)  # has shape (1, 2=[hp,hc], sequence_length)!
-    logging.info(f"Generated waveform from ML model with shape: {generated_waveform.shape}")
+    logger.info(f"Generated waveform from ML model with shape: {generated_waveform.shape}")
 
     hplus, hcross = generated_waveform[0][0], generated_waveform[0][1]
 
     # -- add two dummy repeated value at the start to makeup for length req by Bilby Interferometer.
     hplus = np.concatenate([[hplus[0],hplus[1]], hplus])
     hcross = np.concatenate([[hcross[0],hcross[1]], hcross])
-    logging.info(f"Waveform shapes after adding dummy element at the start: {hplus.shape}, {hcross.shape}")
+    logger.info(f"Waveform shapes after adding dummy element at the start: {hplus.shape}, {hcross.shape}")
 
     waveforms = {'plus': hplus, 'cross': hcross}
 
@@ -148,7 +149,7 @@ def convert_to_ml_parameters(parameters):
         M_total = M_chirp * (q**(-3/5) + q**(2/5))**(5/3)
         m1 = M_total / (1 + q)
         m2 = M_total - m1
-        logging.info(f"Converted (mass_ratio, chirp_mass) to (mass_1, mass_2): {m1}, {m2}")
+        logger.info(f"Converted (mass_ratio, chirp_mass) to (mass_1, mass_2): {m1}, {m2}")
     new_parameters["mass_1"] = m1
     new_parameters["mass_2"] = m2
     # new_parameters.pop("mass_ratio", None)
@@ -172,8 +173,9 @@ def convert_to_ml_parameters(parameters):
         )
         new_parameters["spin_1z"] = spin_1z
         new_parameters["spin_2z"] = spin_2z
-    logging.info(f"Converted (a_i, tilt_i, phi_i) to (spin_i_z): {spin_1z}, {spin_2z}")
+    logger.info(f"Converted (a_i, tilt_i, phi_i) to (spin_i_z): {spin_1z}, {spin_2z}")
     # TODO: Can pop out original parameters that are not needed by ML model.
+    # assert spin_1z==parameters.get("a_1", None) and spin_2z==parameters.get("a_2", None), "Spin conversion did not produce expected results. Please check the conversion logic."
     return (new_parameters, None)
 
 class MLWaveformGenerator(WaveformGenerator):
@@ -190,11 +192,13 @@ class MLWaveformGenerator(WaveformGenerator):
         frequency_domain_source_model = kwargs.get('frequency_domain_source_model', None)
         model_path = kwargs['waveform_arguments'].get('model_path', None) if 'waveform_arguments' in kwargs else None
         config_path = kwargs['waveform_arguments'].get('config_path', None) if 'waveform_arguments' in kwargs else None
+
         if time_domain_source_model is None and frequency_domain_source_model is None:
             logger.warning("No source model provided to MLWaveformGenerator. We will initialize our ML model!")
             if model_path is None or config_path is None:
                 raise ValueError("Missing 'model_path' or 'config_path' in waveform_arguments for ML model initialization.")
             self.init_mlmodel(model_path=model_path, config_path=config_path)
+
         # -- add `time_domain_source_model` to kwargs so that they can be used in the super class!
         kwargs['time_domain_source_model'] = self.time_domain_source_model
         # -- init __super__ class after initializing the ML model, so that the model can be used in the time_domain_strain method!
@@ -204,11 +208,11 @@ class MLWaveformGenerator(WaveformGenerator):
         """
         Initialize the ML model for waveform generation. This method can be called to load the model after the generator is initialized.
         """
-        logging.info(f"Initializing ML model with model_path: {model_path} and config_path: {config_path}")
+        logger.info(f"Initializing ML model with model_path: {model_path} and config_path: {config_path}")
         self.loaded_mlmodel = load_flex_model(model_path=model_path, configpath=config_path, device=DEVICE, precision=PRECISION)
         self.time_domain_source_model = self.get_ml_waveform
         self.frequency_domain_source_model = None  # We will only use the time-domain model for now!
-        logging.info("ML model initialized for waveform generation in MLWaveformGenerator.")
+        logger.info("ML model initialized for waveform generation in MLWaveformGenerator.")
 
     def get_ml_waveform(self, time_array, **kwargs):
         return get_td_SEOBNRv4ml(time_array, model=self.loaded_mlmodel, **kwargs)
@@ -218,7 +222,7 @@ class MLWaveformGenerator(WaveformGenerator):
         Override the time_domain_strain method to use the ML model for waveform generation.
         This method is called by Bilby to get the strain for given parameters.
         """
-        logging.info("Generating waveform using ML model for parameters:", parameters)
+        logger.info("Generating waveform using ML model for parameters:", parameters)
         return self._calculate_strain(model=self.time_domain_source_model,
                                       model_data_points=self.time_array,
                                       parameters=parameters,
@@ -227,7 +231,7 @@ class MLWaveformGenerator(WaveformGenerator):
                                       transformed_model_data_points=self.frequency_array)
 
     def frequency_domain_strain(self, parameters=None):
-        logging.info("Generating waveform using ML model for parameters:", parameters)
+        logger.info("Generating waveform using ML model for parameters:", parameters)
         return self._calculate_strain(model=self.frequency_domain_source_model,
                                       model_data_points=self.frequency_array,
                                       parameters=parameters,
@@ -236,7 +240,7 @@ class MLWaveformGenerator(WaveformGenerator):
                                       transformed_model_data_points=self.time_array)
     
     def _strain_from_model(self, model_data_points, model, parameters):
-        logging.info("Generating waveform using ML model for parameters:", parameters)
+        logger.info("Generating waveform using ML model for parameters:", parameters)
         return model(model_data_points, **parameters)
     
     def _calculate_strain(self, model, model_data_points, transformation_function, transformed_model,
@@ -251,8 +255,8 @@ class MLWaveformGenerator(WaveformGenerator):
             self._cache['model'] = model
             self._cache['transformed_model'] = transformed_model
         parameters = self._format_parameters(parameters)
-        logging.info("Generating waveform using ML model for parameters:", parameters)
-        logging.info(f"Using model: {model} and transformed model {transformed_model}")
+        logger.info("Generating waveform using ML model for parameters:", parameters)
+        logger.info(f"Using model: {model} and transformed model {transformed_model}")
         if model is not None:
             model_strain = self._strain_from_model(model_data_points, model, parameters)
         elif transformed_model is not None:
@@ -273,7 +277,7 @@ class MLWaveformGenerator(WaveformGenerator):
         new_parameters = parameters.copy()
         # convert parameters to lal BBH parameters using the provided conversion function
         new_parameters, _ = self.parameter_conversion(new_parameters)
-        logging.info("Formatted parameters for waveform generation:", new_parameters)
+        logger.info("Formatted parameters for waveform generation:", new_parameters)
 
         # from bilby.gw.conversion import bilby_to_lalsimulation_spins
 
@@ -290,7 +294,7 @@ class MLWaveformGenerator(WaveformGenerator):
         #     reference_frequency=FREF,
         #     phase=parameters["phase"],
         # )
-        # logging.info("Converted spins and inclination:", iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z)
+        # logger.info("Converted spins and inclination:", iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z)
 
         # ml_parameters = {
         #     "mass_1": new_parameters["mass_1"],
@@ -304,13 +308,13 @@ class MLWaveformGenerator(WaveformGenerator):
         #     new_parameters.pop(key)
         # new_parameters.update(ml_parameters)
         new_parameters.update(self.waveform_arguments)
-        logging.info("Final parameters for waveform generation:", new_parameters)
+        logger.info("Final parameters for waveform generation:", new_parameters)
         return new_parameters
 
     def _strain_from_transformed_model(
         self, transformed_model_data_points, transformed_model, transformation_function, parameters
     ):
-        logging.info("Generating waveform using ML model for parameters:", parameters)
+        logger.info("Generating waveform using ML model for parameters:", parameters)
         transformed_model_strain = self._strain_from_model(
             transformed_model_data_points, transformed_model, parameters
         )
@@ -327,277 +331,4 @@ class MLWaveformGenerator(WaveformGenerator):
                 model_strain[key] = transformation_function(transformed_model_strain[key], self.sampling_frequency)
         return model_strain
 
-
-
-
-def main(args, label='umamipe', multiprocessing=True):
-
-    # Force PyTorch's spawn context globally
-    mp.set_start_method('spawn', force=True)
-    if multiprocessing:
-        logger.info("Using multiprocessing with spawn context for parallel sampling.")
-        sampler = 'nessai'
-        nworkers = mp.cpu_count() - 1  # Use all available CPU cores except one
-    else:
-        logger.info("Not using multiprocessing. Running sampler in single-process mode.")
-        sampler = 'dynesty'
-        nworkers = 1
-
-    project_dir = '../' + args.project_dir + '/'
-    outdir = os.path.join(project_dir, f'results/{TODAY}')
-    if not os.path.exists(outdir):
-        os.makedirs(outdir)
-
-    model_path = os.path.join(project_dir, 'trained-models', args.model_name)
-    try:
-        if not os.path.isfile(model_path):
-            logging.error(f"Provided MODEL_PATH does not exist: {model_path}")
-            raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
-    except Exception as e:
-        model_path = os.path.join('../', 'trained-models', args.model_name)
-        if not os.path.isfile(model_path):
-            logging.error(f"Provided MODEL_PATH does not exist: {model_path}")
-            raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
-    logging.info(f"Using MODEL_PATH: {model_path}")
-
-    # configpath = args.model_config
-    # if configpath is not None:
-    #     if not configpath.endswith('.json'):
-    #         configpath += '.json'
-    #     if not os.path.isfile(configpath):
-    #         logging.error(f"Provided MODEL_CONFIG path does not exist: {configpath}")
-    #         raise FileNotFoundError(f"MODEL_CONFIG file not found at {configpath}")
-    #     logging.info(f"Using MODEL_CONFIG: {configpath}")
-    #     MODEL_CONFIG = json.load(open(configpath, 'r'))
-
-    # if args.with_original_model:
-    #     # Load the trained model
-    #     preset_array_size = 8190
-    #     num_classes = 4
-    #     model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2),
-    #                  MODEL_CONFIG=MODEL_CONFIG)
-    #     model.load_state_dict(torch.load(model_path, map_location=DEVICE))
-    #     model.to(getattr(torch, PRECISION))
-    #     model.to(DEVICE)
-    #     model.eval()
-    #     logging.info("Model loaded and set to evaluation mode.")
-
-    # else:
-    # model = load_flex_model(model_path=model_path, 
-    #                         configpath=args.model_config)
-
-    # -- initialize the ML waveform generator with the loaded model
-    # NOTE: We will only use this for the likelihood evaluation in the sampler!
-    # Whereas, the injection is performed using LAL waveform!
-    waveform_generator = MLWaveformGenerator(
-        duration=DURATION,
-        sampling_frequency=SAMPLE_RATE,
-        time_domain_source_model=None,   # We will load ML model at initialization!
-        parameter_conversion=convert_to_ml_parameters,
-        waveform_arguments={'model_path': model_path, 'config_path': args.model_config},
-        )
-    logging.info("MLWaveformGenerator initialized with the loaded model.")
-
-    # -- Injected waveform will be the native SEOBNRv4 implementation
-    injection_generator = WaveformGenerator(
-        duration=DURATION,
-        sampling_frequency=SAMPLE_RATE,
-        # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
-        frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole,
-        waveform_arguments=dict(
-            waveform_approximant="SEOBNRv4",      #"IMRPhenomPv2",
-            reference_frequency=FREF,
-            minimum_frequency=FMIN,
-            mode_array=[[2,2]],
-            catch_waveform_errors=True, 
-        )
-    )
-    logging.info("Injection generator initialized with SEOBNRv4 waveform model.")
-    
-    # -- Our ML model is only for [m1,m2,chi1z,chi2z], 
-    # so we will just set all other parameters to some default values for now!
-    # injection_parameters = dict(
-    #     mass_1=60.0,
-    #     mass_2=60.0,
-    #     a_1=0.5,  # spin-magnitude of the primary black hole
-    #     a_2=0.5,  # spin-magnitude of the secondary black hole
-    #     tilt_1=0.0,  # tilt angle of the primary black hole's spin vector with respect to the orbital angular momentum
-    #     tilt_2=0.0,  # tilt angle of the secondary black hole's spin vector with respect to the orbital angular momentum
-    #     phi_12=0.0,  # azimuthal angle between the two spin vectors in the plane of the orbit
-    #     phi_jl=0.0,  # azimuthal angle between the total angular momentum and the orbital angular momentum in the plane of the orbit
-    #     luminosity_distance=400.0,
-    #     theta_jn=0.0,  # angle between the total angular momentum and the line of sight, aka inclination angle
-    #     # psi=2.659,
-    #     phase=0.0,
-    #     geocent_time=1126259642.413,
-    #     # ra=1.375,
-    #     # dec=-1.2108,
-    # )
-    injection_parameters = dict(
-    mass_1=36.0,
-    mass_2=29.0,
-    a_1=0.4,
-    a_2=0.3,
-    tilt_1=0.0,
-    tilt_2=0.0,
-    phi_12=0.0,
-    phi_jl=0.0,
-    luminosity_distance=2000.0,
-    theta_jn=0.4,
-    psi=2.659,
-    phase=1.3,
-    geocent_time=1126259642.413,
-    ra=1.375,
-    dec=-1.2108,
-    )
-
-    # Set up interferometers.  In this case we'll use two interferometers
-    # (LIGO-Hanford (H1), LIGO-Livingston (L1). These default to their design
-    # sensitivity
-    ifos = bilby.gw.detector.InterferometerList(["H1", "L1"])
-    ifos.set_strain_data_from_power_spectral_densities(
-        sampling_frequency=SAMPLE_RATE,
-        duration=DURATION,
-        start_time=injection_parameters["geocent_time"] - 2,
-    )
-    ifos.inject_signal(
-        waveform_generator=injection_generator,
-        parameters=injection_parameters,
-    )
-    logging.info("Signal injected into interferometer data.")
-
-    # Set up a PriorDict, which inherits from dict.
-    # By default we will sample all terms in the signal models.  However, this will
-    # take a long time for the calculation, so for this example we will set almost
-    # all of the priors to be equall to their injected values.  This implies the
-    # prior is a delta function at the true, injected value.  In reality, the
-    # sampler implementation is smart enough to not sample any parameter that has
-    # a delta-function prior.
-    # The above list does *not* include mass_1, mass_2, a_1 and a_2, for which we
-    # want to do the parameter estimation!
-    # If we do nothing, then the default priors get used.
-    priors = bilby.gw.prior.BBHPriorDict()
-    for key in [
-        "tilt_1",
-        "tilt_2",
-        "phi_12",
-        "phi_jl",
-        "luminosity_distance",
-        "theta_jn",
-        "psi",
-        "ra",
-        "dec",
-        "geocent_time",
-        "phase",
-    ]:
-        priors[key] = injection_parameters[key]
-
-    # -- Set the priors for the parameters we want to estimate!
-    priors["mass_1"] = bilby.core.prior.Uniform(30, 75, name="mass_1", latex_label="$m_1$")
-    priors["mass_2"] = bilby.core.prior.Uniform(30, 75, name="mass_2", latex_label="$m_2$")
-    # priors["a_1"] = bilby.core.prior.Uniform(0, 0.80, name="a_1", latex_label="$\\chi_{1z}$")
-    # priors["a_2"] = bilby.core.prior.Uniform(0, 0.80, name="a_2", latex_label="$\\chi_{2z}$")
-    # priors["a_1"] = injection_parameters["a_1"]  
-    # priors["a_2"] = injection_parameters["a_2"]  
-    priors["a_1"] = bilby.core.prior.Uniform(-0.75, 0.75, name="a_1", latex_label="$\\chi_{1z}$")
-    priors["a_2"] = bilby.core.prior.Uniform(-0.75, 0.75, name="a_2", latex_label="$\\chi_{2z}$")
-    print(f"Priors: {priors}")
-    priors.pop("mass_ratio", None)
-    priors.pop("chirp_mass", None)
-    print(f"Priors: {priors}")
-
-
-    # Perform a check that the prior does not extend to a parameter space longer than the data
-    priors.validate_prior(DURATION, FMIN)
-
-    # Initialise the likelihood by passing in the interferometer data (ifos)
-    # -- For each likelihood, we use the ML generated waveform!
-    likelihood = bilby.gw.GravitationalWaveTransient(
-        interferometers=ifos, 
-        waveform_generator=waveform_generator
-    )
-
-    # Run sampler. In this case we're going to use the `dynesty` sampler
-    # Note that the `nlive`, `naccept`, and `sample` parameters are specified
-    # to ensure sufficient convergence of the analysis.
-    # We set `npool=16` to parallelize the analysis over 16 cores.
-    # The conversion function will determine the distance posterior in post processing
-    result = bilby.run_sampler(
-        likelihood=likelihood,
-        priors=priors,
-        sampler=sampler,
-        nlive=1000,
-        naccept=60,
-        sample="acceptance-walk",
-        injection_parameters=injection_parameters,
-        outdir=outdir,
-        label=label,
-        conversion_function=bilby.gw.conversion.generate_all_bbh_parameters,
-        result_class=bilby.gw.result.CBCResult,
-        npool=1,  # -- switch off Bilby's standard multiprocessing
-        # -- instead pass multiprocessing args direct to nessai sampler!
-        pytorch_threads=1,
-        max_threads=nworkers,
-    )
-
-    # Plot the inferred waveform superposed on the actual data.
-    result.plot_waveform_posterior(n_samples=1000)
-
-    # Make a corner plot.
-    result.plot_corner(save=True, filename=f'{label}_corner.png')
-
-
-
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train a CVAE model on GW waveforms")
-    parser.add_argument('--label', type=str, default='umamipe',
-                        help="Label for the analysis (default: umamipe)")
-    parser.add_argument('--project-dir', type=str, choices=['cvae@taiwan', 'v0p1', '@alvin', '@korea'], 
-                        default=PROJECT_DIR, help="Base directory for the project (default: current directory)")
-    parser.add_argument('--model-config', type=str, default='modelconfig-cvae-paper-I',
-                        help="Name of the model configuration JSON file (default: None)")
-    parser.add_argument('--model-name', type=str, default='model-20251004_072338-10',
-                        help="Name of the trained model checkpoint (default: None)")
-    
-    parser.add_argument('--with-original-model', action='store_true',
-                        help="Whether to use the original CVAE model instead of the FlexCVAE (default: False)")
-    
-    parser.add_argument('--debug', action='store_true', help="Enable debug logging")
-    parser.add_argument('--verbose', action='store_true', help="Enable verbose logging")
-    
-    args = parser.parse_args()
-
-
-    # if args.debug:
-    #     log_level = logging.DEBUG
-    # elif args.verbose:
-    #     log_level = logging.INFO
-    # else:
-    #     log_level = logging.WARNING
-
-    # logfname = f"umamipe-{NOW}.log"
-    # log_dir = f'../logs/{TODAY}/'
-    # os.makedirs(log_dir, exist_ok=True)
-    # log_file = os.path.join(log_dir, logfname)
-    # logging.basicConfig(
-    #     format='%(asctime)s: %(levelname)s: %(message)s',
-    #     level=log_level,
-    #     datefmt='%y-%m-%d %H:%M:%S',
-    #     force=True,
-    #     handlers=[
-    #         logging.StreamHandler(),  # Log to console
-    #         logging.FileHandler(log_file)  # Log to file
-    #     ]
-    # )
-    
-    # # Set FileHandler to always be at least INFO level
-    # for handler in logging.root.handlers:
-    #     if isinstance(handler, logging.FileHandler):
-    #         handler.setLevel(max(handler.level, logging.INFO))
-
-    logging.info(f'Working on device: {DEVICE}, with precision: {PRECISION}')
-
-    main(args, label=args.label)
 
