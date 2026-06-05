@@ -49,13 +49,13 @@ FREF = 50.0  # Hz
 
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
-    PRECISION = 'float64'  # Use double precision for CUDA if available
+    PRECISION = 'float32'  # Use float32 for CUDA if available
 elif torch.backends.mps.is_available():
     DEVICE = torch.device("mps")
     PRECISION = 'float32'  # Use float32 for MPS since it does not support float64 well
 else:
     DEVICE = torch.device("cpu")
-    PRECISION = 'float64'  # Use double precision for CPU
+    PRECISION = 'float32'  # Use float32 for CPU
 logging.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
 
