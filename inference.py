@@ -107,17 +107,6 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
     this_label = f"{label_base}_inj_{run_idx:04d}"
     logger.info(f"Running sampler for injection {run_idx} with label {this_label} using sampler {sampler}...")
 
-    # -- Send model to device only here! We will keep the model on CPU until we need to generate the waveform, to save GPU memory and avoid potential issues with multiprocessing in Bilby!
-    if isinstance(injection_generator, MLWaveformGenerator):
-        print(f"Before sending to device, injection_generator.loaded_mlmodel is on device: \
-                    {next(injection_generator.loaded_mlmodel.parameters()).device}, dtype: {next(injection_generator.loaded_mlmodel.parameters()).dtype}")
-        injection_generator.loaded_mlmodel.to(DEVICE, dtype=getattr(torch, PRECISION))
-        print(f"Sent injection_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
-    if isinstance(waveform_generator, MLWaveformGenerator):
-        print(f"Before sending to device, waveform_generator.loaded_mlmodel is on device: {next(waveform_generator.loaded_mlmodel.parameters()).device}, dtype: {next(waveform_generator.loaded_mlmodel.parameters()).dtype}")
-        waveform_generator.loaded_mlmodel.to(DEVICE, dtype=getattr(torch, PRECISION))
-        print(f"Sent waveform_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
-
     injection_parameters = priors.sample()
 
     ifos.set_strain_data_from_power_spectral_densities(
@@ -136,6 +125,21 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
         interferometers=ifos,
         waveform_generator=waveform_generator,
     )
+
+    # -- Send model to device only here! We will keep the model on CPU until we need to generate the waveform, to save GPU memory and avoid potential issues with multiprocessing in Bilby!
+    if isinstance(injection_generator, MLWaveformGenerator):
+        print(f"Before sending to device, injection_generator.loaded_mlmodel is on device: \
+                    {next(injection_generator.loaded_mlmodel.parameters()).device}, dtype: {next(injection_generator.loaded_mlmodel.parameters()).dtype}")
+        injection_generator.loaded_mlmodel.to(DEVICE, dtype=getattr(torch, PRECISION))
+        injection_generator.check_model_weights_on_device(device=DEVICE, 
+                                                          precision=getattr(torch, PRECISION))
+        print(f"Sent injection_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
+    if isinstance(waveform_generator, MLWaveformGenerator):
+        print(f"Before sending to device, waveform_generator.loaded_mlmodel is on device: {next(waveform_generator.loaded_mlmodel.parameters()).device}, dtype: {next(waveform_generator.loaded_mlmodel.parameters()).dtype}")
+        waveform_generator.loaded_mlmodel.to(DEVICE, dtype=getattr(torch, PRECISION))
+        waveform_generator.check_model_weights_on_device(device=DEVICE, 
+                                                         precision=getattr(torch, PRECISION))
+        print(f"Sent waveform_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
 
     result = bilby.run_sampler(
         likelihood=likelihood,
@@ -237,7 +241,7 @@ def main(args, label='umamipe', multiprocessing=True):
 
 
     # -- Injected waveform will be the native SEOBNRv4 implementation
-    eob_generator = WaveformGenerator(
+    injection_generator = WaveformGenerator(
         duration=DURATION,
         sampling_frequency=SAMPLE_RATE,
         # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
@@ -254,7 +258,7 @@ def main(args, label='umamipe', multiprocessing=True):
 
     # -- initialize the ML waveform generator with the loaded model
     # NOTE: We will only use this for the likelihood evaluation in the sampler!
-    ml_generator = MLWaveformGenerator(
+    waveform_generator = MLWaveformGenerator(
         duration=DURATION,
         sampling_frequency=SAMPLE_RATE,
         time_domain_source_model=None,   # We will load ML model at initialization!
@@ -263,9 +267,19 @@ def main(args, label='umamipe', multiprocessing=True):
         )
     logger.info("MLWaveformGenerator initialized with the loaded model.")
 
+    # -- For now, try using another instance of MLWaveformGenerator for the injection generator!
+    injection_ml_generator = MLWaveformGenerator(
+        duration=DURATION,
+        sampling_frequency=SAMPLE_RATE,
+        time_domain_source_model=None,   # We will load ML model at initialization!
+        parameter_conversion=convert_to_ml_parameters,
+        waveform_arguments={'model_path': model_path, 'config_path': args.model_config},
+        )
+    logger.info("Injection MLWaveformGenerator initialized with the loaded model.")
+
     results = run_injection_campaign(N_injections=50, base_seed=1234,
-                                     injection_generator=ml_generator, 
-                                     waveform_generator=ml_generator,
+                                     injection_generator=injection_ml_generator, 
+                                     waveform_generator=waveform_generator,
                                      label_base=label, outdir=outdir,
                                      sampler=sampler, **sampler_kwargs)
     logger.info("Completed injection campaign and sampling for all injections.")

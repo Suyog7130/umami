@@ -221,6 +221,24 @@ class MLWaveformGenerator(WaveformGenerator):
         self.frequency_domain_source_model = None  # We will only use the time-domain model for now!
         logger.info("ML model initialized for waveform generation in MLWaveformGenerator.")
 
+    def check_model_weights_on_device(self, device=DEVICE, precision=PRECISION):
+        if self.loaded_mlmodel is None:
+            logger.warning("ML model not initialized yet. Please call init_mlmodel() first.")
+            return
+        # -- Check if model weights loaded are of the same precision as our initialized model.
+        # -- If not, then convert loaded model to the correct precision before moving to device.
+        for name, param in self.loaded_mlmodel.named_parameters():
+            if param.dtype != getattr(torch, precision):
+                logging.info(f"Converting model parameter '{name}' from {param.dtype} to {getattr(torch, precision)} for consistency with initialized model precision.")
+                param.data = param.data.to(getattr(torch, precision))
+        # -- Check if model weights are already on the correct device before moving.
+        for name, param in self.loaded_mlmodel.named_parameters():
+            if param.device != device:
+                logging.info(f"Moving model parameter '{name}' from {param.device} to {device}.")
+                param.data = param.data.to(device)
+            else:
+                logging.info(f"Model parameter '{name}' is already on the correct device: {device}.")
+
     def get_ml_waveform(self, time_array, **kwargs):
         return get_td_SEOBNRv4ml(time_array, model=self.loaded_mlmodel, **kwargs)
     
