@@ -155,24 +155,28 @@ def convert_to_ml_parameters(parameters):
     # new_parameters.pop("mass_ratio", None)
     # new_parameters.pop("chirp_mass", None)
 
-    if "a_1" in parameters and "a_2" in parameters and "tilt_1" in parameters and "tilt_2" in parameters and \
-        "phi_12" in parameters and "phi_jl" in parameters and "theta_jn" in parameters:
-        from bilby.gw.conversion import bilby_to_lalsimulation_spins
-        iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = bilby_to_lalsimulation_spins(
-            theta_jn=parameters["theta_jn"],
-            phi_jl=parameters["phi_jl"],
-            tilt_1=parameters["tilt_1"],
-            tilt_2=parameters["tilt_2"],
-            phi_12=parameters["phi_12"],
-            a_1=parameters["a_1"],
-            a_2=parameters["a_2"],
-            mass_1=new_parameters["mass_1"] * utils.solar_mass,
-            mass_2=new_parameters["mass_2"] * utils.solar_mass,
-            reference_frequency=FREF,
-            phase=parameters.get("phase", 0.0),
-        )
-        new_parameters["spin_1z"] = spin_1z
-        new_parameters["spin_2z"] = spin_2z
+    spin_1z = parameters.get("chi_1z", parameters.get("spin_1z", None))
+    spin_2z = parameters.get("chi_2z", parameters.get("spin_2z", None))
+    if spin_1z is None and spin_2z is None:
+        if "a_1" in parameters and "a_2" in parameters and "tilt_1" in parameters and "tilt_2" in parameters and "phi_12" in parameters and "phi_jl" in parameters and "theta_jn" in parameters:
+            from bilby.gw.conversion import bilby_to_lalsimulation_spins
+            iota, spin_1x, spin_1y, spin_1z, spin_2x, spin_2y, spin_2z = bilby_to_lalsimulation_spins(
+                theta_jn=parameters["theta_jn"],
+                phi_jl=parameters["phi_jl"],
+                tilt_1=parameters["tilt_1"],
+                tilt_2=parameters["tilt_2"],
+                phi_12=parameters["phi_12"],
+                a_1=parameters["a_1"],
+                a_2=parameters["a_2"],
+                mass_1=new_parameters["mass_1"] * utils.solar_mass,
+                mass_2=new_parameters["mass_2"] * utils.solar_mass,
+                reference_frequency=FREF,
+                phase=parameters.get("phase", 0.0),
+            )
+        else:
+            raise ValueError("Missing spin parameters for conversion. Please provide either (spin_1z, spin_2z) or (a_1, a_2, tilt_1, tilt_2, phi_12, phi_jl, theta_jn). Provided parameters: ", parameters)
+    new_parameters["spin_1z"] = spin_1z
+    new_parameters["spin_2z"] = spin_2z
     logger.info(f"Converted (a_i, tilt_i, phi_i) to (spin_i_z): {spin_1z}, {spin_2z}")
     # TODO: Can pop out original parameters that are not needed by ML model.
     # assert spin_1z==parameters.get("a_1", None) and spin_2z==parameters.get("a_2", None), "Spin conversion did not produce expected results. Please check the conversion logic."

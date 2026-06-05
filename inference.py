@@ -48,22 +48,40 @@ FREF = 50.0  # Hz
 # sensitivity
 ifos = bilby.gw.detector.InterferometerList(["H1", "L1"])
 
+
 priors = BBHPriorDict(aligned_spin=True)
 print("Default priors for BBH parameters:")
 for key, prior in priors.items():
     print(f"  {key}: {prior}")
 print(f'Default priors for BBH parameters: {priors.keys()}')
 
+# NOTE: Other parameters should be allowed to vary freely, for injection generation!
+# # -- remove redundant or irrelevant parameters
+# params_to_use = ["mass_1", "mass_2", "chi_1z", "chi_2z"]
+# for param in list(priors.keys()):
+#     if param not in params_to_use:
+#         priors.pop(param)
+priors.pop("mass_ratio", None)
+priors.pop("chirp_mass", None)
+priors["geocent_time"] = 0.0 
+
 # -- Set the priors for the parameters we want to estimate!
 priors["mass_1"] = bilby.core.prior.Uniform(30, 75, name="mass_1", latex_label="$m_1$")
 priors["mass_2"] = bilby.core.prior.Uniform(30, 75, name="mass_2", latex_label="$m_2$")
+priors["chi_1z"] = bilby.core.prior.Uniform(-0.80, 0.80, name="chi_1z", latex_label="$\\chi_{1z}$")
+priors["chi_2z"] = bilby.core.prior.Uniform(-0.80, 0.80, name="chi_2z", latex_label="$\\chi_{2z}$")
 
+# priors["chi_1"].a_prior.maximum = 0.80
+# priors["chi_2"].a_prior.maximum = 0.80
 # priors["a_1"] = bilby.core.prior.Uniform(0, 0.80, name="a_1", latex_label="$\\chi_{1z}$")
 # priors["a_2"] = bilby.core.prior.Uniform(0, 0.80, name="a_2", latex_label="$\\chi_{2z}$")
 # priors["a_1"] = injection_parameters["a_1"]  
 # priors["a_2"] = injection_parameters["a_2"]  
-# priors["spin_1z"] = bilby.core.prior.Uniform(-0.75, 0.75, name="chi_1z", latex_label="$\\chi_{1z}$")
-# priors["spin_2z"] = bilby.core.prior.Uniform(-0.75, 0.75, name="chi_2z", latex_label="$\\chi_{2z}$")
+
+print("Updated priors for BBH parameters:")
+for key, prior in priors.items():
+    print(f"  {key}: {prior}")
+print(f'Updated priors for BBH parameters: {priors.keys()}')
 
 # Perform a check that the prior does not extend to a parameter space longer than the data
 priors.validate_prior(DURATION, FMIN)
@@ -78,12 +96,11 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
     logger.info(f"Running sampler for injection {run_idx} with label {this_label} using sampler {sampler}...")
 
     injection_parameters = priors.sample()
-    injection_parameters.setdefault("geocent_time", 0.0)
 
     ifos.set_strain_data_from_power_spectral_densities(
         sampling_frequency=SAMPLE_RATE,
         duration=DURATION,
-        start_time=injection_parameters["geocent_time"],
+        start_time=injection_parameters["geocent_time"]
     )
 
     ifos.inject_signal(
@@ -138,6 +155,7 @@ def main(args, label='umamipe', multiprocessing=True):
             nlive=100,
             n_pool=nworkers,
             pytorch_threads=1,
+            npool=1, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
         )
     else:
         logger.info("Not using multiprocessing. Running sampler in single-process mode.")
@@ -250,7 +268,7 @@ if __name__ == "__main__":
     parser.add_argument('--label', type=str, default='umamipe',
                         help="Label for the analysis (default: umamipe)")
     parser.add_argument('--project-dir', type=str, choices=['cvae@taiwan', 'v0p1', '@alvin', '@korea'], 
-                        default=PROJECT_DIR, help="Base directory for the project (default: current directory)")
+                        default=PROJECT_DIR, help="Base directory for the project (default: v0p1)")
     parser.add_argument('--model-config', type=str, default='modelconfig-cvae-paper-I',
                         help="Name of the model configuration JSON file (default: None)")
     parser.add_argument('--model-name', type=str, default='model-20251004_072338-10',
@@ -259,7 +277,8 @@ if __name__ == "__main__":
     parser.add_argument('--with-original-model', action='store_true',
                         help="Whether to use the original CVAE model instead of the FlexCVAE (default: False)")
     
-    args = init_verbosity_args(parser)
+    parser = init_verbosity_args(parser)
+    args = parser.parse_args()
     logger = init_logging(args)
 
     # Force PyTorch's spawn context globally
