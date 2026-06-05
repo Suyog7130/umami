@@ -572,21 +572,19 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
     )
 
     if use_calibrator_dataloaders:
-        cal_train_set = CalibratorDataset(data_hdf=f'calibrator_training_data_{timestamp}', 
+        train_set = CalibratorDataset(data_hdf=f'calibrator_training_data_{timestamp}', 
                                         params_mean=params_mean, params_std=params_std)
-        cal_valid_set = CalibratorDataset(data_hdf=f'calibrator_validation_data_{timestamp}', 
+        valid_set = CalibratorDataset(data_hdf=f'calibrator_validation_data_{timestamp}', 
                                         params_mean=params_mean, params_std=params_std)
-        train_set = cal_train_set
-        valid_set = cal_valid_set
+        training_loader = CalibratorDataLoader(train_set, batch_size=batch_size, shuffle=True)
+        validation_loader = CalibratorDataLoader(valid_set, batch_size=batch_size, shuffle=True)
         logger.info("Using CalibratorDataset and CalibratorDataLoader for training the calibrator model, which read the calibrator input and target residuals from HDF files.")
     else:
         train_set = wf_train_set
         valid_set = wf_valid_set
+        training_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
+        validation_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=True)
         logger.info("Using CustomDataset and CustomDataLoader for training the calibrator model, which generate the calibrator input and target residuals on the fly by running the ML model inference every time. This is computationally expensive, so it's recommended to use the CalibratorDataset and CalibratorDataLoader instead, which read the pre-generated data from HDF files.")
-    
-    training_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
-    validation_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=True)
-
     logger.info(training_loader.__dict__)
     ntbatches = len(training_loader)
     nvbatches = len(validation_loader)
