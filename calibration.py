@@ -154,6 +154,7 @@ def get_calibrator_input(wfmodel, originals, labels,
     indices : torch.Tensor, optional
         The original sample indices from the dataset for this batch, shape: (batch,), used for saving 
         the data to HDF file with unique group names, by default None.
+        NOTE: These are the only groups that will be saved to the HDF file.
     params_mean : torch.Tensor, optional
         The mean values for normalizing the parameters, by default None.
     params_std : torch.Tensor, optional
@@ -227,17 +228,18 @@ def get_calibrator_input(wfmodel, originals, labels,
     logger.debug(f"Calibrator input shape: {calibrator_input.shape}")
 
     if data_hdf is not None and indices is not None:
-        # logger.debug(f"Saving calibrator input and target residuals to {data_hdf} for this batch...")
-        savename = f'../data/{data_hdf.strip(".hdf")}_{NOW}.hdf'
-        os.makedirs(os.path.dirname(savename), exist_ok=True)
+        # # logger.debug(f"Saving calibrator input and target residuals to {data_hdf} for this batch...")
+        # savename = f'../data/{data_hdf.strip(".hdf")}_{NOW}.hdf'
+        # os.makedirs(os.path.dirname(savename), exist_ok=True)
+
         # Save calibaration input, target residuals, and parameters the first time, so that we can reuse them next time!
         # Save this data to a HDF file repeatedly appending to it every time we call this function, 
         # and then we can load this data directly in the calibrator training loop, instead of having to 
         # generate it on the fly every time, which is computationally expensive since it requires running the ML model inference every time.
-        with h5py.File(savename, 'a') as f:
+        with h5py.File('../data/' + data_hdf, 'a') as f:
             # -- create a new group for each data waveform in the batch, with datasets for:
             # -- [ml_amp, ml_freq, target_amp_residual, target_freq_residual, param_m1, param_m2, param_s1z, param_s2z]
-            for i in range(calibrator_input.shape[0]):
+            for i in range(len(indices)):
                 group_name = f'sample{int(indices[i])}'  # use the original sample index from the dataset as the group name
                 if group_name in f:
                     del f[group_name]  # delete existing group if it exists, to avoid appending to old data
@@ -319,6 +321,60 @@ def read_calibrator_input(data_hdf, indices, params_mean=None, params_std=None):
     target_freq_residuals = torch.stack(target_freq_residuals, dim=0)  # shape: (batch, n)
 
     return calibrator_inputs, (target_amp_residuals, target_freq_residuals)
+
+
+
+def match_data_between_wf_and_calibrator_hdfs(wf_hdf, calibrator_hdf, wfmodel, 
+                                              wf_dataset_obj=None,
+                                              params_mean=None, params_std=None):
+    """
+    Check if all the groups / waveforms present in the `wf_hdf` are also present in the
+    `calibrator_hdf`! If not, then create the missing groups in the `calibrator_hdf` by 
+    reading data from the `wf_hdf` and using the the `get_calibrator_input` function!
+    """
+    logger.info(f"Checking for missing groups in {calibrator_hdf} that are present in {wf_hdf}...")
+    wf_hdf = wf_hdf + '.hdf' if not wf_hdf.endswith('.hdf') else wf_hdf
+    calibrator_hdf = calibrator_hdf + '.hdf' if not calibrator_hdf.endswith('.hdf') else calibrator_hdf
+
+    wfhf = h5py.File('../data/' + wf_hdf, 'r')
+    chf = h5py.File('../data/' + calibrator_hdf, 'a')  # open in append mode to create missing groups if needed
+    wf_groups = set(wfhf.keys())
+    calibrator_groups = set(chf.keys())
+    missing_groups = wf_groups - calibrator_groups
+
+    if len(missing_groups) > 0:
+        logger.info(f"Found {len(missing_groups)} missing groups in {calibrator_hdf} that are present in {wf_hdf}. Will create these groups in {calibrator_hdf} by reading data from {wf_hdf} and using the `get_calibrator_input` function.")
+        
+        for group_name in tqdm(missing_groups, desc="Creating missing groups in calibrator HDF"):
+            # -- read the original waveform and parameters from the `wf_hdf` for this group
+            data = wf_dataset_obj.__getitem__(int(group_name.strip('sample')))
+            originals, _, labels, keys, _, indices = data
+
+            originals = torch.from_numpy(originals).to(getattr(torch, PRECISION)).to(DEVICE)  # shape: (2, n)
+            labels = torch.from_numpy(labels).to(getattr(torch, PRECISION)).to(DEVICE)  # shape: (num_params,)
+            originals = originals.unsqueeze(0)  # add batch dimension, shape: (1, 2, n)
+            labels = labels.unsqueeze(0)  # add batch dimension, shape: (1, num_params)
+            
+            # -- get the calibrator input and target residuals for this group using the `get_calibrator_input` function
+            _, _ = get_calibrator_input(
+                wfmodel=wfmodel,
+                originals=originals,  # shape: (1, 2, n)
+                labels=labels,  # shape: (1, num_params)
+                data_hdf=calibrator_hdf,  # save this data group to the calibrator HDF file!
+                indices=torch.tensor([int(group_name.strip('sample'))]),  # use the original sample index from the dataset!
+                params_mean=params_mean,
+                params_std=params_std,
+            )
+            logger.info(f"Created missing group {group_name} in {calibrator_hdf} with calibrator input and target residuals for the corresponding waveform in {wf_hdf}.")
+        logger.info(f"Finished creating missing groups in {calibrator_hdf}. All groups in {wf_hdf} are now present in {calibrator_hdf}.")
+    else:
+        logger.info(f"All groups in {wf_hdf} are already present in {calibrator_hdf}. No missing groups found.")
+
+    assert len(wf_groups - set(chf.keys())) == 0, f"After attempting to create missing groups, there are still {len(wf_groups - set(chf.keys()))} missing groups in {calibrator_hdf} that are present in {wf_hdf}. Please check the logs for details."
+    # close the HDF files
+    wfhf.close()
+    chf.close()
+
 
 
 class CalibratorDataset(torch.utils.data.Dataset):
@@ -493,22 +549,43 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
         logger.info("Compiled the calibrator model for faster training on CUDA.")
     logger.info(f"Calibrator model architecture: {calmodel}")
 
+    
+    wf_train_set = CustomDataset(forwhat='train', approximant=approximant, hdf_fname=trainhdf, 
+                                train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
+    wf_valid_set = CustomDataset(forwhat='valid', approximant=approximant, hdf_fname=valhdf, 
+                                train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
+
+    # -- make sure that calibarator HDF datagroups match those in the waveform HDF!
+    match_data_between_wf_and_calibrator_hdfs(
+        wf_hdf=trainhdf, 
+        calibrator_hdf=f'calibrator_training_data_{timestamp}.hdf', 
+        wfmodel=wfmodel,
+        wf_dataset_obj=wf_train_set,
+        params_mean=params_mean, params_std=params_std
+    )
+    match_data_between_wf_and_calibrator_hdfs(
+        wf_hdf=valhdf, 
+        calibrator_hdf=f'calibrator_validation_data_{timestamp}.hdf', 
+        wfmodel=wfmodel,
+        wf_dataset_obj=wf_valid_set,
+        params_mean=params_mean, params_std=params_std
+    )
+
     if use_calibrator_dataloaders:
+        cal_train_set = CalibratorDataset(data_hdf=f'calibrator_training_data_{timestamp}', 
+                                        params_mean=params_mean, params_std=params_std)
+        cal_valid_set = CalibratorDataset(data_hdf=f'calibrator_validation_data_{timestamp}', 
+                                        params_mean=params_mean, params_std=params_std)
+        train_set = cal_train_set
+        valid_set = cal_valid_set
         logger.info("Using CalibratorDataset and CalibratorDataLoader for training the calibrator model, which read the calibrator input and target residuals from HDF files.")
-        train_set = CalibratorDataset(data_hdf=f'calibrator_training_data_{timestamp}', 
-                                      params_mean=params_mean, params_std=params_std)
-        valid_set = CalibratorDataset(data_hdf=f'calibrator_validation_data_{timestamp}', 
-                                      params_mean=params_mean, params_std=params_std)
-        training_loader = CalibratorDataLoader(train_set, batch_size=batch_size, shuffle=True)
-        validation_loader = CalibratorDataLoader(valid_set, batch_size=batch_size, shuffle=True)
     else:
+        train_set = wf_train_set
+        valid_set = wf_valid_set
         logger.info("Using CustomDataset and CustomDataLoader for training the calibrator model, which generate the calibrator input and target residuals on the fly by running the ML model inference every time. This is computationally expensive, so it's recommended to use the CalibratorDataset and CalibratorDataLoader instead, which read the pre-generated data from HDF files.")
-        train_set = CustomDataset(forwhat='train', approximant=approximant, hdf_fname=trainhdf, 
-                                train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
-        valid_set = CustomDataset(forwhat='valid', approximant=approximant, hdf_fname=valhdf, 
-                                train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
-        training_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
-        validation_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=True)
+    
+    training_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
+    validation_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=True)
 
     logger.info(training_loader.__dict__)
     ntbatches = len(training_loader)
