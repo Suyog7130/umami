@@ -6,7 +6,7 @@ import os
 import inspect
 import types
 
-def init_logging(args, log_dir='logs'):
+def init_logging(args, log_dir='logs', write_to_file=True):
     """
     Smart logging initializer that auto-discovers imported project modules 
     and applies hierarchical verbosity scaling.
@@ -49,11 +49,11 @@ def init_logging(args, log_dir='logs'):
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(root_level)
     
-    # File: Fixed "Audit" verbosity (Always captures INFO, ignores pure noise)
-    os.makedirs(log_dir, exist_ok=True)
-    fname = os.path.join(log_dir, f'session_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
-    file_handler = logging.FileHandler(fname, mode='w')
-    file_handler.setLevel(logging.DEBUG)   # -- saved logs should be as detailed as possible!
+    if write_to_file:
+        os.makedirs(log_dir, exist_ok=True)
+        fname = os.path.join(log_dir, f'session_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+        file_handler = logging.FileHandler(fname, mode='w')
+        file_handler.setLevel(logging.DEBUG)   # -- saved logs should be as detailed as possible!
 
     # 3. Initialize Root Logger (The "Catch-All")
     # We set basicConfig to the lowest logical level so handlers can filter up
@@ -61,7 +61,7 @@ def init_logging(args, log_dir='logs'):
         level=logging.NOTSET, 
         format=log_format,
         datefmt=date_format,
-        handlers=[stream_handler, file_handler],
+        handlers=[stream_handler, file_handler] if write_to_file else [stream_handler],
         force=True  # Force reconfiguration in case logging was already set up
     )
     
@@ -106,6 +106,7 @@ def init_logging(args, log_dir='logs'):
     # Even in verbose modes, these are often too noisy
     logging.getLogger("matplotlib").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("torch").setLevel(logging.WARNING)
 
     # 6. Return a logger for the current file
     # If called from main.py, __name__ here is the utility module, so we grab the caller's name
