@@ -388,6 +388,8 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
     Load the trained FlexTwoC2E1D model from the specified path.
     """
     logging.info("Starting training with specified hyperparameters")
+    device = torch.device("cpu") if device is None else device
+    precision = 'float32' if precision is None else precision
     if configpath is not None:
         if not configpath.endswith('.json'):
             configpath += '.json'
@@ -510,8 +512,8 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
         model.load_state_dict(torch.load(model_path, map_location=device))
         logging.info(f"Loaded model from {model_path}")
     # Send model to device and convert to desired precision
-    model = model.to(getattr(torch, precision))
     model.to(device)
+    model = model.to(getattr(torch, precision))
     if device.type == 'cuda':
         model = torch.compile(model, mode='max-autotune')  # Compile the model for faster training (PyTorch 2.0+)
         logging.info("Model compiled with torch.compile for faster training.")

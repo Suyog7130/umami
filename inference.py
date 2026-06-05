@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import torch
 import torch.multiprocessing as mp
 
 import bilby
@@ -38,6 +39,17 @@ SAMPLE_RATE = 8192  # Hz
 DURATION = 1.0  # seconds
 FMIN = 20.0  # Hz
 FREF = 50.0  # Hz
+
+
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+    PRECISION = 'float32'  # Use float32 for CUDA if available
+elif torch.backends.mps.is_available():
+    DEVICE = torch.device("mps")
+    PRECISION = 'float32'  # Use float32 for MPS since it does not support float64 well
+else:
+    DEVICE = torch.device("cpu")
+    PRECISION = 'float32'  # Use float32 for CPU
 
 
 # bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="INFO")
@@ -94,6 +106,17 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
         np.random.seed(seed + run_idx)
     this_label = f"{label_base}_inj_{run_idx:04d}"
     logger.info(f"Running sampler for injection {run_idx} with label {this_label} using sampler {sampler}...")
+
+    # -- Send model to device only here! We will keep the model on CPU until we need to generate the waveform, to save GPU memory and avoid potential issues with multiprocessing in Bilby!
+    if isinstance(injection_generator, MLWaveformGenerator):
+        print(f"Before sending to device, injection_generator.loaded_mlmodel is on device: \
+                    {next(injection_generator.loaded_mlmodel.parameters()).device}, dtype: {next(injection_generator.loaded_mlmodel.parameters()).dtype}")
+        injection_generator.loaded_mlmodel.to(DEVICE, dtype=getattr(torch, PRECISION))
+        print(f"Sent injection_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
+    if isinstance(waveform_generator, MLWaveformGenerator):
+        print(f"Before sending to device, waveform_generator.loaded_mlmodel is on device: {next(waveform_generator.loaded_mlmodel.parameters()).device}, dtype: {next(waveform_generator.loaded_mlmodel.parameters()).dtype}")
+        waveform_generator.loaded_mlmodel.to(DEVICE, dtype=getattr(torch, PRECISION))
+        print(f"Sent waveform_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
 
     injection_parameters = priors.sample()
 
@@ -155,6 +178,7 @@ def main(args, label='umamipe', multiprocessing=True):
             nlive=100,
             n_pool=nworkers,
             pytorch_threads=1,
+            max_threads=7,
             npool=1, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
         )
     else:

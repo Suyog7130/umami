@@ -178,9 +178,11 @@ def convert_to_ml_parameters(parameters):
     new_parameters["spin_1z"] = spin_1z
     new_parameters["spin_2z"] = spin_2z
     logger.info(f"Converted (a_i, tilt_i, phi_i) to (spin_i_z): {spin_1z}, {spin_2z}")
-    # TODO: Can pop out original parameters that are not needed by ML model.
-    # assert spin_1z==parameters.get("a_1", None) and spin_2z==parameters.get("a_2", None), "Spin conversion did not produce expected results. Please check the conversion logic."
+    if "spin_1z" in parameters or "chi_1z" in parameters:
+        spin_1z_input = parameters.get("chi_1z", parameters.get("spin_1z", None))
+        assert new_parameters["spin_1z"]==spin_1z_input, "Spin parameter conversion failed!"
     return (new_parameters, None)
+
 
 class MLWaveformGenerator(WaveformGenerator):
     """
@@ -213,7 +215,8 @@ class MLWaveformGenerator(WaveformGenerator):
         Initialize the ML model for waveform generation. This method can be called to load the model after the generator is initialized.
         """
         logger.info(f"Initializing ML model with model_path: {model_path} and config_path: {config_path}")
-        self.loaded_mlmodel = load_flex_model(model_path=model_path, configpath=config_path, device=DEVICE, precision=PRECISION)
+        self.loaded_mlmodel = load_flex_model(model_path=model_path, configpath=config_path, 
+                                              device=None, precision=None)
         self.time_domain_source_model = self.get_ml_waveform
         self.frequency_domain_source_model = None  # We will only use the time-domain model for now!
         logger.info("ML model initialized for waveform generation in MLWaveformGenerator.")
