@@ -13,6 +13,7 @@ import gc
 import json
 import logging
 import argparse
+import numpy as np
 import pandas as pd
 
 from tqdm import tqdm
@@ -27,8 +28,7 @@ import matplotlib.pyplot as plt
 
 
 import torch
-import torch.nn.functional as F
-import numpy as np
+import torch.multiprocessing as mp
 
 from flexcvae import FlexTwoC2E1D, FlexCAE, FlexCAEPhase
 from optimize import load_flex_model
@@ -327,7 +327,19 @@ class MLWaveformGenerator(WaveformGenerator):
 
 
 
-def main(args, label='umamipe'):
+def main(args, label='umamipe', multiprocessing=True):
+
+    # Force PyTorch's spawn context globally
+    mp.set_start_method('spawn', force=True)
+    if multiprocessing:
+        logger.info("Using multiprocessing with spawn context for parallel sampling.")
+        sampler = 'nessai'
+        nworkers = mp.cpu_count() - 1  # Use all available CPU cores except one
+    else:
+        logger.info("Not using multiprocessing. Running sampler in single-process mode.")
+        sampler = 'dynesty'
+        nworkers = 1
+
     project_dir = '../' + args.project_dir + '/'
     outdir = os.path.join(project_dir, f'results/{TODAY}')
     if not os.path.exists(outdir):
@@ -510,11 +522,11 @@ def main(args, label='umamipe'):
     result = bilby.run_sampler(
         likelihood=likelihood,
         priors=priors,
-        sampler="dynesty",
+        sampler=sampler,
         nlive=1000,
         naccept=60,
         sample="acceptance-walk",
-        # npool=16,
+        npool=nworkers,
         injection_parameters=injection_parameters,
         outdir=outdir,
         label=label,
