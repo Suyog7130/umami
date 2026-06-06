@@ -20,21 +20,36 @@ __pycache__
 **/*.log
 .DS_Store
 */*.log
+./*/*.log
 
 # Includelist folder/a/b1/ and folder/a/b2/ trailing "/" is optional for folders, may match file though. "/" is NOT
 # optional when followed by a *
 !*work*/
 !*work*/*
 
-# Adding to the above, this also works...
-#!/folder/a/deeply /folder/a/deeply/* !/folder/a/deeply/nested /folder/a/deeply/nested/*
-#!/folder/a/deeply/nested/subfolder
-
-# Ignore all files larger than 150MB
-g2net-work/g2net-detecting-continuous-gravitational-waves.zip
-mlgwsc-work/injections4_1.25s.npy
-mlgwsc-work/real_noise_file.hdf
-
+# ==========================================
+# Trained ML Models & Checkpoints
+# ==========================================
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.model
+*.bin
+*.sav
+*.joblib
+*.pickle
+*.pkl
+**/*.pt
+**/*.pth
+**/*.ckpt
+**/*.h5
+**/*.model
+**/*.bin
+**/*.sav
+**/*.joblib
+**/*.pickle
+**/*.pkl
 
 # ==========================================
 # LaTeX Core Auxiliary Files
