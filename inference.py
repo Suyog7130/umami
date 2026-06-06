@@ -175,18 +175,21 @@ def main(args, label='umamipe', multiprocessing=True):
         sampler = "nessai"
         nworkers = min(4, mp.cpu_count() - 1)
         sampler_kwargs = dict(
-            nlive=100,
+            nlive=1000,
             n_pool=1,
             pytorch_threads=nworkers,
             max_threads=nworkers,
             npool=1, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
+            flow_proposal_class='gwflowproposal',
+            max_iteration=2000,    # Safety break to prevent infinite hangs
+            reset_flow=16,          # Periodic reset to clear "stuck" AI states
         )
     else:
         logger.info("Not using multiprocessing. Running sampler in single-process mode.")
         sampler = 'dynesty'
         sampler_kwargs = dict(
             nlive=100,
-            dlogz=10.0,
+            dlogz=0.5,
             naccept=10,
             sample="acceptance-walk",
             npool=1,
@@ -236,21 +239,21 @@ def main(args, label='umamipe', multiprocessing=True):
     #                         configpath=args.model_config)
 
 
-    # -- Injected waveform will be the native SEOBNRv4 implementation
-    injection_generator = WaveformGenerator(
-        duration=DURATION,
-        sampling_frequency=SAMPLE_RATE,
-        # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
-        frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole,
-        waveform_arguments=dict(
-            waveform_approximant="SEOBNRv4",      #"IMRPhenomPv2",
-            reference_frequency=FREF,
-            minimum_frequency=FMIN,
-            mode_array=[[2,2]],
-            catch_waveform_errors=True, 
-        )
-    )
-    logger.info("Injection generator initialized with SEOBNRv4 waveform model.")
+    # # -- Injected waveform will be the native SEOBNRv4 implementation
+    # injection_generator = WaveformGenerator(
+    #     duration=DURATION,
+    #     sampling_frequency=SAMPLE_RATE,
+    #     # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
+    #     frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole,
+    #     waveform_arguments=dict(
+    #         waveform_approximant="SEOBNRv4",      #"IMRPhenomPv2",
+    #         reference_frequency=FREF,
+    #         minimum_frequency=FMIN,
+    #         mode_array=[[2,2]],
+    #         catch_waveform_errors=True, 
+    #     )
+    # )
+    # logger.info("Injection generator initialized with SEOBNRv4 waveform model.")
 
     # -- initialize the ML waveform generator with the loaded model
     # NOTE: We will only use this for the likelihood evaluation in the sampler!
@@ -273,10 +276,12 @@ def main(args, label='umamipe', multiprocessing=True):
         )
     logger.info("Injection MLWaveformGenerator initialized with the loaded model.")
 
-    results = run_injection_campaign(N_injections=50, base_seed=1234,
+    results = run_injection_campaign(N_injections=2, 
+                                     base_seed=1234,
                                      injection_generator=injection_ml_generator, 
                                      waveform_generator=waveform_generator,
-                                     label_base=label, outdir=outdir,
+                                     label_base=label+f'_{NOW}', 
+                                     outdir=outdir,
                                      sampler=sampler, **sampler_kwargs)
     logger.info("Completed injection campaign and sampling for all injections.")
 
@@ -301,12 +306,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a CVAE model on GW waveforms")
     parser.add_argument('--label', type=str, default='umamipe',
                         help="Label for the analysis (default: umamipe)")
+    
     parser.add_argument('--project-dir', type=str, choices=['cvae@taiwan', 'v0p1', '@alvin', '@korea'], 
                         default=PROJECT_DIR, help="Base directory for the project (default: v0p1)")
     parser.add_argument('--model-config', type=str, default='modelconfig-cvae-paper-I',
                         help="Name of the model configuration JSON file (default: None)")
     parser.add_argument('--model-name', type=str, default='model-20251004_072338-10',
                         help="Name of the trained model checkpoint (default: None)")
+    
+    parser.add_argument('--num-injections', type=int, default=50,
+                        help="Number of injections to run in the campaign (default: 50)")
+    parser.add_argument('--no-multiprocessing', action='store_true', dest='multiprocessing',
+                        help="Whether to use multiprocessing for parallel sampling (default: False)")
     
     parser.add_argument('--with-original-model', action='store_true',
                         help="Whether to use the original CVAE model instead of the FlexCVAE (default: False)")
@@ -318,4 +329,4 @@ if __name__ == "__main__":
     # Force PyTorch's spawn context globally
     mp.set_start_method('spawn', force=True)
 
-    main(args, label=args.label, multiprocessing=True)
+    main(args, label=args.label, multiprocessing=not args.multiprocessing)
