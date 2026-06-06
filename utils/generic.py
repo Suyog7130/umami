@@ -10,6 +10,8 @@ def init_logging(args, log_dir='logs', write_to_file=True):
     """
     Smart logging initializer that auto-discovers imported project modules 
     and applies hierarchical verbosity scaling.
+
+    This sets-up the `logging` module, so no return `logger` object is necessary!
     
     Levels:
     --trace   : DEBUG everywhere (Current file + Imports + Transitive deps)
@@ -55,7 +57,7 @@ def init_logging(args, log_dir='logs', write_to_file=True):
         file_handler = logging.FileHandler(fname, mode='w')
         file_handler.setLevel(logging.DEBUG)   # -- saved logs should be as detailed as possible!
 
-    # 3. Initialize Root Logger (The "Catch-All")
+    # 3. Initialize Root Logger
     # We set basicConfig to the lowest logical level so handlers can filter up
     logging.basicConfig(
         level=logging.NOTSET, 

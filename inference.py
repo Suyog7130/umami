@@ -6,6 +6,7 @@ using Bilby, and obtain a Posterior Probability plot.
 
 import os
 import argparse
+import logging
 import datetime
 import numpy as np
 import pandas as pd
@@ -25,7 +26,7 @@ from bilby.core.result import make_pp_plot
 from umamipe import MLWaveformGenerator, convert_to_ml_parameters
 
 from utils.generic import init_logging, init_verbosity_args
-global logger
+logger = logging.getLogger(__name__)
 
 
 PROJECT_DIR = 'v0p1'
@@ -312,7 +313,7 @@ if __name__ == "__main__":
     
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
-    logger = init_logging(args)
+    init_logging(args)
 
     # Force PyTorch's spawn context globally
     mp.set_start_method('spawn', force=True)

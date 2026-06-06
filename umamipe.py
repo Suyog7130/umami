@@ -20,7 +20,7 @@ from tqdm import tqdm
 import datetime
 
 import bilby
-from bilby.core.utils import logger
+# from bilby.core.utils import logger
 from bilby.core import utils
 from bilby.gw import WaveformGenerator
 
@@ -60,7 +60,7 @@ else:
 logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
 
-bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="INFO")
+# bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="INFO")
 
 # Set up a random seed for result reproducibility.  This is optional!
 bilby.core.utils.random.seed(42)
@@ -247,7 +247,6 @@ class MLWaveformGenerator(WaveformGenerator):
         Override the time_domain_strain method to use the ML model for waveform generation.
         This method is called by Bilby to get the strain for given parameters.
         """
-        logger.info("Generating waveform using ML model for parameters:", parameters)
         return self._calculate_strain(model=self.time_domain_source_model,
                                       model_data_points=self.time_array,
                                       parameters=parameters,
@@ -256,7 +255,6 @@ class MLWaveformGenerator(WaveformGenerator):
                                       transformed_model_data_points=self.frequency_array)
 
     def frequency_domain_strain(self, parameters=None):
-        logger.info("Generating waveform using ML model for parameters:", parameters)
         return self._calculate_strain(model=self.frequency_domain_source_model,
                                       model_data_points=self.frequency_array,
                                       parameters=parameters,
@@ -265,7 +263,6 @@ class MLWaveformGenerator(WaveformGenerator):
                                       transformed_model_data_points=self.time_array)
     
     def _strain_from_model(self, model_data_points, model, parameters):
-        logger.info("Generating waveform using ML model for parameters:", parameters)
         return model(model_data_points, **parameters)
     
     def _calculate_strain(self, model, model_data_points, transformation_function, transformed_model,
@@ -280,7 +277,7 @@ class MLWaveformGenerator(WaveformGenerator):
             self._cache['model'] = model
             self._cache['transformed_model'] = transformed_model
         parameters = self._format_parameters(parameters)
-        logger.info("Generating waveform using ML model for parameters:", parameters)
+        logger.info(f"Generating waveform using ML model for parameters: {parameters}")
         logger.info(f"Using model: {model} and transformed model {transformed_model}")
         if model is not None:
             model_strain = self._strain_from_model(model_data_points, model, parameters)
@@ -302,7 +299,6 @@ class MLWaveformGenerator(WaveformGenerator):
         new_parameters = parameters.copy()
         # convert parameters to lal BBH parameters using the provided conversion function
         new_parameters, _ = self.parameter_conversion(new_parameters)
-        logger.info("Formatted parameters for waveform generation:", new_parameters)
 
         # from bilby.gw.conversion import bilby_to_lalsimulation_spins
 
@@ -333,13 +329,11 @@ class MLWaveformGenerator(WaveformGenerator):
         #     new_parameters.pop(key)
         # new_parameters.update(ml_parameters)
         new_parameters.update(self.waveform_arguments)
-        logger.info("Final parameters for waveform generation:", new_parameters)
         return new_parameters
 
     def _strain_from_transformed_model(
         self, transformed_model_data_points, transformed_model, transformation_function, parameters
     ):
-        logger.info("Generating waveform using ML model for parameters:", parameters)
         transformed_model_strain = self._strain_from_model(
             transformed_model_data_points, transformed_model, parameters
         )
