@@ -55,7 +55,7 @@ def init_logging(args, log_dir='logs', write_to_file=True):
         os.makedirs(log_dir, exist_ok=True)
         fname = os.path.join(log_dir, f'session_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
         file_handler = logging.FileHandler(fname, mode='w')
-        file_handler.setLevel(logging.DEBUG)   # -- saved logs should be as detailed as possible!
+        file_handler.setLevel(logging.INFO)   # -- saved logs should be as detailed as possible!
 
     # 3. Initialize Root Logger
     # We set basicConfig to the lowest logical level so handlers can filter up
