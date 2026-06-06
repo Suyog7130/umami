@@ -23,6 +23,9 @@ from bilby.core.prior import Uniform
 from bilby.gw.prior import PriorDict, BBHPriorDict
 from bilby.core.result import make_pp_plot
 
+import copy
+from typing import Dict, List, Tuple, Optional, Any
+
 from tqdm import tqdm
 from umamipe import MLWaveformGenerator, convert_to_ml_parameters
 
@@ -57,48 +60,172 @@ else:
 # bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="INFO")
 
 
+def make_default_base_injection() -> Dict[str, float]:
+    return dict(
+        mass_1=36.0,
+        mass_2=32.0,  # keep inside prior
+        a_1=0.4,
+        a_2=0.3,
+        tilt_1=0.0,
+        tilt_2=0.0,
+        phi_12=0.0,
+        phi_jl=0.0,
+        luminosity_distance=2000.0,
+        theta_jn=0.4,
+        psi=2.659,
+        phase=1.3,
+        geocent_time=1126259642.413,
+        ra=1.375,
+        dec=-1.2108,
+    )
+
+
+def sample_injection_from_priors(
+    base_injection: Dict[str, float],
+    active_priors: bilby.core.prior.PriorDict,
+    active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "chi_1z", "chi_2z"),
+    rng_seed: Optional[int] = None,
+) -> Dict[str, float]:
+    """
+    Samples only active parameters, copies all other values from base_injection.
+    """
+
+    if rng_seed is not None:
+        np.random.seed(rng_seed)
+
+    injection = copy.deepcopy(base_injection)
+
+    sampled = active_priors.sample()
+    for key in active_keys:
+        injection[key] = sampled[key]
+    return injection
+
+
+
+def make_analysis_priors(
+    injection_parameters: Dict[str, float],
+    active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "chi_1z", "chi_2z"),
+) -> bilby.gw.prior.BBHPriorDict:
+    """
+    Build priors for one PE run.
+
+    Fixed parameters become delta-function priors at injected values.
+    Active parameters are sampled.
+
+    spin_magnitudes=True means a_1, a_2 are non-negative spin magnitudes.
+    If you truly want signed aligned spins, use different parameter names.
+    """
+
+    priors = bilby.gw.prior.BBHPriorDict()
+
+    fixed_keys = [
+        "a_1",
+        "a_2",
+        "tilt_1",
+        "tilt_2",
+        "phi_12",
+        "phi_jl",
+        "luminosity_distance",
+        "theta_jn",
+        "psi",
+        "ra",
+        "dec",
+        "geocent_time",
+        "phase",
+    ]
+
+    for key in fixed_keys:
+        if key in injection_parameters and key not in active_keys:
+            priors[key] = injection_parameters[key]
+
+    if "mass_1" in active_keys:
+        priors["mass_1"] = bilby.core.prior.Uniform(
+            30, 75, name="mass_1", latex_label="$m_1$"
+        )
+    else:
+        priors["mass_1"] = injection_parameters["mass_1"]
+
+    if "mass_2" in active_keys:
+        priors["mass_2"] = bilby.core.prior.Uniform(
+            30, 75, name="mass_2", latex_label="$m_2$"
+        )
+    else:
+        priors["mass_2"] = injection_parameters["mass_2"]
+
+    if "chi_1z" in active_keys:
+        priors["chi_1z"] = bilby.core.prior.Uniform(
+            -0.80, 0.80, name="chi_1z", latex_label="$\\chi_{1z}$"
+        )
+    else:
+        priors["chi_1z"] = injection_parameters["chi_1z"]
+
+    if "chi_2z" in active_keys:
+        priors["chi_2z"] = bilby.core.prior.Uniform(
+            -0.80, 0.80, name="chi_2z", latex_label="$\\chi_{2z}$"
+        )
+    else:        
+        priors["chi_2z"] = injection_parameters["chi_2z"]
+
+    priors.pop("mass_ratio", None)
+    priors.pop("chirp_mass", None)
+    return priors
+
+
+base_injection = make_default_base_injection()
+
+# Use the same active priors for drawing injections.
+active_priors = make_analysis_priors(
+    injection_parameters=base_injection,
+)
+print("Active priors for injection sampling:")
+for key, prior in active_priors.items():
+    print(f"  {key}: {prior}")
+print(f'Active priors for injection sampling: {active_priors.keys()}')
+
+
+# priors = BBHPriorDict(aligned_spin=True)
+# print("Default priors for BBH parameters:")
+# for key, prior in priors.items():
+#     print(f"  {key}: {prior}")
+# print(f'Default priors for BBH parameters: {priors.keys()}')
+
+# # NOTE: Other parameters should be allowed to vary freely, for injection generation!
+# # # -- remove redundant or irrelevant parameters
+# params_to_use = ["mass_1", "mass_2", "chi_1z", "chi_2z"]
+# # for param in list(priors.keys()):
+# #     if param not in params_to_use:
+# #         priors.pop(param)
+# priors.pop("mass_ratio", None)
+# priors.pop("chirp_mass", None)
+# priors["geocent_time"] = 0.0 
+
+# # -- Set the priors for the parameters we want to estimate!
+# priors["mass_1"] = bilby.core.prior.Uniform(30, 75, name="mass_1", latex_label="$m_1$")
+# priors["mass_2"] = bilby.core.prior.Uniform(30, 75, name="mass_2", latex_label="$m_2$")
+# priors["chi_1z"] = bilby.core.prior.Uniform(-0.80, 0.80, name="chi_1z", latex_label="$\\chi_{1z}$")
+# priors["chi_2z"] = bilby.core.prior.Uniform(-0.80, 0.80, name="chi_2z", latex_label="$\\chi_{2z}$")
+
+# # priors["chi_1"].a_prior.maximum = 0.80
+# # priors["chi_2"].a_prior.maximum = 0.80
+# # priors["a_1"] = bilby.core.prior.Uniform(0, 0.80, name="a_1", latex_label="$\\chi_{1z}$")
+# # priors["a_2"] = bilby.core.prior.Uniform(0, 0.80, name="a_2", latex_label="$\\chi_{2z}$")
+# # priors["a_1"] = injection_parameters["a_1"]  
+# # priors["a_2"] = injection_parameters["a_2"]  
+
+# print("Updated priors for BBH parameters:")
+# for key, prior in priors.items():
+#     print(f"  {key}: {prior}")
+# print(f'Updated priors for BBH parameters: {priors.keys()}')
+
+# Perform a check that the prior does not extend to a parameter space longer than the data
+active_priors.validate_prior(DURATION, FMIN)
+
+
+
 # Set up interferometers.  In this case we'll use two interferometers
 # (LIGO-Hanford (H1), LIGO-Livingston (L1). These default to their design
 # sensitivity
 ifos = bilby.gw.detector.InterferometerList(["H1", "L1"])
-
-
-priors = BBHPriorDict(aligned_spin=True)
-print("Default priors for BBH parameters:")
-for key, prior in priors.items():
-    print(f"  {key}: {prior}")
-print(f'Default priors for BBH parameters: {priors.keys()}')
-
-# NOTE: Other parameters should be allowed to vary freely, for injection generation!
-# # -- remove redundant or irrelevant parameters
-# params_to_use = ["mass_1", "mass_2", "chi_1z", "chi_2z"]
-# for param in list(priors.keys()):
-#     if param not in params_to_use:
-#         priors.pop(param)
-priors.pop("mass_ratio", None)
-priors.pop("chirp_mass", None)
-priors["geocent_time"] = 0.0 
-
-# -- Set the priors for the parameters we want to estimate!
-priors["mass_1"] = bilby.core.prior.Uniform(30, 75, name="mass_1", latex_label="$m_1$")
-priors["mass_2"] = bilby.core.prior.Uniform(30, 75, name="mass_2", latex_label="$m_2$")
-priors["chi_1z"] = bilby.core.prior.Uniform(-0.80, 0.80, name="chi_1z", latex_label="$\\chi_{1z}$")
-priors["chi_2z"] = bilby.core.prior.Uniform(-0.80, 0.80, name="chi_2z", latex_label="$\\chi_{2z}$")
-
-# priors["chi_1"].a_prior.maximum = 0.80
-# priors["chi_2"].a_prior.maximum = 0.80
-# priors["a_1"] = bilby.core.prior.Uniform(0, 0.80, name="a_1", latex_label="$\\chi_{1z}$")
-# priors["a_2"] = bilby.core.prior.Uniform(0, 0.80, name="a_2", latex_label="$\\chi_{2z}$")
-# priors["a_1"] = injection_parameters["a_1"]  
-# priors["a_2"] = injection_parameters["a_2"]  
-
-print("Updated priors for BBH parameters:")
-for key, prior in priors.items():
-    print(f"  {key}: {prior}")
-print(f'Updated priors for BBH parameters: {priors.keys()}')
-
-# Perform a check that the prior does not extend to a parameter space longer than the data
-priors.validate_prior(DURATION, FMIN)
 
 
 def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{PROJECT_DIR}/results/',
@@ -109,7 +236,14 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
     this_label = f"{label_base}_inj_{run_idx:04d}"
     logger.info(f"Running sampler for injection {run_idx} with label {this_label} using sampler {sampler}...")
 
-    injection_parameters = priors.sample()
+    # injection_parameters = priors.sample()
+
+    injection_parameters = sample_injection_from_priors(
+        base_injection=base_injection,
+        active_priors=active_priors,
+        rng_seed=seed + run_idx if seed is not None else None
+    )
+
 
     ifos.set_strain_data_from_power_spectral_densities(
         sampling_frequency=SAMPLE_RATE,
@@ -140,10 +274,10 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
 
     result = bilby.run_sampler(
         likelihood=likelihood,
-        priors=priors,
+        priors=active_priors,
         sampler=sampler,
         injection_parameters=injection_parameters,
-        conversion_function=bilby.gw.conversion.generate_all_bbh_parameters,
+        # conversion_function=bilby.gw.conversion.generate_all_bbh_parameters,
         result_class=bilby.gw.result.CBCResult,
         outdir=outdir,
         label=this_label,
@@ -179,10 +313,11 @@ def main(args, label='umamipe', multiprocessing=True):
             nlive=1000,
             n_pool=1,
             pytorch_threads=nworkers,
-
             npool=1, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
-            flow_proposal_class='gwflowproposal',
-            max_iteration=10000,    # Safety break to prevent infinite hangs
+            # flow_proposal_class='gwflowproposal',
+            flow_proposal_class='flowproposal',
+            reparameterisations=None,  # We only  
+            # max_iteration=10000,    # Safety break to prevent infinite hangs
             reset_flow=16,          # Periodic reset to clear "stuck" AI states
         )
     else:
@@ -277,7 +412,7 @@ def main(args, label='umamipe', multiprocessing=True):
         )
     logger.info("Injection MLWaveformGenerator initialized with the loaded model.")
 
-    results = run_injection_campaign(N_injections=20, 
+    results = run_injection_campaign(N_injections=3, 
                                      base_seed=42,
                                      injection_generator=injection_ml_generator, 
                                      waveform_generator=waveform_generator,
@@ -328,8 +463,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     init_logging(args)
 
-    logger.getLogger("bilby").setLevel(logging.INFO)  # Allow INFO level logs from Bilby to be printed, but suppress DEBUG logs
-    logger.getLogger("nessai").setLevel(logging.INFO)  # Allow INFO level logs from nessai to be printed, but suppress DEBUG logs
+    logging.getLogger("bilby").setLevel(logging.INFO)  # Allow INFO level logs from Bilby to be printed, but suppress DEBUG logs
+    logging.getLogger("nessai").setLevel(logging.INFO)  # Allow INFO level logs from nessai to be printed, but suppress DEBUG logs
 
     # Force PyTorch's spawn context globally
     mp.set_start_method('spawn', force=True)
