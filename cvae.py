@@ -12,8 +12,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
 
-
 from utils.gwutils import polarizations_from_ampfreq, calc_polarization_mismatch
+
+
+logger = logging.getLogger(__name__)
 
 
 class XEncoder(nn.Module):
@@ -63,7 +65,7 @@ class XEncoder(nn.Module):
         Returns:
             int: The size of the flattened CNN output.
         """
-        logging.debug(f'sequence_length={sequence_length}')
+        logger.debug(f'sequence_length={sequence_length}')
         # First CNN layer
         sequence_length = ((sequence_length - (16 - 1) - 1) // 1 + 1)  # Conv1
         sequence_length = (sequence_length - 4) // 4 + 1  # Pool1
@@ -71,7 +73,7 @@ class XEncoder(nn.Module):
         # Second CNN layer
         sequence_length = ((sequence_length - (16 - 1) - 1) // 1 + 1)  # Conv2
         sequence_length = (sequence_length - 4) // 4 + 1  # Pool2
-        logging.debug(f'sequence_length={sequence_length}')
+        logger.debug(f'sequence_length={sequence_length}')
         return sequence_length
 
     def forward(self, x, labels):
@@ -95,23 +97,23 @@ class XEncoder(nn.Module):
         x = x.view(x.size(0), 1, -1)  # Reshape to [batch_size, channels, sequence_length]
 
         # Pass through CNN layers
-        logging.debug(x.shape)
+        logger.debug(x.shape)
         x = self.conv1(x)
         x = self.conv2(x)
 
         # Flatten the output of CNN layers
-        logging.debug(x.shape)
+        logger.debug(x.shape)
         x = x.view(x.size(0), -1) # Flatten to [batch_size, num_features]
 
         # Concatenate input and labels
         # print(x.shape)
         x = torch.cat([x.view(x.size(0), -1), labels], dim=1)
-        logging.debug(x.shape)
+        logger.debug(x.shape)
 
         # Flatten and pass through the second fully connected layer
         x = self.fc2(x)
-        logging.debug(x.shape)
-        logging.debug('---')
+        logger.debug(x.shape)
+        logger.debug('---')
 
         return x.view(-1, self.latent_dim_x * 2)
 
@@ -246,14 +248,14 @@ class Decoder(nn.Module):
 
         # Concatenate latent variables and labels along the feature dimension
         z = torch.cat([z2, z2p, labels], dim=1)
-        logging.debug(z.shape)
+        logger.debug(z.shape)
 
         # Pass through the first fully connected layer
         x = self.fc1(z)
 
         # Reshape for CNN layers
         x = x.view(x.size(0), 1, -1)  # Reshape to [batch_size, channels, sequence_length]
-        logging.debug(x.shape)
+        logger.debug(x.shape)
 
         # Pass through CNN layers
         x = self.conv1(x)
@@ -261,9 +263,9 @@ class Decoder(nn.Module):
         x = self.conv3(x)
 
         # Flatten and pass through the second fully connected layer
-        logging.debug(x.shape)
+        logger.debug(x.shape)
         x = x.view(x.size(0), -1)
-        logging.debug(x.shape)
+        logger.debug(x.shape)
         x = self.fc2(x)
 
         # Reshape to match the input shape
@@ -272,9 +274,9 @@ class Decoder(nn.Module):
 
 def check_for_nan_inf(tensor, name):
     if torch.isnan(tensor).any():
-        logging.info(f"NaN detected in {name}")
+        logger.info(f"NaN detected in {name}")
     if torch.isinf(tensor).any():
-        logging.info(f"Inf detected in {name}")
+        logger.info(f"Inf detected in {name}")
 
 
 class CVAE(nn.Module):
@@ -357,7 +359,7 @@ class CVAE(nn.Module):
         # This works regardless of whether MODEL_CONFIG is provided or not, 
         # because if MODEL_CONFIG is not provided, the default values will be used.
         if paramsnorm:
-            logging.info("Input parameter normalization is ENABLED. \
+            logger.info("Input parameter normalization is ENABLED. \
                 The model will normalize the input parameters.")
             if labels_mean is None or labels_std is None:
                 raise ValueError("labels_mean and labels_std must be provided when paramsnorm is True.")
@@ -370,10 +372,10 @@ class CVAE(nn.Module):
         elif labels_mean is not None or labels_std is not None:
             self.register_buffer('labels_mean', labels_mean)
             self.register_buffer('labels_std', labels_std)
-            logging.warning("labels_mean and labels_std are provided but paramsnorm is False. \
+            logger.warning("labels_mean and labels_std are provided but paramsnorm is False. \
                 This means that labels_mean and labels_std were provided in MODEL_CONFIG. We will use them!")
         else:
-            logging.info("Input parameter normalization is NOT enabled. \
+            logger.info("Input parameter normalization is NOT enabled. \
                 The model will use the raw labels without normalization.")
 
         # E2 in Fig 11 of the paper
@@ -465,7 +467,7 @@ class CVAE(nn.Module):
         If `paramsnorm` is False, the labels will be used as they are without normalization.
         """
         # print('__call__')
-        logging.debug(f'__call__ with x.shape={x.shape}, labels.shape={labels.shape}, keys.shape={keys.shape}')
+        logger.debug(f'__call__ with x.shape={x.shape}, labels.shape={labels.shape}, keys.shape={keys.shape}')
         if hasattr(self, 'labels_mean') and hasattr(self, 'labels_std'):
             labels = self.normalize_labels(labels)
         return self.forward(x, labels, keys)
@@ -476,7 +478,7 @@ class CVAE(nn.Module):
         #x = torch.cat([x.view(x.size(0), -1), labels], dim=1)
         h = self.x_encoder(x, labels)
         z2_mean, z2_log_var = h.chunk(2, dim=1)
-        # logging.debug(z2_log_var.shape)
+        # logger.debug(z2_log_var.shape)
         return z2_mean, z2_log_var
     
     def encode_key(self, keys, labels):
@@ -486,7 +488,7 @@ class CVAE(nn.Module):
         # directly concatenate the input and labels at the input pass.
         h = self.key_encoder(x)
         z2p_mean, z2p_log_var = h.chunk(2, dim=1)
-        # logging.debug(z2p_mean, z2p_log_var)
+        # logger.debug(z2p_mean, z2p_log_var)
         return z2p_mean, z2p_log_var
 
     def normalize_labels(self, labels, batchwise=False):
@@ -509,12 +511,12 @@ class CVAE(nn.Module):
             batchwise (bool): Whether to calculate mean and std for each batch or use global mean and std.
         """
         if batchwise:
-            logging.warning("Batchwise normalization is not recommended for labels as it can lead " \
+            logger.warning("Batchwise normalization is not recommended for labels as it can lead " \
             "to inconsistent training and inference. Consider using global mean and std for normalization.")
             batch_mean = labels.mean(dim=0, keepdim=True)
             batch_std = labels.std(dim=0, keepdim=True) + 1e-8  # Add small value to avoid division by zero
             return (labels - batch_mean) / batch_std
-        logging.debug(f"Normalizing labels with global mean: {self.labels_mean}, global std: {self.labels_std}")
+        logger.debug(f"Normalizing labels with global mean: {self.labels_mean}, global std: {self.labels_std}")
         return (labels - self.labels_mean) / self.labels_std
     
     def encode_label_for_x(self, labels):
@@ -528,7 +530,7 @@ class CVAE(nn.Module):
         # Outputs `z1prime` from Fig 11 of the paper.
         h = self.label_cond_for_key(labels)
         z1p_mean, z1p_log_var = h.chunk(2, dim=1)
-        # logging.debug(z1p_mean, z1p_log_var)
+        # logger.debug(z1p_mean, z1p_log_var)
         return z1p_mean, z1p_log_var
 
     def decode(self, z2, z2p, labels):
@@ -643,8 +645,8 @@ class CVAE(nn.Module):
         conditioners and are used to calculate the latent space errors. Thus,
         no parametrization is necessary for these.
         """
-        logging.debug(keys.shape)
-        logging.debug(f'labels.shape={labels.shape}')
+        logger.debug(keys.shape)
+        logger.debug(f'labels.shape={labels.shape}')
         # print(keys)
         z1_mean, z1_log_var = self.encode_label_for_x(labels)
         z2_mean, z2_log_var = self.encode_x(x, labels)
@@ -701,13 +703,13 @@ class CVAE(nn.Module):
         """
         z1_mean, z1_log_var, z2_mean, z2_log_var, \
             z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
-        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
+        logger.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
             z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         # TODO: What is the `reduction` thing doing here?
         recon_loss = F.mse_loss(x_recon, x, reduction='mean')
-        logging.debug(f"Reconstruction Loss: {recon_loss.item()}")
+        logger.debug(f"Reconstruction Loss: {recon_loss.item()}")
 
         # KL divergence for each latent space
         kl_loss_z1 = self.latent_loss(z1_mean, z1_log_var)
@@ -715,7 +717,7 @@ class CVAE(nn.Module):
         kl_loss_z1p = self.latent_loss(z1p_mean, z1p_log_var)
         kl_loss_z2p = self.latent_loss(z2p_mean, z2p_log_var)
         # Print KL divergence losses for debugging
-        logging.debug(f"KL Loss z1: {kl_loss_z1.item()}, KL Loss z2: {kl_loss_z2.item()}, "
+        logger.debug(f"KL Loss z1: {kl_loss_z1.item()}, KL Loss z2: {kl_loss_z2.item()}, "
             f"KL Loss z1p: {kl_loss_z1p.item()}, KL Loss z2p: {kl_loss_z2p.item()}")
 
         # Latent loss between encoders
@@ -750,7 +752,7 @@ class CVAE(nn.Module):
         """
         z1_mean, z1_log_var, z2_mean, z2_log_var, \
             z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
-        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
+        logger.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
             z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
@@ -769,7 +771,7 @@ class CVAE(nn.Module):
         kl_loss_z1p = self.latent_loss(z1p_mean, z1p_log_var)
         kl_loss_z2p = self.latent_loss(z2p_mean, z2p_log_var)
         # Print KL divergence losses for debugging
-        logging.info(f"KL Loss z1: {kl_loss_z1.item()}, KL Loss z2: {kl_loss_z2.item()}, "
+        logger.info(f"KL Loss z1: {kl_loss_z1.item()}, KL Loss z2: {kl_loss_z2.item()}, "
             f"KL Loss z1p: {kl_loss_z1p.item()}, KL Loss z2p: {kl_loss_z2p.item()}")
 
         # Latent loss between encoders
@@ -802,7 +804,7 @@ class CVAE(nn.Module):
         #     # -- remove first dummy element from the frequency series
         #     freq_recon = freq_recon[1:]
         #     freq_orig = freq_orig[1:]
-        #     logging.debug(f'Shapes: amp_recon={amp_recon.shape}, freq_recon={freq_recon.shape}, amp_orig={amp_orig.shape}, freq_orig={freq_orig.shape}')
+        #     logger.debug(f'Shapes: amp_recon={amp_recon.shape}, freq_recon={freq_recon.shape}, amp_orig={amp_orig.shape}, freq_orig={freq_orig.shape}')
         #     # -- calculate start phase / reference phase
         #     hp_hdf = strains[i][0].cpu().detach().numpy()
         #     hc_hdf = strains[i][1].cpu().detach().numpy()
@@ -812,7 +814,7 @@ class CVAE(nn.Module):
         #     hp_orig, hc_orig = polarizations_from_ampfreq(amp_orig, freq_orig, theta0=phase_hdf[0])
         #     mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t=delta_t, f_lower=f_lower)
         #     mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=delta_t, f_lower=f_lower)
-        #     logging.debug(f'Mismatch losses for sample {i}: mmloss_hp_i={mmloss_hp_i}, mmloss_hc_i={mmloss_hc_i}')
+        #     logger.debug(f'Mismatch losses for sample {i}: mmloss_hp_i={mmloss_hp_i}, mmloss_hc_i={mmloss_hc_i}')
         #     mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
 
         # -- Calculate the total mismatch loss for the batch (vectorized)
@@ -849,7 +851,7 @@ class CVAE(nn.Module):
             mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
             mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
         
-        logging.info(f'Total mismatch loss for the batch: {mmloss}')
+        logger.info(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + beta * kl_loss + mmloss
         return (total_loss, recon_loss, kl_loss, mmloss)
 
@@ -875,7 +877,7 @@ class CVAE(nn.Module):
         """
         z1_mean, z1_log_var, z2_mean, z2_log_var, \
             z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
-        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
+        logger.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
             z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
@@ -922,7 +924,7 @@ class CVAE(nn.Module):
             mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
             mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
         
-        logging.info(f'Total mismatch loss for the batch: {mmloss}')
+        logger.info(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + mmloss
         return (total_loss, recon_loss, mmloss)
     
@@ -1007,7 +1009,7 @@ class CVAE(nn.Module):
             raise ValueError("Labels must be provided for generation, since the model is conditional on the labels!")
 
         self.eval()  # Set model to evaluation mode
-        logging.info("Model set to evaluation mode for generation.")
+        logger.info("Model set to evaluation mode for generation.")
 
         with torch.no_grad():
             # Encode labels to get the mean and log variance of the latent space
@@ -1061,8 +1063,8 @@ class CAE(CVAE):
         the latent space to follow a Gaussian distribution, which allows for generalization
         beyond the training set. The weightage for the KL divergence will only be 10%.
         """
-        logging.debug(keys.shape)
-        logging.debug(f'labels.shape={labels.shape}')
+        logger.debug(keys.shape)
+        logger.debug(f'labels.shape={labels.shape}')
         # print(keys)
         z1_mean, z1_log_var = self.encode_label_for_x(labels)
         z2_mean, z2_log_var = self.encode_x(x, labels)
@@ -1081,7 +1083,7 @@ class CAE(CVAE):
         check_for_nan_inf(z1p_log_var, 'z1p_log_var')
         check_for_nan_inf(z2p_log_var, 'z2p_log_var')
         x_recon = self.decode(z2_mean, z2p_mean, labels)
-        logging.debug(f'Encoded input: z2_mean={z2_mean}, z2p_mean={z2p_mean}')
+        logger.debug(f'Encoded input: z2_mean={z2_mean}, z2p_mean={z2p_mean}')
         zvars = [z1_mean, z1_log_var, z2_mean, z2_log_var, \
                  z1p_mean, z1p_log_var, z2p_mean, z2p_log_var]
         return (x_recon, zvars)
@@ -1098,7 +1100,7 @@ def train(model, data_loader, optimizer, num_epochs=10):
             loss, reconloss, klloss, mmloss = model.mismatch_loss_func(x, x_recon, zvars, keys, strains=strains, attr=attr)
             loss.backward()
             optimizer.step()
-        logging.debug(f'Epoch {epoch + 1}, Loss: {loss.item()}, Recon Loss: {reconloss.item()}, KL Loss: {klloss.item()}, Mismatch Loss: {mmloss.item()}')
+        logger.debug(f'Epoch {epoch + 1}, Loss: {loss.item()}, Recon Loss: {reconloss.item()}, KL Loss: {klloss.item()}, Mismatch Loss: {mmloss.item()}')
 
 # Assuming `data_loader` is defined and provides batches of (data, labels)
 # train(cvae, data_loader, optimizer)
@@ -1111,26 +1113,27 @@ if __name__=='__main__':
     from torchview import draw_graph
     from datacvae import CustomDataset
 
-    # Need to use `force` here to override default `logging` settings
-    log_level = logging.INFO
+    # Need to use `force` here to override default `logger` settings
+    log_level = logger.INFO
     logging.basicConfig(format='%(levelname)s | %(asctime)s: %(message)s',
                                 level=log_level, datefmt='%y-%m-%d %H:%M:%S',
                                 force=True)
+    logger = logging.getLogger()
 
-    logging.debug('Testing CVAE')
+    logger.debug('Testing CVAE')
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'mps')
 
     cvae = CVAE(input_shape=(2, 8191), num_classes=2, key_shape=(2,2)).to(device)
     optimizer = torch.optim.Adam(cvae.parameters(), lr=1e-3)
-    logging.debug('Model initialized')
+    logger.debug('Model initialized')
 
     ds = CustomDataset(forwhat='train')
     batchsize = 50
     data_loader = torch.utils.data.DataLoader(ds, batch_size=batchsize, shuffle=True)
-    logging.debug('Data loaded')
+    logger.debug('Data loaded')
 
-    logging.info('Visualizing the network!')
+    logger.info('Visualizing the network!')
     timestamp = datetime.now().strftime('%Y%m%d')
     x, labels, keys = next(iter(data_loader))
     print(x.shape, labels.shape, keys.shape)

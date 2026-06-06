@@ -28,6 +28,9 @@ from flexcvae import FlexTwoC2E1D, FlexCAE, FlexCAEPhase
 from cvae import CVAE
 
 
+logger = logging.getLogger(__name__)
+
+
 TODAY = datetime.date.today().strftime("%Y%m%d")
 TIME = datetime.datetime.now().strftime("%H%M%S")
 NOW = TODAY + '-' + TIME
@@ -68,8 +71,8 @@ params_fname = '../data/params-' + APPROXIMANT + '-train-100000-fcutoff-uniform-
 params_df = pd.read_csv(params_fname+'.csv', index_col=0, sep=',')
 params_mean = params_df.mean().values
 params_std = params_df.std().values
-logging.info(f"Labels mean: {params_mean}")
-logging.info(f"Labels std: {params_std}")
+logger.info(f"Labels mean: {params_mean}")
+logger.info(f"Labels std: {params_std}")
 params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION)).to(DEVICE)
 params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION)).to(DEVICE)
 
@@ -84,11 +87,11 @@ def set_dataloaders(batch_size=BATCH_SIZE, target=BASE_MODEL_CONFIG['target']):
         train_loader: DataLoader for the training dataset
         val_loader: DataLoader for the validation dataset
     """
-    logging.info(f'Reading training data from {train_hdf}.hdf')
+    logger.info(f'Reading training data from {train_hdf}.hdf')
     train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=True,
                             hdf_fname=train_hdf, train_device=DEVICE, precision=PRECISION,
                             target=target)
-    logging.info(f'Reading validation data from {val_hdf}.hdf')
+    logger.info(f'Reading validation data from {val_hdf}.hdf')
     valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=True,
                             hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION, 
                             target=target)
@@ -97,7 +100,7 @@ def set_dataloaders(batch_size=BATCH_SIZE, target=BASE_MODEL_CONFIG['target']):
                                     num_workers=8, pin_memory=False)
     val_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=False, 
                                   num_workers=8, pin_memory=False)
-    logging.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(valid_set)}")
+    logger.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(valid_set)}")
     return train_loader, val_loader
 
 def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase}, 
@@ -121,7 +124,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     """
     os.makedirs(savedir, exist_ok=True)
     if train_loader is None or val_loader is None:
-        logging.info("Setting up dataloaders since they were not provided.")
+        logger.info("Setting up dataloaders since they were not provided.")
         train_loader, val_loader = set_dataloaders(target=model.MODEL_CONFIG.get('target', BASE_MODEL_CONFIG['target']))
 
     model = model.to(getattr(torch, PRECISION))
@@ -133,18 +136,18 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     else:
         num_train_batches = int( len(train_loader) * datafrac )
         num_train_batches = max(num_train_batches, 1)  # Ensure at least 1 batch is used
-        logging.info(f"Using {num_train_batches} batches for training and validation based on data fraction {datafrac} out of {len(train_loader)} input batches.")
+        logger.info(f"Using {num_train_batches} batches for training and validation based on data fraction {datafrac} out of {len(train_loader)} input batches.")
         num_val_batches = int( len(val_loader) * datafrac )
         num_val_batches = max(num_val_batches, 1)  # Ensure at least 1 batch is used
-        logging.info(f"Using {num_val_batches} batches for validation based on data fraction {datafrac} out of {len(val_loader)} input batches.")
+        logger.info(f"Using {num_val_batches} batches for validation based on data fraction {datafrac} out of {len(val_loader)} input batches.")
 
     # Check if model parameters contain NaN or Inf before training
     for name, param in model.named_parameters():
         if torch.isnan(param).any():
-            logging.warning(f"Parameter {name} contains NaN values before training.")
+            logger.warning(f"Parameter {name} contains NaN values before training.")
         if torch.isinf(param).any():
-            logging.warning(f"Parameter {name} contains Inf values before training.")
-        # logging.info(f"Parameter {name} - min: {param.min().item()}, max: {param.max().item()}, mean: {param.mean().item()}")
+            logger.warning(f"Parameter {name} contains Inf values before training.")
+        # logger.info(f"Parameter {name} - min: {param.min().item()}, max: {param.max().item()}, mean: {param.mean().item()}")
 
     loss_func_type = model.MODEL_CONFIG.get('loss_func_type', None) if loss_func_type is None else loss_func_type
 
@@ -172,7 +175,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         lossfunction = model.mismatch_loss_func
         lcomps_names = ['recon_loss', 'kl_loss', 'mmloss']
     else:
-        logging.error(f"Invalid loss function type specified: {loss_func_type}. Using default loss function.")
+        logger.error(f"Invalid loss function type specified: {loss_func_type}. Using default loss function.")
         lossfunction = model.loss_function
         lcomps_names = ['recon_loss', 'kl_loss']
     # -- Initialize loss component dictionaries!
@@ -212,7 +215,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
                 lcomps_train[comp_name].append(comp_value.item())
 
         avg_train_loss = train_loss / num_train_batches
-        logging.info(f"Epoch {epoch+1}, Batch Avg Train Loss: {avg_train_loss:.4f}")
+        logger.info(f"Epoch {epoch+1}, Batch Avg Train Loss: {avg_train_loss:.4f}")
 
         # -- TODO: This should be after the validation step?
         scheduler.step()
@@ -221,7 +224,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         if save_interim_models:
             backup_model_path = savedir+f'model-backup-{now}-epoch{epoch}.pt'
             torch.save(model.state_dict(), backup_model_path)
-            logging.info(f"Model backup saved at {backup_model_path}")
+            logger.info(f"Model backup saved at {backup_model_path}")
 
         # -- set model to eval mode for validation
         model.eval()
@@ -244,7 +247,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
                 for comp_name, comp_value in zip(lcomps_names, lcomps):
                     lcomps_eval[comp_name].append(comp_value.item())
         avg_train_eval_loss = train_eval_loss / num_train_batches
-        logging.info(f"Epoch {epoch+1}, Batch Avg Train Eval Loss: {avg_train_eval_loss:.4f}")
+        logger.info(f"Epoch {epoch+1}, Batch Avg Train Eval Loss: {avg_train_eval_loss:.4f}")
 
         # Evaluate on validation set
         val_loss = 0.0
@@ -263,7 +266,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
                 for comp_name, comp_value in zip(lcomps_names, lcomps):
                     lcomps_val[comp_name].append(comp_value.item())
         avg_val_loss = val_loss / num_val_batches
-        logging.info(f"Epoch {epoch+1}, Batch Avg Validation Loss: {avg_val_loss:.4f}")
+        logger.info(f"Epoch {epoch+1}, Batch Avg Validation Loss: {avg_val_loss:.4f}")
 
     if savemodel:
         model_path = savedir+f'model-flexcvae-{now}.pt'
@@ -304,7 +307,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
 #     Using a fixed number of trials, the validation loss is minimized.
 #     """
-#     logging.info("Starting new trial")
+#     logger.info("Starting new trial")
 
 #     # Suggest hyperparameters
 #     input_dim = 2 * PRESET_ARRAY_SIZE  # Assuming input is a flattened array of shape (2, PRESET_ARRAY_SIZE)
@@ -377,7 +380,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 #         cnn_pool_kernel_size=cnn_pool_kernel_size
 #     )
 
-#     logging.info(f"Trial hyperparameters: {trial.params}")
+#     logger.info(f"Trial hyperparameters: {trial.params}")
 #     val_loss = training(model, epochs=5)
 #     return val_loss
 
@@ -387,24 +390,24 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
     """
     Load the trained FlexTwoC2E1D model from the specified path.
     """
-    logging.info("Starting training with specified hyperparameters")
+    logger.info("Starting training with specified hyperparameters")
     device = torch.device("cpu") if device is None else device
     precision = 'float32' if precision is None else precision
     if configpath is not None:
         if not configpath.endswith('.json'):
             configpath += '.json'
         if not os.path.isfile(configpath):
-            logging.error(f"Provided MODEL_CONFIG path does not exist: {configpath}")
+            logger.error(f"Provided MODEL_CONFIG path does not exist: {configpath}")
             raise FileNotFoundError(f"MODEL_CONFIG file not found at {configpath}")
-        logging.info(f"Using MODEL_CONFIG: {configpath}")
+        logger.info(f"Using MODEL_CONFIG: {configpath}")
         MODEL_CONFIG = json.load(open(configpath, 'r'))
     else:
-        logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
+        logger.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
         MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
 
     # -- Load labels mean and std values if provided in MODEL_CONFIG
     if 'labels_mean' not in MODEL_CONFIG or 'labels_std' not in MODEL_CONFIG:
-        logging.warning("labels_mean or labels_std not found in MODEL_CONFIG. Using global params_mean and params_std for normalization.")
+        logger.warning("labels_mean or labels_std not found in MODEL_CONFIG. Using global params_mean and params_std for normalization.")
         MODEL_CONFIG['labels_mean'] = params_mean
         MODEL_CONFIG['labels_std'] = params_std
     elif isinstance(MODEL_CONFIG['labels_mean'], str) and isinstance(MODEL_CONFIG['labels_std'], str):
@@ -412,16 +415,16 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
         # print(MODEL_CONFIG['labels_std'].strip('[]').split(','))
         # print(float(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
         # print(type(MODEL_CONFIG['labels_std'].strip('[]').split(',')[0]))
-        logging.info("Converting labels_mean and labels_std from str->lists to numpy arrays for model initialization.")
+        logger.info("Converting labels_mean and labels_std from str->lists to numpy arrays for model initialization.")
         if MODEL_CONFIG['labels_mean'] == "None" or MODEL_CONFIG['labels_std'] == "None":
-            logging.warning("Labels mean or std is None in MODEL_CONFIG, skipping conversion and normalization.")
+            logger.warning("Labels mean or std is None in MODEL_CONFIG, skipping conversion and normalization.")
             MODEL_CONFIG['labels_mean'] = None
             MODEL_CONFIG['labels_std'] = None
         else:
             MODEL_CONFIG['labels_mean'] = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
             MODEL_CONFIG['labels_std'] = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
     if MODEL_CONFIG['labels_mean'] is not None and MODEL_CONFIG['labels_std'] is not None:
-        # logging.warning('For now we will use predefined global params_mean and params_std for normalization 
+        # logger.warning('For now we will use predefined global params_mean and params_std for normalization 
         # instead of converting from MODEL_CONFIG, since the conversion is not working well and giving NaN values 
         # for some reason. This needs to be fixed later.')
         # labels_mean = params_mean.cpu().numpy()
@@ -431,38 +434,38 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
 
     # Convert some hyperparameters from str to appropriate types if needed (e.g. lists, tuples)
     if isinstance(MODEL_CONFIG['input_shape'], str):
-        logging.info("Converting input_shape from str to tuple for model initialization.")
+        logger.info("Converting input_shape from str to tuple for model initialization.")
         MODEL_CONFIG['input_shape'] = tuple(map(int, MODEL_CONFIG['input_shape'].strip('()').split(',')))
     if isinstance(MODEL_CONFIG['key_shape'], str):
-        logging.info("Converting key_shape from str to tuple for model initialization.")
+        logger.info("Converting key_shape from str to tuple for model initialization.")
         MODEL_CONFIG['key_shape'] = tuple(map(int, MODEL_CONFIG['key_shape'].strip('()').split(',')))
     if isinstance(MODEL_CONFIG['target'], str) and MODEL_CONFIG['target'].lower() == 'none':
-        logging.info("Setting target to None for model initialization.")
+        logger.info("Setting target to None for model initialization.")
         MODEL_CONFIG['target'] = None
 
     for k in MODEL_CONFIG:
         if MODEL_CONFIG[k] == "None":
-            logging.info(f"Setting {k} to None for model initialization.")
+            logger.info(f"Setting {k} to None for model initialization.")
             MODEL_CONFIG[k] = None
         if MODEL_CONFIG[k] == "False":
-            logging.info(f"Setting {k} to False for model initialization.")
+            logger.info(f"Setting {k} to False for model initialization.")
             MODEL_CONFIG[k] = False
         if MODEL_CONFIG[k] == "True":
-            logging.info(f"Setting {k} to True for model initialization.")
+            logger.info(f"Setting {k} to True for model initialization.")
             MODEL_CONFIG[k] = True
 
     if 'modeltype' not in MODEL_CONFIG:
-        logging.warning("modeltype not specified in MODEL_CONFIG, defaulting to 'flexcvae'.")
+        logger.warning("modeltype not specified in MODEL_CONFIG, defaulting to 'flexcvae'.")
         MODEL_CONFIG['modeltype'] = 'flexcvae'
     if MODEL_CONFIG['modeltype'].lower() not in ['flexcvae', 'flexcae', 'flexcaephase', 'original']:
-        logging.error(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', 'flexcaephase', or 'original'.")
+        logger.error(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', 'flexcaephase', or 'original'.")
         raise ValueError(f"Invalid modeltype specified in MODEL_CONFIG: {MODEL_CONFIG['modeltype']}. Must be 'flexcvae', 'flexcae', 'flexcaephase', or 'original'.")
 
     if MODEL_CONFIG.get('target', None) is not None:
-        logging.info(f"Model will be initialized with target: {MODEL_CONFIG['target']}")
+        logger.info(f"Model will be initialized with target: {MODEL_CONFIG['target']}")
 
     if MODEL_CONFIG['target'] == 'amp_phase':
-        logging.info("Initializing FlexCAEPhase model since target is 'amp_phase'.")
+        logger.info("Initializing FlexCAEPhase model since target is 'amp_phase'.")
         model = FlexCAEPhase(
             MODEL_CONFIG=MODEL_CONFIG,
             input_shape=(2, PRESET_ARRAY_SIZE),
@@ -470,7 +473,7 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
         )
             # -- For amp-phase target, we need to set the loss function type to 'mismatch_nokl'
         MODEL_CONFIG['loss_func_type'] = 'mismatch_nokl'
-        logging.warning("For 'amp_phase' target, setting loss_func_type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.")  
+        logger.warning("For 'amp_phase' target, setting loss_func_type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.")  
     elif MODEL_CONFIG['modeltype'].lower() == 'flexcae':
         model = FlexCAE(
             MODEL_CONFIG=MODEL_CONFIG,
@@ -478,7 +481,7 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
             num_classes=4,
         )
     elif MODEL_CONFIG['modeltype'].lower() == 'original':
-        logging.info("Initializing original CVAE model architecture for testing.")
+        logger.info("Initializing original CVAE model architecture for testing.")
         # -- NOTE: Original trained model `state_dict` doesn't have labels_mean/labels_std, so we do not pass
         # -- the MODEL_CONFIG to CVAE model.
         model = CVAE(input_shape=(2, 8190), 
@@ -490,33 +493,33 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
             input_shape=(2, PRESET_ARRAY_SIZE),
             num_classes=4,
         )
-    logging.info(f"Model architecture of type {model.__class__.__name__} initialized. Now loading model weights.")
-    logging.info(f"Model initialized with the following hyperparameters: {MODEL_CONFIG}")
+    logger.info(f"Model architecture of type {model.__class__.__name__} initialized. Now loading model weights.")
+    logger.info(f"Model initialized with the following hyperparameters: {MODEL_CONFIG}")
     # print(model)
-    logging.info(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
-    logging.info(f"Total number of trainable parameters: \
+    logger.info(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
+    logger.info(f"Total number of trainable parameters: \
           {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     
     if model_path is None:
-        logging.info("No model path provided. Model will be initialized with random weights.")
+        logger.info("No model path provided. Model will be initialized with random weights.")
     else:
         if not os.path.isfile(model_path):
-            logging.error(f"Provided model path does not exist: {model_path}")
+            logger.error(f"Provided model path does not exist: {model_path}")
             raise FileNotFoundError(f"Model file not found at {model_path}")
         # -- Check if model weights loaded are of the same precision as our initialized model.
         # -- If not, then convert loaded model to the correct precision before moving to device.
         for name, param in model.named_parameters():
             if param.dtype != getattr(torch, precision):
-                logging.info(f"Converting model parameter '{name}' from {param.dtype} to {getattr(torch, precision)} for consistency with initialized model precision.")
+                logger.info(f"Converting model parameter '{name}' from {param.dtype} to {getattr(torch, precision)} for consistency with initialized model precision.")
                 param.data = param.data.to(getattr(torch, precision))
         model.load_state_dict(torch.load(model_path, map_location=device))
-        logging.info(f"Loaded model from {model_path}")
+        logger.info(f"Loaded model from {model_path}")
     # Send model to device and convert to desired precision
     model.to(device)
     model = model.to(getattr(torch, precision))
     if device.type == 'cuda':
         model = torch.compile(model, mode='max-autotune')  # Compile the model for faster training (PyTorch 2.0+)
-        logging.info("Model compiled with torch.compile for faster training.")
+        logger.info("Model compiled with torch.compile for faster training.")
     return model
 
 
@@ -526,16 +529,16 @@ def run_training(configpath=None, model_path=None, fname=None,
     Runs training with specified hyperparameters for a single model configuration!
     """
     model = load_flex_model(configpath=configpath, model_path=model_path)
-    logging.debug(model)
+    logger.debug(model)
     train_loader, val_loader = set_dataloaders(batch_size=batch_size)
     training(model, epochs=epochs, datafrac=datafrac, 
              train_loader=train_loader, val_loader=val_loader,
              savemodel=True, savelosses=True,
              savedir='../trained-models/'+fname if fname is not None else '../trained-models/')
-    logging.info("Training completed and model saved.")
+    logger.info("Training completed and model saved.")
     model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
                              epochs=epochs, datafrac=datafrac)
-    logging.info(f"Model configuration saved to ../trained-models/modelconfig-flexcvae-{NOW}.json")
+    logger.info(f"Model configuration saved to ../trained-models/modelconfig-flexcvae-{NOW}.json")
     print("Training completed and model saved.")
     
 
@@ -543,7 +546,7 @@ def optuna_objective(trial):
     """
     Optuna objective function for hyperparameter optimization of the FlexTwoC2E1D model.
     """
-    logging.info("Starting new Optuna trial")
+    logger.info("Starting new Optuna trial")
     MODEL_CONFIG = BASE_MODEL_CONFIG.copy()
     # Suggest hyperparameters
     MODEL_CONFIG.update({
@@ -595,7 +598,7 @@ def optuna_objective(trial):
                             train_loader=train_loader, val_loader=val_loader,
                             savemodel=True, savelosses=True, savedir=savedir,
                             save_interim_models=False, now=now)
-    logging.info(f"Trial completed with validation loss: {final_val_loss:.4f}")
+    logger.info(f"Trial completed with validation loss: {final_val_loss:.4f}")
     # CLEANUP to save GPU memory after each trial
     del model
     # del optimizer
@@ -614,10 +617,10 @@ def run_optuna():
     best_params_path = f"optuna_{args.model_type}_bestparams_{NOW}.json"
     with open(best_params_path, 'w') as f:
         json.dump(study.best_trial.params, f, indent=4)
-    logging.info(f"Best hyperparameters saved to {best_params_path}")
+    logger.info(f"Best hyperparameters saved to {best_params_path}")
     # Save the Optuna study object for future reference
     joblib.dump(study, f"optuna_{args.model_type}_study_{NOW}.pkl")
-    logging.info(f"Optuna study saved as optuna_{args.model_type}_study_{NOW}.pkl")
+    logger.info(f"Optuna study saved as optuna_{args.model_type}_study_{NOW}.pkl")
 
 
 
@@ -643,9 +646,9 @@ if __name__ == "__main__":
                         help="Run a dummy training with 10 batches for training loop testing and debugging! 'dummy' also works for this flag, so you can use --dummy or --dummyrun (dunno why?)")
 
     parser.add_argument('-v', '--verbose', action='store_true',
-                        help="Enable verbose logging")
+                        help="Enable verbose logger")
     parser.add_argument('-d', '--debug', action='store_true',
-                        help="Enable debug logging")
+                        help="Enable debug logger")
     args = parser.parse_args()
 
     if args.debug:
@@ -669,9 +672,10 @@ if __name__ == "__main__":
             logging.FileHandler(log_file)  # Log to file
         ]
     )
-    
+    logger = logging.getLogger()
+
     # Set FileHandler to always be at least INFO level
-    for handler in logging.root.handlers:
+    for handler in logger.root.handlers:
         if isinstance(handler, logging.FileHandler):
             handler.setLevel(max(handler.level, logging.INFO))
 
@@ -682,13 +686,13 @@ if __name__ == "__main__":
     if args.optuna:
         run_optuna()
     elif args.train:
-        logging.info("Running training with specified hyperparameters!")
+        logger.info("Running training with specified hyperparameters!")
         run_training(configpath=args.model_config,
                      model_path=args.model_path,
                      epochs=args.epochs, datafrac=1.0)
         
     elif args.dummyrun:
-        logging.info("Running dummy training with 10 batches for training loop testing and debugging!")
+        logger.info("Running dummy training with 10 batches for training loop testing and debugging!")
         run_training(configpath=args.model_config,
                      model_path=args.model_path,
                      batch_size=1024,

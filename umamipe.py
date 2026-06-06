@@ -229,15 +229,15 @@ class MLWaveformGenerator(WaveformGenerator):
         # -- If not, then convert loaded model to the correct precision before moving to device.
         for name, param in self.loaded_mlmodel.named_parameters():
             if param.dtype != precision:
-                logging.info(f"Converting model parameter '{name}' from {param.dtype} to {precision} for consistency with initialized model precision.")
+                logger.info(f"Converting model parameter '{name}' from {param.dtype} to {precision} for consistency with initialized model precision.")
                 param.data = param.data.to(getattr(torch, precision))
         # -- Check if model weights are already on the correct device before moving.
         for name, param in self.loaded_mlmodel.named_parameters():
             if param.device != device:
-                logging.info(f"Moving model parameter '{name}' from {param.device} to {device}.")
+                logger.info(f"Moving model parameter '{name}' from {param.device} to {device}.")
                 param.data = param.data.to(device)
             else:
-                logging.info(f"Model parameter '{name}' is already on the correct device: {device}.")
+                logger.info(f"Model parameter '{name}' is already on the correct device: {device}.")
 
     def get_ml_waveform(self, time_array, **kwargs):
         return get_td_SEOBNRv4ml(time_array, model=self.loaded_mlmodel, **kwargs)
