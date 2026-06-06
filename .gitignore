@@ -1,3 +1,103 @@
 __pycache__/*
 *.hdf
 __pycache__
+
+# Blocklist files/folders in same directory as the .gitignore file
+/*
+*data/*
+*work*/*data*/*
+*gh18-work/models/*
+*gh18-work/results/*
+
+# Includelist some files
+!.gitignore
+!README.md
+!**.sh
+
+# Ignore all files named .DS_Store or ending with .log
+**/.DS_Store
+**.log
+**/*.log
+.DS_Store
+*/*.log
+
+# Includelist folder/a/b1/ and folder/a/b2/ trailing "/" is optional for folders, may match file though. "/" is NOT
+# optional when followed by a *
+!*work*/
+!*work*/*
+
+# Adding to the above, this also works...
+#!/folder/a/deeply /folder/a/deeply/* !/folder/a/deeply/nested /folder/a/deeply/nested/*
+#!/folder/a/deeply/nested/subfolder
+
+# Ignore all files larger than 150MB
+g2net-work/g2net-detecting-continuous-gravitational-waves.zip
+mlgwsc-work/injections4_1.25s.npy
+mlgwsc-work/real_noise_file.hdf
+
+
+# ==========================================
+# LaTeX Core Auxiliary Files
+# ==========================================
+*.aux
+**/*.aux
+*.log
+*.out
+**/*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.synctex(busy)
+*.xdv
+*.dvi
+
+# ==========================================
+# Bibliography (BibTeX / Biber)
+# ==========================================
+*.bbl
+*.bcf
+*.blg
+*-blx.bib
+*.run.xml
+*.brf
+
+# ==========================================
+# Beamer Presentation Temp Files (if applicable)
+# ==========================================
+*.nav
+*.snm
+*.vrb
+
+# ==========================================
+# Output Documents
+# ==========================================
+# Note: Comment these out if you want to track final compiled PDFs
+*.pdf
+**/*.pdf
+
+# ==========================================
+# Python & Data Scripts
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+
+# ==========================================
+# OS Specific & Editor Temp Files
+# ==========================================
+.DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# IDEs and Text Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
