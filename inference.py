@@ -115,6 +115,16 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
         start_time=injection_parameters["geocent_time"]
     )
 
+    # -- Send model to device only here! We will keep the model on CPU until we need to generate the waveform, to save GPU memory and avoid potential issues with multiprocessing in Bilby!
+    for generator in [injection_generator, waveform_generator]:
+        if isinstance(generator, MLWaveformGenerator):
+            print(f"Before sending to device, generator.loaded_mlmodel is on device: \
+                        {next(generator.loaded_mlmodel.parameters()).device}, dtype: {next(generator.loaded_mlmodel.parameters()).dtype}")
+            generator.loaded_mlmodel.to(DEVICE, dtype=getattr(torch, PRECISION))
+            generator.check_model_weights_on_device(device=DEVICE, 
+                                                   precision=getattr(torch, PRECISION))
+            print(f"Sent injection_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
+
     ifos.inject_signal(
         waveform_generator=injection_generator,
         parameters=injection_parameters,
@@ -125,21 +135,6 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
         interferometers=ifos,
         waveform_generator=waveform_generator,
     )
-
-    # -- Send model to device only here! We will keep the model on CPU until we need to generate the waveform, to save GPU memory and avoid potential issues with multiprocessing in Bilby!
-    if isinstance(injection_generator, MLWaveformGenerator):
-        print(f"Before sending to device, injection_generator.loaded_mlmodel is on device: \
-                    {next(injection_generator.loaded_mlmodel.parameters()).device}, dtype: {next(injection_generator.loaded_mlmodel.parameters()).dtype}")
-        injection_generator.loaded_mlmodel.to(DEVICE, dtype=getattr(torch, PRECISION))
-        injection_generator.check_model_weights_on_device(device=DEVICE, 
-                                                          precision=getattr(torch, PRECISION))
-        print(f"Sent injection_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
-    if isinstance(waveform_generator, MLWaveformGenerator):
-        print(f"Before sending to device, waveform_generator.loaded_mlmodel is on device: {next(waveform_generator.loaded_mlmodel.parameters()).device}, dtype: {next(waveform_generator.loaded_mlmodel.parameters()).dtype}")
-        waveform_generator.loaded_mlmodel.to(DEVICE, dtype=getattr(torch, PRECISION))
-        waveform_generator.check_model_weights_on_device(device=DEVICE, 
-                                                         precision=getattr(torch, PRECISION))
-        print(f"Sent waveform_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
 
     result = bilby.run_sampler(
         likelihood=likelihood,
@@ -180,9 +175,9 @@ def main(args, label='umamipe', multiprocessing=True):
         nworkers = min(4, mp.cpu_count() - 1)
         sampler_kwargs = dict(
             nlive=100,
-            n_pool=nworkers,
-            pytorch_threads=1,
-            max_threads=7,
+            n_pool=1,
+            pytorch_threads=nworkers,
+            max_threads=nworkers,
             npool=1, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
         )
     else:

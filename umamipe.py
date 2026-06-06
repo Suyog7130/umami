@@ -228,8 +228,8 @@ class MLWaveformGenerator(WaveformGenerator):
         # -- Check if model weights loaded are of the same precision as our initialized model.
         # -- If not, then convert loaded model to the correct precision before moving to device.
         for name, param in self.loaded_mlmodel.named_parameters():
-            if param.dtype != getattr(torch, precision):
-                logging.info(f"Converting model parameter '{name}' from {param.dtype} to {getattr(torch, precision)} for consistency with initialized model precision.")
+            if param.dtype != precision:
+                logging.info(f"Converting model parameter '{name}' from {param.dtype} to {precision} for consistency with initialized model precision.")
                 param.data = param.data.to(getattr(torch, precision))
         # -- Check if model weights are already on the correct device before moving.
         for name, param in self.loaded_mlmodel.named_parameters():
