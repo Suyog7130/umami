@@ -75,15 +75,20 @@ def init_logging(args, log_dir='logs', write_to_file=True):
     # Identify "Internal" modules (exclude venv, stdlib, site-packages)
     base_prefix = sys.base_prefix
     project_root = os.getcwd() # Assuming script is run from project root
+
+    # NOTE: `caller_globals` only contains the caller's specific imported class or function names,
+    # and the actual file name of the modules. Thus, we get the issue of `umamipe.py` being set to
+    # INFO for both `--verbose` and `--quiet` mode, because only the specific imported `MLWaveformGenerator`
+    # is detected as an import, and not the entire `umamipe` module. So, we switch to `sys.modules`!
     
-    for name, obj in caller_globals.items():
+    for name, module in sys.modules.items():
         # We only care about Modules
-        if isinstance(obj, types.ModuleType) and hasattr(obj, '__file__'):
+        if isinstance(module, types.ModuleType) and hasattr(module, '__file__'):
             # Skip modules without a file (built-ins)
-            if not obj.__file__: continue
+            if not module.__file__: continue
             
             # Normalize path to handle cross-platform slashes
-            mod_path = os.path.normpath(obj.__file__)
+            mod_path = os.path.normpath(module.__file__)
             
             # LOGIC: If it lives in project_root and NOT in site-packages -> It's Ours
             is_internal = (
@@ -94,7 +99,7 @@ def init_logging(args, log_dir='logs', write_to_file=True):
             
             if is_internal:
                 # Apply "Direct Import" Level
-                logging.getLogger(obj.__name__).setLevel(direct_import_level)
+                logging.getLogger(module.__name__).setLevel(direct_import_level)
                 
                 # Apply "Transitive/Deep" Level (Silence submodules)
                 # This prevents 'my_module.heavy_logic' from spamming if only 'my_module' is imported
@@ -102,13 +107,20 @@ def init_logging(args, log_dir='logs', write_to_file=True):
                 pass 
             else:
                 # Silence Third-Party Libs (matplotlib, boto3, etc) unless Tracing
-                logging.getLogger(obj.__name__).setLevel(deep_import_level)
+                logging.getLogger(module.__name__).setLevel(deep_import_level)
+
+    # Remove Bilby's native logging handlers and set it to propagate to our root logger
+    bilby_logger = logging.getLogger('bilby')
+    bilby_logger.handlers = []   # STRIP its private handlers
+    bilby_logger.propagate = True   # ENABLE propagation to our root logger, so it follows our configured levels
+    bilby_logger.setLevel(logging.WARNING)
 
     # 5. Manual Overrides for Noisy Libraries
     # Even in verbose modes, these are often too noisy
     logging.getLogger("matplotlib").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("torch").setLevel(logging.WARNING)
+    logging.getLogger('dynesty').setLevel(logging.WARNING)
 
     # 6. Return a logger for the current file
     # If called from main.py, __name__ here is the utility module, so we grab the caller's name

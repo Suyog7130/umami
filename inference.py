@@ -119,12 +119,12 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
     # -- Send model to device only here! We will keep the model on CPU until we need to generate the waveform, to save GPU memory and avoid potential issues with multiprocessing in Bilby!
     for generator in [injection_generator, waveform_generator]:
         if isinstance(generator, MLWaveformGenerator):
-            print(f"Before sending to device, generator.loaded_mlmodel is on device: \
+            logger.debug(f"Before sending to device, generator.loaded_mlmodel is on device: \
                         {next(generator.loaded_mlmodel.parameters()).device}, dtype: {next(generator.loaded_mlmodel.parameters()).dtype}")
             generator.loaded_mlmodel.to(DEVICE, dtype=getattr(torch, PRECISION))
             generator.check_model_weights_on_device(device=DEVICE, 
                                                    precision=getattr(torch, PRECISION))
-            print(f"Sent injection_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
+            logger.debug(f"Sent injection_generator.loaded_mlmodel to device: {DEVICE} with dtype: {PRECISION}")
 
     ifos.inject_signal(
         waveform_generator=injection_generator,
