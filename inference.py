@@ -83,7 +83,7 @@ def make_default_base_injection() -> Dict[str, float]:
 def sample_injection_from_priors(
     base_injection: Dict[str, float],
     active_priors: bilby.core.prior.PriorDict,
-    active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "chi_1z", "chi_2z"),
+    active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "spin_1z", "spin_2z"),
     rng_seed: Optional[int] = None,
 ) -> Dict[str, float]:
     """
@@ -104,7 +104,7 @@ def sample_injection_from_priors(
 
 def make_analysis_priors(
     injection_parameters: Dict[str, float],
-    active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "chi_1z", "chi_2z"),
+    active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "spin_1z", "spin_2z"),
 ) -> bilby.gw.prior.BBHPriorDict:
     """
     Build priors for one PE run.
@@ -152,19 +152,19 @@ def make_analysis_priors(
     else:
         priors["mass_2"] = injection_parameters["mass_2"]
 
-    if "chi_1z" in active_keys:
-        priors["chi_1z"] = bilby.core.prior.Uniform(
-            -0.80, 0.80, name="chi_1z", latex_label="$\\chi_{1z}$"
+    if "spin_1z" in active_keys:
+        priors["spin_1z"] = bilby.core.prior.Uniform(
+            -0.80, 0.80, name="spin_1z", latex_label="$\\chi_{1z}$"
         )
     else:
-        priors["chi_1z"] = injection_parameters["chi_1z"]
+        priors["spin_1z"] = injection_parameters["spin_1z"]
 
-    if "chi_2z" in active_keys:
-        priors["chi_2z"] = bilby.core.prior.Uniform(
-            -0.80, 0.80, name="chi_2z", latex_label="$\\chi_{2z}$"
+    if "spin_2z" in active_keys:
+        priors["spin_2z"] = bilby.core.prior.Uniform(
+            -0.80, 0.80, name="spin_2z", latex_label="$\\chi_{2z}$"
         )
     else:        
-        priors["chi_2z"] = injection_parameters["chi_2z"]
+        priors["spin_2z"] = injection_parameters["spin_2z"]
 
     priors.pop("mass_ratio", None)
     priors.pop("chirp_mass", None)
