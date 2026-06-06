@@ -23,6 +23,7 @@ from bilby.core.prior import Uniform
 from bilby.gw.prior import PriorDict, BBHPriorDict
 from bilby.core.result import make_pp_plot
 
+from tqdm import tqdm
 from umamipe import MLWaveformGenerator, convert_to_ml_parameters
 
 from utils.generic import init_logging, init_verbosity_args
@@ -159,7 +160,7 @@ def run_injection_campaign(N_injections=50, base_seed=1234,
     if injection_generator is None or waveform_generator is None:
         raise NotImplementedError("Both injection and waveform generators must be provided")
     results = []
-    for i in range(N_injections):
+    for i in tqdm(range(N_injections), desc="Running injections"):
         logger.info(f"Injection {i+1}/{N_injections}")
         res = run_single_injection(i, seed=base_seed, outdir=outdir, label_base=label_base,
                                    injection_generator=injection_generator, waveform_generator=waveform_generator, 
@@ -178,10 +179,10 @@ def main(args, label='umamipe', multiprocessing=True):
             nlive=1000,
             n_pool=1,
             pytorch_threads=nworkers,
-            max_threads=nworkers,
+
             npool=1, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
             flow_proposal_class='gwflowproposal',
-            max_iteration=2000,    # Safety break to prevent infinite hangs
+            max_iteration=10000,    # Safety break to prevent infinite hangs
             reset_flow=16,          # Periodic reset to clear "stuck" AI states
         )
     else:
@@ -276,14 +277,20 @@ def main(args, label='umamipe', multiprocessing=True):
         )
     logger.info("Injection MLWaveformGenerator initialized with the loaded model.")
 
-    results = run_injection_campaign(N_injections=2, 
-                                     base_seed=1234,
+    results = run_injection_campaign(N_injections=20, 
+                                     base_seed=42,
                                      injection_generator=injection_ml_generator, 
                                      waveform_generator=waveform_generator,
                                      label_base=label+f'_{NOW}', 
                                      outdir=outdir,
                                      sampler=sampler, **sampler_kwargs)
     logger.info("Completed injection campaign and sampling for all injections.")
+
+    # Plot the inferred waveform superposed on the actual data.
+    results[0].plot_waveform_posterior(n_samples=100, filename=f'{label}_waveform_posterior.png')
+
+    # Make a corner plot.
+    results[0].plot_corner(save=True, filename=f'{label}_corner.png')
 
     # Bilby built-in PP plot
     fig, pvals = make_pp_plot(
@@ -293,11 +300,6 @@ def main(args, label='umamipe', multiprocessing=True):
     )
     print("Combined p-value:", pvals.combined_pvalue)
 
-    # Plot the inferred waveform superposed on the actual data.
-    results[0].plot_waveform_posterior(n_samples=100, save=True, filename=f'{label}_waveform_posterior.png')
-
-    # Make a corner plot.
-    results[0].plot_corner(save=True, filename=f'{label}_corner.png')
     logger.info("Saved PP plot, waveform posterior plot, and corner plot for the first injection result.")
 
 

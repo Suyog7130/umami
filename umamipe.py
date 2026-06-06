@@ -118,7 +118,7 @@ def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
     # ax.plot(np.arange(len(waveforms['plus'])), waveforms['plus'], label='hp')
     # ax.plot(np.arange(len(waveforms['cross'])), waveforms['cross'], label='hc')
     # ax.legend()
-    # plt.savefig('check-global-denorming-outputs.png', dpi=300)
+    # plt.savefig(f'check-global-denorming-outputs_{NOW}.png', dpi=300)
     # plt.show()
     return waveforms
 
