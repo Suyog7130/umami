@@ -27,7 +27,7 @@ import copy
 from typing import Dict, List, Tuple, Optional, Any
 
 from tqdm import tqdm
-from umamipe import MLWaveformGenerator, convert_to_ml_parameters
+from mlwavegen import MLWaveformGenerator, convert_to_ml_parameters
 
 from utils.generic import init_logging, init_verbosity_args
 logger = logging.getLogger(__name__)
@@ -418,11 +418,21 @@ def main(args, label='umamipe', multiprocessing=True):
                                      waveform_generator=waveform_generator,
                                      label_base=label+f'_{NOW}', 
                                      outdir=outdir,
-                                     sampler=sampler, **sampler_kwargs)
+                                     sampler=sampler, 
+                                     **sampler_kwargs)
     logger.info("Completed injection campaign and sampling for all injections.")
 
+
+
+def analyze_results(fname: str, label: str = 'umamipe',
+                    outdir: str = f'../{PROJECT_DIR}/results/'):
+    
+    if not fname.endswith('.json'):
+        fname += '.json'
+    results = bilby.gw.result.CBCResult.from_json(f"{outdir}/{fname}")
+
     # Plot the inferred waveform superposed on the actual data.
-    results[0].plot_waveform_posterior(n_samples=100, filename=f'{label}_waveform_posterior.png')
+    results[0].plot_waveform_posterior(n_samples=100)
 
     # Make a corner plot.
     results[0].plot_corner(save=True, filename=f'{label}_corner.png')
@@ -469,4 +479,7 @@ if __name__ == "__main__":
     # Force PyTorch's spawn context globally
     mp.set_start_method('spawn', force=True)
 
-    main(args, label=args.label, multiprocessing=not args.multiprocessing)
+    # main(args, label=args.label, multiprocessing=not args.multiprocessing)
+    analyze_results(fname='ml2ml-4d_20260607-153120_inj_0001_result.json', 
+                    label=args.label, 
+                    outdir=f'../{PROJECT_DIR}/results/{TODAY}')
