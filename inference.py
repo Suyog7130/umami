@@ -70,7 +70,7 @@ def make_default_base_injection() -> Dict[str, float]:
         tilt_2=0.0,
         phi_12=0.0,
         phi_jl=0.0,
-        luminosity_distance=2000.0,
+        luminosity_distance=200.0,
         theta_jn=0.4,
         psi=2.659,
         phase=1.3,
@@ -287,6 +287,7 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
     logger.info(f"Completed sampler for injection {run_idx} with label {this_label}.")
     return result
 
+
 def run_injection_campaign(N_injections=50, base_seed=1234, 
                            label_base='umamipe', outdir=f'../{PROJECT_DIR}/results/',
                            injection_generator=None, waveform_generator=None, 
@@ -303,7 +304,35 @@ def run_injection_campaign(N_injections=50, base_seed=1234,
     return results
 
 
-def main(args, label='umamipe', multiprocessing=True):
+def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = None):
+    if type=='eob':
+        return WaveformGenerator(
+            duration=DURATION,
+            sampling_frequency=SAMPLE_RATE,
+            # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
+            frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole,
+            waveform_arguments=dict(
+                waveform_approximant="SEOBNRv4",      #"IMRPhenomPv2",
+                reference_frequency=FREF,
+                minimum_frequency=FMIN,
+                mode_array=[[2,2]],
+                catch_waveform_errors=True, 
+            )
+        )
+    elif type=='ml':
+        return MLWaveformGenerator(
+            duration=DURATION,
+            sampling_frequency=SAMPLE_RATE,
+            time_domain_source_model=None,   # We will load ML model at initialization!
+            parameter_conversion=convert_to_ml_parameters,
+            waveform_arguments={'model_path': wfkwargs.get('model_path'), 
+                                'config_path': wfkwargs.get('config_path')},
+            )
+
+
+def main(args, label='umamipe', 
+         pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml', 
+         multiprocessing=True):
 
     if multiprocessing:
         logger.info("Using multiprocessing with spawn context for parallel sampling.")
@@ -316,7 +345,8 @@ def main(args, label='umamipe', multiprocessing=True):
             npool=1, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
             flow_proposal_class='flowproposal',     # 'gwflowproposal' instead reparameterisation full 15D space!
             reparameterisations=None,  # We only  
-            max_iteration=7500,    # Safety break to prevent infinite hangs
+            # max_iteration=7500,    # NOTE: This forces nessai to abruptly end, leaving results JSON file incomplete!
+            stopping=10,   # Stop if `dlogz` doesn't improve by this amt in consecutive iterations.
             reset_flow=16,          # Periodic reset to clear "stuck" AI states
             analytic_priors=active_priors,  # Pass the priors to nessai for better sampling efficiency
         )
@@ -374,62 +404,42 @@ def main(args, label='umamipe', multiprocessing=True):
     # model = load_flex_model(model_path=model_path, 
     #                         configpath=args.model_config)
 
-
-    # # -- Injected waveform will be the native SEOBNRv4 implementation
-    # injection_generator = WaveformGenerator(
-    #     duration=DURATION,
-    #     sampling_frequency=SAMPLE_RATE,
-    #     # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
-    #     frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole,
-    #     waveform_arguments=dict(
-    #         waveform_approximant="SEOBNRv4",      #"IMRPhenomPv2",
-    #         reference_frequency=FREF,
-    #         minimum_frequency=FMIN,
-    #         mode_array=[[2,2]],
-    #         catch_waveform_errors=True, 
-    #     )
-    # )
-    # logger.info("Injection generator initialized with SEOBNRv4 waveform model.")
-
-    # -- initialize the ML waveform generator with the loaded model
-    # NOTE: We will only use this for the likelihood evaluation in the sampler!
-    waveform_generator = MLWaveformGenerator(
-        duration=DURATION,
-        sampling_frequency=SAMPLE_RATE,
-        time_domain_source_model=None,   # We will load ML model at initialization!
-        parameter_conversion=convert_to_ml_parameters,
-        waveform_arguments={'model_path': model_path, 'config_path': args.model_config},
-        )
-    logger.info("MLWaveformGenerator initialized with the loaded model.")
-
-    # -- For now, try using another instance of MLWaveformGenerator for the injection generator!
-    injection_ml_generator = MLWaveformGenerator(
-        duration=DURATION,
-        sampling_frequency=SAMPLE_RATE,
-        time_domain_source_model=None,   # We will load ML model at initialization!
-        parameter_conversion=convert_to_ml_parameters,
-        waveform_arguments={'model_path': model_path, 'config_path': args.model_config},
-        )
-    logger.info("Injection MLWaveformGenerator initialized with the loaded model.")
+    if pe_run_type == 'eob2eob':
+        injection_generator = make_wf_generator('eob')
+        waveform_generator = make_wf_generator('eob')
+        logger.info("Initialized EOB waveform generator for both injection and recovery.")
+    elif pe_run_type == 'ml2ml':
+        wfkwargs={'model_path': model_path, 'config_path': args.model_config}
+        injection_generator = make_wf_generator('ml', wfkwargs=wfkwargs)
+        waveform_generator = make_wf_generator('ml', wfkwargs=wfkwargs)
+        logger.info("Initialized ML waveform generator for both injection and recovery.")
+    elif pe_run_type == 'eob2ml':
+        injection_generator = make_wf_generator('eob')
+        waveform_generator = make_wf_generator('ml', wfkwargs={'model_path': model_path, 
+                                                               'config_path': args.model_config})
+        logger.info("Initialized EOB waveform generator for injection and ML waveform generator for recovery.")
 
     results = run_injection_campaign(N_injections=3, 
                                      base_seed=42,
-                                     injection_generator=injection_ml_generator, 
+                                     injection_generator=injection_generator, 
                                      waveform_generator=waveform_generator,
                                      label_base=label+f'_{NOW}', 
                                      outdir=outdir,
                                      sampler=sampler, 
                                      **sampler_kwargs)
+    analyze_results(results=results, label=label+f'_{NOW}', outdir=outdir)
     logger.info("Completed injection campaign and sampling for all injections.")
 
 
 
-def analyze_results(fname: str, label: str = 'umamipe',
+def analyze_results(fname: str = None, results: Optional[List[bilby.gw.result.CBCResult]] = None,
+                    label: str = 'umamipe',
                     outdir: str = f'../{PROJECT_DIR}/results/'):
     
-    if not fname.endswith('.json'):
-        fname += '.json'
-    results = bilby.gw.result.CBCResult.from_json(f"{outdir}/{fname}")
+    if results is None:
+        if not fname.endswith('.json'):
+            fname += '.json'
+        results = bilby.gw.result.CBCResult.from_json(f"{outdir}/{fname}")
 
     # Plot the inferred waveform superposed on the actual data.
     results[0].plot_waveform_posterior(n_samples=100)
@@ -463,7 +473,7 @@ if __name__ == "__main__":
     
     parser.add_argument('--num-injections', type=int, default=50,
                         help="Number of injections to run in the campaign (default: 50)")
-    parser.add_argument('--no-multiprocessing', action='store_true', dest='multiprocessing',
+    parser.add_argument('--no-multiprocessing', action='store_true',
                         help="Whether to use multiprocessing for parallel sampling (default: False)")
     
     parser.add_argument('--with-original-model', action='store_true',
@@ -479,7 +489,10 @@ if __name__ == "__main__":
     # Force PyTorch's spawn context globally
     mp.set_start_method('spawn', force=True)
 
-    # main(args, label=args.label, multiprocessing=not args.multiprocessing)
-    analyze_results(fname='ml2ml-4d_20260607-153120_inj_0001_result.json', 
-                    label=args.label, 
-                    outdir=f'../{PROJECT_DIR}/results/{TODAY}')
+
+    main(args, label=args.label, pe_run_type='eob2eob',
+        multiprocessing = not args.no_multiprocessing,)
+
+    # analyze_results(fname='ml2ml-4d_20260607-153120_inj_0001_result.json', 
+    #                 label=args.label, 
+    #                 outdir=f'../{PROJECT_DIR}/results/{TODAY}')
