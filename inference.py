@@ -308,17 +308,17 @@ def main(args, label='umamipe', multiprocessing=True):
     if multiprocessing:
         logger.info("Using multiprocessing with spawn context for parallel sampling.")
         sampler = "nessai"
-        nworkers = min(4, mp.cpu_count() - 1)
+        nworkers = min(3, mp.cpu_count() - 1)
         sampler_kwargs = dict(
-            nlive=1000,
+            nlive=750,
             n_pool=1,
             pytorch_threads=nworkers,
             npool=1, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
-            # flow_proposal_class='gwflowproposal',
-            flow_proposal_class='flowproposal',
+            flow_proposal_class='flowproposal',     # 'gwflowproposal' instead reparameterisation full 15D space!
             reparameterisations=None,  # We only  
-            # max_iteration=10000,    # Safety break to prevent infinite hangs
+            max_iteration=7500,    # Safety break to prevent infinite hangs
             reset_flow=16,          # Periodic reset to clear "stuck" AI states
+            analytic_priors=active_priors,  # Pass the priors to nessai for better sampling efficiency
         )
     else:
         logger.info("Not using multiprocessing. Running sampler in single-process mode.")
