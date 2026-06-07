@@ -332,11 +332,10 @@ def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = None):
 
 def main(args, label='umamipe', 
          pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml', 
-         multiprocessing=True):
+         sampler: {'nessai', 'dynesty'} = 'nessai',):
 
-    if multiprocessing:
+    if sampler == 'nessai':
         logger.info("Using multiprocessing with spawn context for parallel sampling.")
-        sampler = "nessai"
         nworkers = min(3, mp.cpu_count() - 1)
         sampler_kwargs = dict(
             nlive=750,
@@ -352,13 +351,13 @@ def main(args, label='umamipe',
         )
     else:
         logger.info("Not using multiprocessing. Running sampler in single-process mode.")
-        sampler = 'dynesty'
         sampler_kwargs = dict(
             nlive=100,
             dlogz=0.5,
             naccept=10,
             sample="acceptance-walk",
-            npool=1,
+            npool=2,
+            n_threads=8,
         )
 
     project_dir = '../' + args.project_dir + '/'
@@ -473,8 +472,10 @@ if __name__ == "__main__":
     
     parser.add_argument('--num-injections', type=int, default=50,
                         help="Number of injections to run in the campaign (default: 50)")
-    parser.add_argument('--no-multiprocessing', action='store_true',
-                        help="Whether to use multiprocessing for parallel sampling (default: False)")
+    parser.add_argument('--sampler', type=str, choices=['nessai', 'dynesty'], default='nessai',
+                        help="Sampler to use for parameter estimation: 'nessai' for neural density estimation sampler, 'dynesty' for nested sampling (default: nessai)")
+    parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml'], default='ml2ml',
+                        help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
     
     parser.add_argument('--with-original-model', action='store_true',
                         help="Whether to use the original CVAE model instead of the FlexCVAE (default: False)")
@@ -490,8 +491,9 @@ if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
 
 
-    main(args, label=args.label, pe_run_type='eob2eob',
-        multiprocessing = not args.no_multiprocessing,)
+    main(args, label=args.label, 
+         pe_run_type=args.pe_run_type,
+         sampler=args.sampler,)
 
     # analyze_results(fname='ml2ml-4d_20260607-153120_inj_0001_result.json', 
     #                 label=args.label, 
