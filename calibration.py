@@ -451,6 +451,7 @@ class CalibratorDataset(torch.utils.data.Dataset):
         )
         return (calibrator_input.squeeze(0), target_amp_residual.squeeze(0), target_freq_residual.squeeze(0))
     
+
 class CalibratorDataLoader(torch.utils.data.DataLoader):
     """
     A custom data loader class for the calibrator dataset, which simply wraps the CalibratorDataset and allows for batching and shuffling.
@@ -770,6 +771,52 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
 
 
 
+def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10', 
+                    wfmodel_configpath='modelconfig-cvae-paper-I.json',
+                    calibrator_modelpath=f'trained-models/calibrator_model_20260605-011742_epoch20.pt',
+                    dataset_path='../data/SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen.hdf',
+                    timestamp=NOW):
+    """
+    Read parameters from some test dataset, generate the output waveform from the ML model,
+    then use the calibrator model to the predict the residuals based on the output ML waveform.
+    Finally, add the calibrator predicted residuals to the ML generated waveform to obtain the
+    calibrated output waveform. The plot the original waveform the dataset HDF and the calibrated
+    output waveform on the same plot. Return the calibrated output waveform that we can use
+    for mismatch calculation and comparison with the original waveform using other functions.
+    """
+    logger.info(f"Testing residual calibrator model with ML waveform model from {wfmodel_modelpath} and config from {wfmodel_configpath}, and calibrator model from {calibrator_modelpath} on dataset {dataset_path}")
+
+    wfmodel_modelpath = wfmodel_modelpath if os.path.exists(wfmodel_modelpath) else f'../{PROJECT_DIR}/{wfmodel_modelpath}'
+    calibrator_modelpath = calibrator_modelpath if os.path.exists(calibrator_modelpath) else f'../{PROJECT_DIR}/{calibrator_modelpath}'
+
+    wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
+                            configpath=wfmodel_configpath, 
+                            device=DEVICE, precision=PRECISION,)
+    wfmodel.eval()  # set to eval mode since we are only using it for inference to generate the calibrator inputs
+    logger.info(f"Loaded waveform model for calibrator input generation: {wfmodel}")
+
+    # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
+    with open(wfmodel_configpath, 'r') as f:
+        model_config = json.load(f)
+    params_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE)
+    params_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE)
+
+    # -- init calibrator model
+    calmodel = ResidualCalibrationCNN(
+        input_channels=6,  # [ml_amp, ml_freq, param_m1, param_m2, param_s1z, param_s2z]
+        output_channels=2,
+        hidden_channels=128,
+        num_blocks=5,
+        kernel_size=7,
+        dropout=0.0,
+    )
+    calmodel.to(device=DEVICE, dtype=getattr(torch, PRECISION))
+    calmodel.load_state_dict(torch.load(calibrator_modelpath, map_location=DEVICE))
+    calmodel.eval()
+    logger.info(f"Loaded calibrator model from {calibrator_modelpath} for testing: {calmodel}")
+
+
+
 
 
 if __name__ == "__main__":
@@ -789,9 +836,12 @@ if __name__ == "__main__":
     logger = init_logging(args)
 
     logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
-    train_calibrator(
-        batch_size=args.batch_size,
-        num_epochs=args.num_epochs,
-        dummyrun=args.dummy_run,
-        timestamp=args.timestamp,
-    )
+
+    # train_calibrator(
+    #     batch_size=args.batch_size,
+    #     num_epochs=args.num_epochs,
+    #     dummyrun=args.dummy_run,
+    #     timestamp=args.timestamp,
+    # )
+
+    test_calibrator()

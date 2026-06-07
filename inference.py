@@ -343,7 +343,7 @@ def main(args, label='umamipe',
             pytorch_threads=nworkers,
             npool=1, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
             flow_proposal_class='flowproposal',     # 'gwflowproposal' instead reparameterisation full 15D space!
-            reparameterisations=None,  # We only  
+            reparameterisations=None,  
             # max_iteration=7500,    # NOTE: This forces nessai to abruptly end, leaving results JSON file incomplete!
             stopping=10,   # Stop if `dlogz` doesn't improve by this amt in consecutive iterations.
             reset_flow=16,          # Periodic reset to clear "stuck" AI states
@@ -356,8 +356,7 @@ def main(args, label='umamipe',
             dlogz=0.5,
             naccept=10,
             sample="acceptance-walk",
-            npool=2,
-            n_threads=8,
+            npool=8,  # Set this arg for Bilby's internal multiprocessing that only works on CPU!
         )
 
     project_dir = '../' + args.project_dir + '/'

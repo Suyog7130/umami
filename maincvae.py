@@ -1740,7 +1740,6 @@ class Test:
             opttimes.append(elapsed_time)
             logging.info(f'Optimized base time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
 
-
         # Save data to csv file
         logging.info(f"Nruns shape: {np.shape(Nruns)}, modeltimes shape: {np.shape(modeltimes)}, basetimes shape: {np.shape(basetimes)}, romtimes shape: {np.shape(romtimes)}, massratios shape: {np.shape(massratios)}, chieffs shape: {np.shape(chieffs)}")
         df_time = pd.DataFrame({
