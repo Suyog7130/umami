@@ -97,9 +97,15 @@ __pycache__
 # Python & Data Scripts
 # ==========================================
 __pycache__/
-*.py[cod]
-*$py.class
+# *.py[cod]
+# *$py.class
 .ipynb_checkpoints/
+!*.py
+!*.ipynb
+!**/*.py
+!**/*.ipynb
+!**/*/*.py
+!**/*/*.ipynb
 
 # ==========================================
 # OS Specific & Editor Temp Files
