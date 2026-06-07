@@ -70,7 +70,7 @@ def make_default_base_injection() -> Dict[str, float]:
         tilt_2=0.0,
         phi_12=0.0,
         phi_jl=0.0,
-        luminosity_distance=200.0,
+        luminosity_distance=400.0,  # NOTE: This should be same as for the ML waveform training data, to avoid bias in amplitudes!
         theta_jn=0.4,
         psi=2.659,
         phase=1.3,
@@ -481,7 +481,7 @@ if __name__ == "__main__":
     
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
-    init_logging(args)
+    init_logging(args, log_dir=f'../{PROJECT_DIR}/logs/{TODAY}', label=args.label)
 
     logging.getLogger("bilby").setLevel(logging.INFO)  # Allow INFO level logs from Bilby to be printed, but suppress DEBUG logs
     logging.getLogger("nessai").setLevel(logging.INFO)  # Allow INFO level logs from nessai to be printed, but suppress DEBUG logs
