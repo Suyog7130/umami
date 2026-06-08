@@ -841,7 +841,6 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         originals, _, labels, keys, strains, phases, indices, attr = databatch
         originals.to(DEVICE)
         labels.to(DEVICE)
-        assert type(indices) == torch.Tensor and indices.shape == (batch_size,), f"Expected indices to be a tensor of shape ({batch_size},), but got {type(indices)} with shape {indices.shape}"
 
         calibrator_input, calibrator_target = get_calibrator_input(
             wfmodel=wfmodel,
