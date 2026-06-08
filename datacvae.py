@@ -1461,15 +1461,12 @@ class CustomDataset(Dataset):
         self.convert = convert
         self.nokeys = nokeys
         self.hdf_fname = hdf_fname
-        self.return_attributes = kwargs.get('return_attributes', kwargs.get('returnattr', return_attributes))
-        if return_sample_indices:
-            logging.warning('return_sample_indices is set to True. The __getitem__ method will return the sample index along \
-                            with the data and labels. We will not return `attr` in this case!')
-            self.return_sample_indices = return_sample_indices
-            self.return_attributes = False
-        self.return_phases = kwargs.get('return_phases', return_phases)
-        self.precision = kwargs.get('precision', precision)
-        self.target = kwargs.get('target', target)
+        self.return_attributes = kwargs.get('return_attributes', kwargs.get('return_attr', return_attributes))
+        # TODO: Rename "sample" to "data" or "waveform", since we have a specific meaning for "sample" in the PE context!
+        self.return_sample_indices = return_sample_indices
+        self.return_phases = return_phases
+        self.precision = precision
+        self.target = target
 
         self.forwhat = forwhat
         if hdf_fname is None:
@@ -1803,11 +1800,12 @@ class CustomDataset(Dataset):
             returnables = [out_labels, out_keys, out_strains]
             if self.return_phases:
                 returnables.append(out_phases)
-            if self.return_attributes:
-                returnables.append(out_attr)
             if self.return_sample_indices:
                 # -- return only numeric sample index as a numpy array, `collate_fn` converts to tensor later on.
                 returnables.append(np.array(idx))  
+            if self.return_attributes:
+                returnables.append(out_attr)
+            logging.debug(f"Returnables is of length {len(returnables)}")
                 
             if self.target=='unnorm_ampfreq':
                 logging.debug("Returning normalized amp and freq as input, and unnormalized amp and freq as target since `unnorm_target` is True.")

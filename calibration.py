@@ -23,6 +23,7 @@ from datacvae import CustomDataset, CustomDataLoader
 from optimize import load_flex_model
 
 from maincvae import plot_polarization_mismatch
+from plotutils import putils
 
 from utils.generic import init_logging, init_verbosity_args
 global logger
@@ -821,7 +822,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     test_dataset = CustomDataset(approximant='SEOBNRv4', 
                                  hdf_fname=dataset_path, 
                                 precision=PRECISION, 
-                                return_sample_indices=True, return_phases=True, return_attr=True)
+                                return_phases=True, return_sample_indices=True, return_attributes=True)
     testloader = CustomDataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
     calibrator_data_hdf = f'calibrator_test_data_{timestamp}.hdf'
@@ -852,23 +853,15 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             calibrated_amp = calibrator_input[:, 0, :] + pred_amp_residual
             calibrated_freq = calibrator_input[:, 1, :] + pred_freq_residual
 
-        # # -- plot the original waveform and the calibrated output waveform on the same plot for comparison
-        # time_arr = calc_time_array(len(calibrated_amp[0]))
-        # plt.figure(figsize=(12, 6))
-        # plt.subplot(2, 1, 1)
-        # plt.plot(time_arr.cpu(), orig_amp[0].cpu(), label='Original Amplitude')
-        # plt.plot(time_arr.cpu(), calibrated_amp[0].cpu(), label='Calibrated Amplitude')
-        # plt.legend()
-        # plt.title(f'$m_1$={labels[0, 0].item():.2f}, $m_2$={labels[0, 1].item():.2f}, $s1z$={labels[0, 2].item():.2f}, $s2z$={labels[0, 3].item():.2f}')
-        # plt.subplot(2, 1, 2)
-        # plt.plot(time_arr.cpu(), orig_freq[0].cpu(), label='Original Frequency')
-        # plt.plot(time_arr.cpu(), calibrated_freq[0].cpu(), label='Calibrated Frequency')
-        # plt.legend()
-        # plt.title(f'$m_1$={labels[0, 0].item():.2f}, $m_2$={labels[0, 1].item():.2f}, $s1z$={labels[0, 2].item():.2f}, $s2z$={labels[0, 3].item():.2f}')
-        # plt.tight_layout()
-        # plt.savefig(f'calibrator_test_{indices[0].item().replace(".", "")}_{timestamp}.png', dpi=300, bbox_inches='tight', transparent=True)
-        # plt.show()
-        # plt.close()
+        if i == 0:  # just plot the first batch for now, which is of shape (batch_size, 2, n)
+            plot_calibration_results(
+                original=originals,
+                calibrated=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
+                target_residual=torch.stack([pred_amp_residual, pred_freq_residual], dim=1),
+                output_residual=torch.stack([pred_amp_residual, pred_freq_residual], dim=1),
+                title=f'$m_1 = {labels[0, 0].item():.2f}, m_2 = {labels[0, 1].item():.2f}, s_1^z = {labels[0, 2].item():.2f}, s_2^z = {labels[0, 3].item():.2f}$',
+                savename=f'calibrator_test_results_wf{int(indices[0].item())}_{NOW}.png'
+            )
 
         plot_polarization_mismatch(
             original=originals,
@@ -886,6 +879,64 @@ def calc_time_array(n, sample_rate=SAMPLE_RATE):
     Calculate the time array for a given number of samples and sample rate.
     """
     return torch.linspace(0, n / sample_rate, steps=n)
+
+
+def plot_calibration_results(original: torch.Tensor, 
+                             calibrated: torch.Tensor, 
+                             target_residual: torch.Tensor, 
+                             output_residual: torch.Tensor,
+                             title: str = '', savename: str = None,
+                             fontsize=12, labelsize=10):
+    """
+    Plots the calibration results in 4 subplots, one each for original and calibrated 
+    amplitude and frequency, and then two for the target and output residuals.
+    The residual subplot height is scaled for better visualization.
+
+    It is assumed that a batch of data is passed! The first data in the batch is plotted.
+    """
+    orig_amp, orig_freq = original[0, 0, :], original[0, 1, :]
+    calibrated_amp, calibrated_freq = calibrated[0, 0, :], calibrated[0, 1, :]
+    target_amp_residual, target_freq_residual = target_residual[0, 0, :], target_residual[0, 1, :]
+    output_amp_residual, output_freq_residual = output_residual[0, 0, :], output_residual[0, 1, :]
+    time_arr = calc_time_array(orig_amp.shape[-1])
+    
+    fig, axes = plt.subplots(5, 1, figsize=(12, 15), sharex=True,
+                             height_ratios=[1, 1, 0.5, 0.5, 0.5])
+    # adjust the height of the residual subplot for better visualization
+    axes[0].plot(time_arr.cpu(), orig_amp.cpu(), label='Orig Amp', color='blue')
+    axes[0].plot(time_arr.cpu(), calibrated_amp.cpu(), label='Cal Amp', color='orange')
+    axes[0].set_ylabel('Amplitude')
+    axes[0].legend()
+    axes[1].plot(time_arr.cpu(), orig_freq.cpu(), label='Orig Freq', color='blue')
+    axes[1].plot(time_arr.cpu(), calibrated_freq.cpu(), label='Cal Freq', color='orange')
+    axes[1].set_ylabel('Frequency (Hz)')
+    axes[1].legend()
+    axes[2].plot(time_arr.cpu(), target_amp_residual.cpu(), label='Target Amp Residual', color='blue')
+    axes[2].plot(time_arr.cpu(), output_amp_residual.cpu(), label='Output Amp Residual', color='orange')
+    axes[2].plot(time_arr.cpu(), target_freq_residual.cpu(), label='Target Freq Residual', color='green')
+    axes[2].plot(time_arr.cpu(), output_freq_residual.cpu(), label='Output Freq Residual', color='red')
+    axes[2].set_ylabel('Residuals')
+    axes[2].set_xlabel('Time (s)')
+    axes[2].legend()
+    axes[3].plot(time_arr.cpu(), target_amp_residual.cpu(), label='Target Amp Residual', color='blue')
+    axes[3].plot(time_arr.cpu(), output_amp_residual.cpu(), label='Output Amp Residual', color='orange')
+    axes[3].set_ylabel('Amplitude Residuals')
+    axes[3].set_xlabel('Time (s)')
+    axes[3].legend()
+    axes[4].plot(time_arr.cpu(), target_freq_residual.cpu(), label='Target Freq Residual', color='green')
+    axes[4].plot(time_arr.cpu(), output_freq_residual.cpu(), label='Output Freq Residual', color='red')
+    axes[4].set_ylabel('Frequency Residuals')
+    axes[4].set_xlabel('Time (s)')
+    axes[4].legend()
+    fig.suptitle(title, fontsize=fontsize)
+    putils.beautifyPlot(axes, labelsize=labelsize, tickDirection='in', minor=True)
+    plt.tight_layout()
+    if savename is not None:
+        plt.savefig(savename, dpi=300, bbox_inches='tight')
+        logger.info(f"Saved calibration results plot to {savename}")
+    plt.show()
+    plt.close()
+
 
 
 

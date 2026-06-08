@@ -71,7 +71,7 @@ from datacvae import CustomDataset, CustomDataLoader
 from datacvae import PRESET_ARRAY_SIZE, SAMPLE_RATE, DELTA_T, f_lower, sample_len
 from cvae import CVAE, CAE
 
-from utils import polarizations_from_ampfreq, calc_polarization_mismatch
+from utils.gwutils import polarizations_from_ampfreq, calc_polarization_mismatch
 
 # from data import SEOBNRv4
 
