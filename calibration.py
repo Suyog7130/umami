@@ -855,6 +855,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             calibrated_freq = calibrator_input[:, 1, :] + pred_freq_residual
 
         if i == 0:  # just plot the first batch for now, which is of shape (batch_size, 2, n)
+            logger.info(f"Plotting calibration results for the first batch of test data with indices {indices.cpu().numpy()}...")
             plot_calibration_results(
                 original=originals,
                 calibrated=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
@@ -865,16 +866,17 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                 savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
             )
 
-        # plot_polarization_mismatch(
-        #     original=originals,
-        #     reconst=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
-        #     labels=labels,
-        #     keys=keys,
-        #     phases=phases,
-        #     strains=strains,
-        #     attr=attr,
-        #     savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
-        # )
+        plot_polarization_mismatch(
+            original=originals,
+            reconst=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
+            labels=labels,
+            keys=keys,
+            phases=phases,
+            strains=strains,
+            attr=attr,
+            savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
+        )
+        exit()
 
 
 def calc_time_array(n, sample_rate=SAMPLE_RATE):
@@ -908,53 +910,40 @@ def plot_calibration_results(original: torch.Tensor,
     output_amp_residual, output_freq_residual = output_residual[0, 0, :], output_residual[0, 1, :]
     time_arr = calc_time_array(orig_amp.shape[-1])
 
-    plot_twopanel_with_zoom(
+    plot_twopanel(
         xarr = time_arr.cpu().numpy(),
         yarr = [
             {'Orig Amp': orig_amp.cpu().numpy(), 'Cal Amp': calibrated_amp.cpu().numpy()},
             {'Orig Freq': orig_freq.cpu().numpy(), 'Cal Freq': calibrated_freq.cpu().numpy()}
         ],
+        with_zoom_windows=True,
         title = title,
         axes_labels = ['Time (s)', 'Amplitude', 'Frequency (Hz)'],
-        savename = savedir + 'calibration_orig-cal_' + savename if savename is not None else None,
+        savename = savedir + 'calibration_orig-cal_' + savename if savename is not None else '',
     )
-    
-    # fig, axes = plt.subplots(5, 1, figsize=(12, 15), sharex=True,
-    #                          height_ratios=[1, 1, 0.5, 0.5, 0.5])
-    # # adjust the height of the residual subplot for better visualization
-    # axes[0].plot(time_arr.cpu(), orig_amp.cpu(), label='Orig Amp', color='blue')
-    # axes[0].plot(time_arr.cpu(), calibrated_amp.cpu(), label='Cal Amp', color='orange')
-    # axes[0].set_ylabel('Amplitude')
-    # axes[0].legend()
-    # axes[1].plot(time_arr.cpu(), orig_freq.cpu(), label='Orig Freq', color='blue')
-    # axes[1].plot(time_arr.cpu(), calibrated_freq.cpu(), label='Cal Freq', color='orange')
-    # axes[1].set_ylabel('Frequency (Hz)')
-    # axes[1].legend()
-    # axes[2].plot(time_arr.cpu(), target_amp_residual.cpu(), label='Target Amp Residual', color='blue')
-    # axes[2].plot(time_arr.cpu(), output_amp_residual.cpu(), label='Output Amp Residual', color='orange')
-    # axes[2].plot(time_arr.cpu(), target_freq_residual.cpu(), label='Target Freq Residual', color='green')
-    # axes[2].plot(time_arr.cpu(), output_freq_residual.cpu(), label='Output Freq Residual', color='red')
-    # axes[2].set_ylabel('Residuals')
-    # axes[2].set_xlabel('Time (s)')
-    # axes[2].legend()
-    # axes[3].plot(time_arr.cpu(), target_amp_residual.cpu(), label='Target Amp Residual', color='blue')
-    # axes[3].plot(time_arr.cpu(), output_amp_residual.cpu(), label='Output Amp Residual', color='orange')
-    # axes[3].set_ylabel('Amplitude Residuals')
-    # axes[3].set_xlabel('Time (s)')
-    # axes[3].legend()
-    # axes[4].plot(time_arr.cpu(), target_freq_residual.cpu(), label='Target Freq Residual', color='green')
-    # axes[4].plot(time_arr.cpu(), output_freq_residual.cpu(), label='Output Freq Residual', color='red')
-    # axes[4].set_ylabel('Frequency Residuals')
-    # axes[4].set_xlabel('Time (s)')
-    # axes[4].legend()
-    fig.suptitle(title, fontsize=fontsize)
-    putils.beautifyPlot(axes, labelsize=labelsize, tickDirection='in', minor=True)
-    plt.tight_layout()
-    if savename is not None:
-        plt.savefig(savename, dpi=300, bbox_inches='tight')
-        logger.info(f"Saved calibration results plot to {savename}")
-    plt.show()
-    plt.close()
+    plot_twopanel(
+        xarr = time_arr.cpu().numpy(),
+        yarr = [
+            {'Target Amp Residual': target_amp_residual.cpu().numpy(), 'Pred Amp Residual': output_amp_residual.cpu().numpy()},
+            {'Target Freq Residual': target_freq_residual.cpu().numpy(), 'Pred Freq Residual': output_freq_residual.cpu().numpy()}
+        ],
+        with_zoom_windows=False,
+        title = title,
+        axes_labels = ['Time (s)', 'Amp Residual', 'Freq Residual (Hz)'],
+        savename = savedir + 'calibration_residuals_' + savename if savename is not None else '',
+    )
+    plot_twopanel(
+        xarr = time_arr.cpu().numpy(),
+        yarr = [
+            {'Amp Residual Error': (target_amp_residual - output_amp_residual).cpu().numpy()},
+            {'Freq Residual Error': (target_freq_residual - output_freq_residual).cpu().numpy()}
+        ],
+        with_zoom_windows=False,
+        title = title,
+        axes_labels = ['Time (s)', 'Amp Residual Error', 'Freq Residual Error (Hz)'],
+        savename = savedir + 'calibration_residual_err_' + savename if savename is not None else '',
+    )
+    logger.info("Saved all calibration result plots.")
     
 
 
@@ -969,10 +958,12 @@ def _plot_zoom_window(ax, x, y, y2=None, zoom_halfwidth=75, padding=20):
     ax.set_xlim(x[zoom_start], x[zoom_end])
     ax.set_ylim(min(y[zoom_start:zoom_end]) - ypad, max(y[zoom_start:zoom_end]) + ypad)
 
-def plot_twopanel_with_zoom(xarr: np.ndarray, 
-                            yarr: list[dict[str, np.ndarray], dict[str, np.ndarray]],
-                            title=None, axes_labels=['Time (s)', 'Amplitude', 'Frequency (Hz)'],
-                            savename=None, **kwargs):
+def plot_twopanel(xarr: np.ndarray, 
+                yarr: list[dict[str, np.ndarray], dict[str, np.ndarray]],
+                title=None, 
+                axes_labels=['Time (s)', 'Amplitude', 'Frequency (Hz)'],
+                with_zoom_windows=True,
+                savename=None, **kwargs):
     """
     Plot two panels plot, with 2 more smaller zoomed windows!
 
@@ -983,29 +974,34 @@ def plot_twopanel_with_zoom(xarr: np.ndarray,
     yarr: list of dicts
         A list of two dictionaries, where each dictionary contains the y-axis arrays for the curves to be plotted in each panel. The keys of the dictionaries are the labels for the curves, and the values are the corresponding y-axis arrays. The first dictionary corresponds to the first panel, and the second dictionary corresponds to the second panel.
     """
-    fig, axes = plt.subplots(2, 2, figsize=(14, 6), width_ratios=[3, 1])
-    axes = axes.flatten()    
-    for ax in [axes[0], axes[2]]:
-        ax.sharex(axes[0])
+    if with_zoom_windows:
+        fig, axes = plt.subplots(2, 2, figsize=(14, 6), width_ratios=[3, 1])
+        axes = axes.flatten()    
+        for ax in [axes[0], axes[2]]:
+            ax.sharex(axes[0])
+        fullsize_axes = [axes[0], axes[2]]
+        # Zoomed view near the maximum
+        _plot_zoom_window(axes[1], xarr, list(yarr[0].values())[0], y2=list(yarr[0].values())[1])
+        _plot_zoom_window(axes[3], xarr, list(yarr[1].values())[0], y2=list(yarr[1].values())[1])
+    else:
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        fullsize_axes = axes
 
-    for i, ax in enumerate([axes[0], axes[2]]):
+    for i, ax in enumerate(fullsize_axes):
         ax.plot(xarr, list(yarr[i].values())[0], label=list(yarr[i].keys())[0], color='blue')
-        ax.plot(xarr, list(yarr[i].values())[1], label=list(yarr[i].keys())[1], color='orange', linestyle='--')
+        if len(yarr[i]) > 1:
+            ax.plot(xarr, list(yarr[i].values())[1], label=list(yarr[i].keys())[1], color='orange', linestyle='--')
 
-    # Zoomed view near the maximum
-    _plot_zoom_window(axes[1], xarr, list(yarr[0].values())[0], y2=list(yarr[0].values())[1])
-    _plot_zoom_window(axes[3], xarr, list(yarr[1].values())[0], y2=list(yarr[1].values())[1])
-
-    for i in range(0,4):
+    for i in range(len(axes)):
         axes[i].set_xlabel(axes_labels[0], fontsize=15)
         axes[i].xaxis.set_minor_locator(tck.AutoMinorLocator())
         axes[i].yaxis.set_minor_locator(tck.AutoMinorLocator())
         axes[i].tick_params(which='both', direction='in', top=True, right=True)
         axes[i].tick_params(axis='both', labelsize=12)
-    axes[0].set_ylabel(axes_labels[1], fontsize=15)
-    axes[2].set_ylabel(axes_labels[2], fontsize=15)
-    axes[0].legend(fontsize=8, loc='upper left')
-    axes[2].legend(fontsize=8, loc='upper left')
+    fullsize_axes[0].set_ylabel(axes_labels[1], fontsize=15)
+    fullsize_axes[1].set_ylabel(axes_labels[2], fontsize=15)
+    fullsize_axes[0].legend(fontsize=8, loc='upper left')
+    fullsize_axes[1].legend(fontsize=8, loc='upper left')
 
     # Place suptitle closer to the top of the figure, not too far away
     plt.suptitle(title, fontsize=15,
@@ -1022,8 +1018,9 @@ def plot_twopanel_with_zoom(xarr: np.ndarray,
         else:
             plt.savefig(savename+'.png', dpi=300, bbox_inches='tight')
         logger.info(f"Overplot saved to {savename}")
-    plt.show()
-    plt.close()
+    if kwargs.get('noshow', False):
+        plt.show()
+    plt.close('all')
 
 
 
