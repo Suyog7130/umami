@@ -248,7 +248,7 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
     ifos.set_strain_data_from_power_spectral_densities(
         sampling_frequency=SAMPLE_RATE,
         duration=DURATION,
-        start_time=injection_parameters["geocent_time"]
+        start_time=injection_parameters["geocent_time"] - DURATION / 2,   # NOTE: Injection signal should be within data segment!
     )
 
     # -- Send model to device only here! We will keep the model on CPU until we need to generate the waveform, to save GPU memory and avoid potential issues with multiprocessing in Bilby!
