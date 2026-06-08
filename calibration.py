@@ -23,7 +23,7 @@ from tqdm import tqdm
 from datacvae import CustomDataset, CustomDataLoader
 from optimize import load_flex_model
 
-from maincvae import plot_polarization_mismatch
+from maincvae import plot_mismatch, plot_polarization_mismatch
 from plotutils import putils
 
 from utils.generic import init_logging, init_verbosity_args
@@ -144,8 +144,8 @@ def get_calibrator_input(wfmodel, originals, labels,
     Function to obtain the input and target for the calibrator model, 
     given the originals waveforms, the parameters, and the trained waveform model.
 
-    Arguments:
-    ----------
+    Arguments
+    ---------
     wfmodel : torch.nn.Module
         The trained waveform generator model that takes in the parameters and generates [amp,freq].
     originals : torch.Tensor
@@ -164,8 +164,8 @@ def get_calibrator_input(wfmodel, originals, labels,
     params_std : torch.Tensor, optional
         The standard deviation values for normalizing the parameters, by default None.
 
-    Returns:
-    --------
+    Returns
+    -------
     calibrator_input : torch.Tensor
         The input to the calibrator model, which includes the ML generated [amp,freq] and the parameters, 
         shape: (batch, input_channels, n)
@@ -828,7 +828,14 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
 
     calibrator_data_hdf = f'calibrator_test_data_{timestamp}.hdf'
 
-    for i, databatch in enumerate(testloader):
+    # Initialize dataframe to store mismatch results of whole test set!
+    dfmm = pd.DataFrame(columns=[
+        'dataindex', 'm1', 'm2', 'chi1z', 'chi2z',
+        'chirp_mass', 'total_mass', 'mass_ratio',
+        'mismatch_amp', 'mismatch_freq', 
+        'mismatch_hplus', 'mismatch_hcross',])
+
+    for i, databatch in tqdm(enumerate(testloader), total=len(testloader), desc='Testing Calibrator'):
         if dummyrun and i >= 5:  # just test on the first num_samples samples for now
             break
         originals, _, labels, keys, strains, phases, indices, attr = databatch
@@ -836,7 +843,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         labels.to(DEVICE)
         assert type(indices) == torch.Tensor and indices.shape == (batch_size,), f"Expected indices to be a tensor of shape ({batch_size},), but got {type(indices)} with shape {indices.shape}"
 
-        calibrator_input, _ = get_calibrator_input(
+        calibrator_input, calibrator_target = get_calibrator_input(
             wfmodel=wfmodel,
             originals=originals.to(DEVICE),  # shape: (1, 2, n)
             labels=labels.to(DEVICE),  # shape: (1, num_params)
@@ -847,6 +854,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         )
         orig_amp, orig_freq = originals[:, 0, :], originals[:, 1, :]
         ml_amp, ml_freq = calibrator_input[:, 0, :], calibrator_input[:, 1, :]
+        target_amp_residual, target_freq_residual = calibrator_target
 
         with torch.no_grad():
             out = calmodel(calibrator_input)  # shape: (1, 2, n)
@@ -859,14 +867,23 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             plot_calibration_results(
                 original=originals,
                 calibrated=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
-                target_residual=torch.stack([pred_amp_residual, pred_freq_residual], dim=1),
+                target_residual=torch.stack([target_amp_residual, target_freq_residual], dim=1),
                 output_residual=torch.stack([pred_amp_residual, pred_freq_residual], dim=1),
                 title=f'$m_1 = {labels[0, 0].item():.2f}, m_2 = {labels[0, 1].item():.2f}, \\chi_1(z) = {labels[0, 2].item():.2f}, \\chi_2(z) = {labels[0, 3].item():.2f}$',
                 savename=f'wf{int(indices[0].item())}',
                 savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
             )
 
-        plot_polarization_mismatch(
+        mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios = plot_mismatch(
+            original=originals,
+            reconst=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
+            labels=labels,
+            keys=keys,
+            nobatchwiseplot=True,
+            savedir=f'../{PROJECT_DIR}/results/{TODAY}/calibrated_',
+        )
+
+        mismatch_hplus, mismatch_hcross, _, _, _, chieffs, _ = plot_polarization_mismatch(
             original=originals,
             reconst=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
             labels=labels,
@@ -874,9 +891,32 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             phases=phases,
             strains=strains,
             attr=attr,
-            savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
+            savedir=f'../{PROJECT_DIR}/results/{TODAY}/calibrated_',
+            nobatchwiseplot=True,
+            num_saved_overplots=2000,
         )
-        exit()
+
+        dfmm = pd.concat([dfmm, pd.DataFrame({
+            'dataindex': indices.cpu().numpy(),
+            'm1': labels[:, 0].cpu().numpy(),
+            'm2': labels[:, 1].cpu().numpy(),
+            'chi1z': labels[:, 2].cpu().numpy(),
+            'chi2z': labels[:, 3].cpu().numpy(),
+            'chirp_mass': chirpmasses.flatten(),
+            'total_mass': totalmasses.flatten(),
+            'mass_ratio': massratios.flatten(),
+            'chieff': chieffs.flatten(),
+            'mismatch_amp': mismatch_amp.flatten(),
+            'mismatch_freq': mismatch_freq.flatten(),
+            'mismatch_hplus': mismatch_hplus.flatten(),
+            'mismatch_hcross': mismatch_hcross.flatten(),
+        })], ignore_index=True)
+        logger.info(f"Processed test batch {i+1}/{len(testloader)}, with data indices {indices.cpu().numpy()}, and average amplitude mismatch {mismatch_amp.mean().item():.4e}, frequency mismatch {mismatch_freq.mean().item():.4e}, hplus mismatch {mismatch_hplus.mean().item():.4e}, and hcross mismatch {mismatch_hcross.mean().item():.4e}")
+
+    dfmm.to_hdf(f'../{PROJECT_DIR}/results/{TODAY}/calibrator_test_mismatch_results_{timestamp}.hdf', 
+                key='mismatch_results', mode='w')
+    logger.info(f"Saved calibrator test mismatch results for all test samples to ../{PROJECT_DIR}/results/{TODAY}/calibrator_test_mismatch_results_{timestamp}.hdf")
+    return None
 
 
 def calc_time_array(n, sample_rate=SAMPLE_RATE):
@@ -942,6 +982,7 @@ def plot_calibration_results(original: torch.Tensor,
         title = title,
         axes_labels = ['Time (s)', 'Amp Residual Error', 'Freq Residual Error (Hz)'],
         savename = savedir + 'calibration_residual_err_' + savename if savename is not None else '',
+        logscale=True,
     )
     logger.info("Saved all calibration result plots.")
     
@@ -967,8 +1008,8 @@ def plot_twopanel(xarr: np.ndarray,
     """
     Plot two panels plot, with 2 more smaller zoomed windows!
 
-    Arguments:
-    ----------
+    Arguments
+    ---------
     xarr: np.ndarray
         The x-axis array, which is the same for all the curves being plotted.
     yarr: list of dicts
@@ -1003,6 +1044,10 @@ def plot_twopanel(xarr: np.ndarray,
     fullsize_axes[0].legend(fontsize=8, loc='upper left')
     fullsize_axes[1].legend(fontsize=8, loc='upper left')
 
+    if kwargs.get('logscale', False):
+        for ax in fullsize_axes:
+            ax.set_yscale('symlog', linthresh=1e-6)  # Set y-axis to symmetric log scale with a linear threshold
+
     # Place suptitle closer to the top of the figure, not too far away
     plt.suptitle(title, fontsize=15,
         y=0.97  # Move title closer to the top edge (default is 0.99)
@@ -1018,7 +1063,7 @@ def plot_twopanel(xarr: np.ndarray,
         else:
             plt.savefig(savename+'.png', dpi=300, bbox_inches='tight')
         logger.info(f"Overplot saved to {savename}")
-    if kwargs.get('noshow', False):
+    if kwargs.get('showplot', False):
         plt.show()
     plt.close('all')
 
