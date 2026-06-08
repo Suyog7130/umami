@@ -22,6 +22,8 @@ from tqdm import tqdm
 from datacvae import CustomDataset, CustomDataLoader
 from optimize import load_flex_model
 
+from maincvae import plot_polarization_mismatch
+
 from utils.generic import init_logging, init_verbosity_args
 global logger
 
@@ -816,9 +818,10 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     calmodel.eval()
     logger.info(f"Loaded calibrator model from {calibrator_modelpath} for testing: {calmodel}")
 
-    test_dataset = CustomDataset(forwhat='test', approximant='SEOBNRv4', 
+    test_dataset = CustomDataset(approximant='SEOBNRv4', 
                                  hdf_fname=dataset_path, 
-                                precision=PRECISION, return_sample_indices=True)
+                                precision=PRECISION, 
+                                return_sample_indices=True, return_phases=True, return_attr=True)
     testloader = CustomDataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
     calibrator_data_hdf = f'calibrator_test_data_{timestamp}.hdf'
@@ -826,7 +829,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     for i, databatch in enumerate(testloader):
         if dummyrun and i >= 5:  # just test on the first num_samples samples for now
             break
-        originals, _, labels, keys, _, indices = databatch
+        originals, _, labels, keys, strains, phases, indices, attr = databatch
         originals.to(DEVICE)
         labels.to(DEVICE)
         assert type(indices) == torch.Tensor and indices.shape == (batch_size,), f"Expected indices to be a tensor of shape ({batch_size},), but got {type(indices)} with shape {indices.shape}"
@@ -866,6 +869,16 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         # plt.savefig(f'calibrator_test_{indices[0].item().replace(".", "")}_{timestamp}.png', dpi=300, bbox_inches='tight', transparent=True)
         # plt.show()
         # plt.close()
+
+        plot_polarization_mismatch(
+            original=originals,
+            reconst=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
+            labels=labels,
+            keys=keys,
+            phases=phases,
+            strains=strains,
+            attr=attr
+        )
 
 
 def calc_time_array(n, sample_rate=SAMPLE_RATE):

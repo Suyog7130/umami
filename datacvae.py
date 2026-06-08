@@ -1419,6 +1419,8 @@ class CustomDataset(Dataset):
         The name of the HDF5 file to read the data from. If None, data will be generated on the fly. Default is None.
     returnattr : bool
         Whether to return the attributes (mass1, mass2, etc.) along with the data. Default is False (return only data).
+    return_phases : bool
+        Whether to return the phases along with the data. Default is False (return only data).
     precision : {'float32', 'float64'}
         The precision to use for the data. Default is 'float64'.
     target : {'unnorm_ampfreq', 'logamp_freq', 'amp_phase', 'logamp_phase'}
@@ -1444,8 +1446,9 @@ class CustomDataset(Dataset):
                  forwhat: {'train', 'test', 'val'} = 'train', 
                  approximant: str = 'IMRPhenomD',
                  plot: bool = False, convert: bool = False, nokeys: bool = False, hdf_fname: str = None, 
-                 returnattr: bool = False, 
+                 return_attributes: bool = False, 
                  return_sample_indices: bool = False,
+                 return_phases: bool = False,
                  precision: {'float32', 'float64'} = 'float64', 
                  target: {'unnorm_ampfreq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = None,
                  **kwargs):
@@ -1458,12 +1461,13 @@ class CustomDataset(Dataset):
         self.convert = convert
         self.nokeys = nokeys
         self.hdf_fname = hdf_fname
-        self.returnattr = kwargs.get('returnattr', returnattr)
+        self.return_attributes = kwargs.get('return_attributes', kwargs.get('returnattr', return_attributes))
         if return_sample_indices:
             logging.warning('return_sample_indices is set to True. The __getitem__ method will return the sample index along \
                             with the data and labels. We will not return `attr` in this case!')
             self.return_sample_indices = return_sample_indices
-            self.returnattr = False
+            self.return_attributes = False
+        self.return_phases = kwargs.get('return_phases', return_phases)
         self.precision = kwargs.get('precision', precision)
         self.target = kwargs.get('target', target)
 
@@ -1771,7 +1775,7 @@ class CustomDataset(Dataset):
             out_unnormed = np.vstack((unnorm_amp, unnorm_freq)).astype(getattr(np, self.precision))
             out_labels = np.array(labels).astype(getattr(np, self.precision))
             out_keys = np.array([amp_keys, freq_keys]).astype(getattr(np, self.precision))
-            out_phase = np.array(phase).astype(getattr(np, self.precision))
+            out_phases = np.array(phase).astype(getattr(np, self.precision))
             out_strains = np.vstack((hp, hc)).astype(getattr(np, self.precision))
             out_attr = data.attrs if type(data) is not dict else data.get('attrs', {})
             out_attr = dict(out_attr)  # Convert HDF5 attributes to a regular dictionary for easier handling
@@ -1782,7 +1786,7 @@ class CustomDataset(Dataset):
             #         return (out_normed,
             #                 out_labels,
             #                 out_keys,
-            #                 out_phase,
+            #                 out_phases,
             #                 out_strains,
             #                 out_attr)
             #     else:
@@ -1797,7 +1801,9 @@ class CustomDataset(Dataset):
                 
             # Apart from input and target, the rest of the return values are same for all cases!
             returnables = [out_labels, out_keys, out_strains]
-            if self.returnattr:
+            if self.return_phases:
+                returnables.append(out_phases)
+            if self.return_attributes:
                 returnables.append(out_attr)
             if self.return_sample_indices:
                 # -- return only numeric sample index as a numpy array, `collate_fn` converts to tensor later on.
