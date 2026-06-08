@@ -775,6 +775,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                     wfmodel_configpath='modelconfig-cvae-paper-I.json',
                     calibrator_modelpath=f'trained-models/calibrator_model_20260605-011742_epoch20.pt',
                     dataset_path='../data/SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen.hdf',
+                    batch_size=128, dummyrun=False,
                     timestamp=NOW):
     """
     Read parameters from some test dataset, generate the output waveform from the ML model,
@@ -815,21 +816,82 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     calmodel.eval()
     logger.info(f"Loaded calibrator model from {calibrator_modelpath} for testing: {calmodel}")
 
+    test_dataset = CustomDataset(forwhat='test', approximant='SEOBNRv4', 
+                                 hdf_fname=dataset_path, 
+                                precision=PRECISION, return_sample_indices=True)
+    testloader = CustomDataLoader(test_dataset, batch_size=batch_size, shuffle=True)
 
+    calibrator_data_hdf = f'calibrator_test_data_{timestamp}.hdf'
+
+    for i, databatch in enumerate(testloader):
+        if dummyrun and i >= 5:  # just test on the first num_samples samples for now
+            break
+        originals, _, labels, keys, _, indices = databatch
+        originals.to(DEVICE)
+        labels.to(DEVICE)
+        assert type(indices) == torch.Tensor and indices.shape == (batch_size,), f"Expected indices to be a tensor of shape ({batch_size},), but got {type(indices)} with shape {indices.shape}"
+
+        calibrator_input, _ = get_calibrator_input(
+            wfmodel=wfmodel,
+            originals=originals.to(DEVICE),  # shape: (1, 2, n)
+            labels=labels.to(DEVICE),  # shape: (1, num_params)
+            data_hdf=calibrator_data_hdf,  # save this data group to the calibrator HDF file!
+            indices=indices,  # use the original sample index from the dataset!
+            params_mean=params_mean,
+            params_std=params_std,
+        )
+        orig_amp, orig_freq = originals[:, 0, :], originals[:, 1, :]
+        ml_amp, ml_freq = calibrator_input[:, 0, :], calibrator_input[:, 1, :]
+
+        with torch.no_grad():
+            out = calmodel(calibrator_input)  # shape: (1, 2, n)
+            pred_amp_residual, pred_freq_residual = out[:, 0, :], out[:, 1, :]
+            calibrated_amp = calibrator_input[:, 0, :] + pred_amp_residual
+            calibrated_freq = calibrator_input[:, 1, :] + pred_freq_residual
+
+        # # -- plot the original waveform and the calibrated output waveform on the same plot for comparison
+        # time_arr = calc_time_array(len(calibrated_amp[0]))
+        # plt.figure(figsize=(12, 6))
+        # plt.subplot(2, 1, 1)
+        # plt.plot(time_arr.cpu(), orig_amp[0].cpu(), label='Original Amplitude')
+        # plt.plot(time_arr.cpu(), calibrated_amp[0].cpu(), label='Calibrated Amplitude')
+        # plt.legend()
+        # plt.title(f'$m_1$={labels[0, 0].item():.2f}, $m_2$={labels[0, 1].item():.2f}, $s1z$={labels[0, 2].item():.2f}, $s2z$={labels[0, 3].item():.2f}')
+        # plt.subplot(2, 1, 2)
+        # plt.plot(time_arr.cpu(), orig_freq[0].cpu(), label='Original Frequency')
+        # plt.plot(time_arr.cpu(), calibrated_freq[0].cpu(), label='Calibrated Frequency')
+        # plt.legend()
+        # plt.title(f'$m_1$={labels[0, 0].item():.2f}, $m_2$={labels[0, 1].item():.2f}, $s1z$={labels[0, 2].item():.2f}, $s2z$={labels[0, 3].item():.2f}')
+        # plt.tight_layout()
+        # plt.savefig(f'calibrator_test_{indices[0].item().replace(".", "")}_{timestamp}.png', dpi=300, bbox_inches='tight', transparent=True)
+        # plt.show()
+        # plt.close()
+
+
+def calc_time_array(n, sample_rate=SAMPLE_RATE):
+    """
+    Calculate the time array for a given number of samples and sample rate.
+    """
+    return torch.linspace(0, n / sample_rate, steps=n)
 
 
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Train the residual calibrator model for waveform generation.")
-    parser.add_argument('--batch-size', type=int, default=64, 
-                        help='Batch size for training the calibrator model.')
-    parser.add_argument('--num-epochs', type=int, default=25, 
-                        help='Number of epochs to train the calibrator model.')
+
     parser.add_argument('--timestamp', type=str, default=NOW, 
                         help='Timestamp string to use for saving outputs, default is current date and time.')
-    parser.add_argument('--dummy-run', action='store_true', 
+
+    trainparser = parser.add_argument_group('Training Hyperparameters')
+    trainparser.add_argument('--batch-size', type=int, default=64, 
+                        help='Batch size for training the calibrator model.')
+    trainparser.add_argument('--num-epochs', type=int, default=25, 
+                        help='Number of epochs to train the calibrator model.')
+    trainparser.add_argument('--dummy-run', action='store_true', 
                         help='If set, runs a quick dummy training loop for testing purposes.')
+    
+    testparser = parser.add_argument_group('Testing Hyperparameters')
 
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
@@ -844,4 +906,4 @@ if __name__ == "__main__":
     #     timestamp=args.timestamp,
     # )
 
-    test_calibrator()
+    test_calibrator(batch_size=args.batch_size, dummyrun=args.dummy_run)

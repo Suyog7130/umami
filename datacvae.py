@@ -1776,24 +1776,24 @@ class CustomDataset(Dataset):
             out_attr = data.attrs if type(data) is not dict else data.get('attrs', {})
             out_attr = dict(out_attr)  # Convert HDF5 attributes to a regular dictionary for easier handling
                         
-            # TODO: make this work with `self.target` argument and be back compatible with `maincvae.py` code!
-            if self.forwhat=='test':
-                if self.returnattr:
-                    return (out_normed,
-                            out_labels,
-                            out_keys,
-                            out_phase,
-                            out_strains,
-                            out_attr)
-                else:
-                    logging.debug(f"Attributes: {out_attr}")
-                    # also return the loc of padding or truncation
-                    return (out_normed, 
-                            out_normed, # -- target are normed amp & freq.
-                            out_labels, 
-                            out_keys,
-                            out_strains,
-                            out_attr)
+            # # TODO: make this work with `self.target` argument and be back compatible with `maincvae.py` code!
+            # if self.forwhat=='test':
+            #     if self.returnattr:
+            #         return (out_normed,
+            #                 out_labels,
+            #                 out_keys,
+            #                 out_phase,
+            #                 out_strains,
+            #                 out_attr)
+            #     else:
+            #         logging.debug(f"Attributes: {out_attr}")
+            #         # also return the loc of padding or truncation
+            #         return (out_normed, 
+            #                 out_normed, # -- target are normed amp & freq.
+            #                 out_labels, 
+            #                 out_keys,
+            #                 out_strains,
+            #                 out_attr)
                 
             # Apart from input and target, the rest of the return values are same for all cases!
             returnables = [out_labels, out_keys, out_strains]
@@ -1842,7 +1842,8 @@ class CustomDataset(Dataset):
         logging.debug(f'Batch size: {len(batch)}')
 
         # Determine the maximum number of tags in the batch
-        if self.forwhat=='test' or self.returnattr:
+        # TODO: Remove this `forwhat` argument and condition in the future!
+        if self.forwhat=='test' and self.returnattr:
             max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the feature dict
         # elif self.return_sample_indices:
         #     max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the sample index, since it a string and not a tag
@@ -1856,7 +1857,8 @@ class CustomDataset(Dataset):
         for sample in batch:
 
             # Append the feature dict to the batch dict
-            if self.forwhat=='test' or self.returnattr:
+            # TODO: Remove this `forwhat` behaviour in the future!
+            if self.forwhat=='test' and self.returnattr:
                 *tags, feat_dict = sample
                 logging.debug(f'Number of tags: {len(tags)}')
                 for key, value in feat_dict.items():
@@ -1879,7 +1881,7 @@ class CustomDataset(Dataset):
             tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=getattr(torch, self.precision))
 
         # Ensure all tensors are of the same shape
-        if self.forwhat=='test' or self.returnattr:
+        if self.forwhat=='test' and self.returnattr:
             return (*tag_batches, feat_dict_batch)
         # elif self.return_sample_indices:
         #     return (*tag_batches, sample_index)
