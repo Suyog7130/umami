@@ -26,6 +26,7 @@ from optimize import load_flex_model
 from maincvae import plot_mismatch, plot_polarization_mismatch
 from plotutils import putils
 
+from utils.io import ensure_dirs_and_files
 from utils.generic import init_logging, init_verbosity_args
 global logger
 
@@ -779,7 +780,9 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                     wfmodel_configpath='modelconfig-cvae-paper-I.json',
                     calibrator_modelpath=f'trained-models/calibrator_model_20260605-011742_epoch20.pt',
                     dataset_path='../data/SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen.hdf',
-                    batch_size=128, dummyrun=False,
+                    savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
+                    batch_size=128, 
+                    dummyrun=False,
                     timestamp=NOW):
     """
     Read parameters from some test dataset, generate the output waveform from the ML model,
@@ -789,6 +792,9 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     output waveform on the same plot. Return the calibrated output waveform that we can use
     for mismatch calculation and comparison with the original waveform using other functions.
     """
+    savedir = os.path.join(savedir, f'calibration_results_{NOW}/')
+    print(f"Saving calibrator testing results to {savedir}...")
+    ensure_dirs_and_files([savedir])
     logger.info(f"Testing residual calibrator model with ML waveform model from {wfmodel_modelpath} and config from {wfmodel_configpath}, and calibrator model from {calibrator_modelpath} on dataset {dataset_path}")
 
     wfmodel_modelpath = wfmodel_modelpath if os.path.exists(wfmodel_modelpath) else f'../{PROJECT_DIR}/{wfmodel_modelpath}'
@@ -833,7 +839,8 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         'dataindex', 'm1', 'm2', 'chi1z', 'chi2z',
         'chirp_mass', 'total_mass', 'mass_ratio',
         'mismatch_amp', 'mismatch_freq', 
-        'mismatch_hplus', 'mismatch_hcross',])
+        'mismatch_hplus', 'mismatch_hcross',],
+        dtype=float)
 
     for i, databatch in tqdm(enumerate(testloader), total=len(testloader), desc='Testing Calibrator'):
         if dummyrun and i >= 5:  # just test on the first num_samples samples for now
@@ -869,8 +876,8 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                 target_residual=torch.stack([target_amp_residual, target_freq_residual], dim=1),
                 output_residual=torch.stack([pred_amp_residual, pred_freq_residual], dim=1),
                 title=f'$m_1 = {labels[0, 0].item():.2f}, m_2 = {labels[0, 1].item():.2f}, \\chi_1(z) = {labels[0, 2].item():.2f}, \\chi_2(z) = {labels[0, 3].item():.2f}$',
-                savename=f'wf{int(indices[0].item())}',
-                savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
+                savename=f'wf{int(indices[0].item())}' + '-dummy' if dummyrun else '',
+                savedir=savedir,
             )
 
         mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios = plot_mismatch(
@@ -879,7 +886,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             labels=labels,
             keys=keys,
             nobatchwiseplot=True,
-            savedir=f'../{PROJECT_DIR}/results/{TODAY}/calibrated_',
+            savedir=savedir,
         )
 
         mismatch_hplus, mismatch_hcross, _, _, _, chieffs, _ = plot_polarization_mismatch(
@@ -890,7 +897,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             phases=phases,
             strains=strains,
             attr=attr,
-            savedir=f'../{PROJECT_DIR}/results/{TODAY}/calibrated_',
+            savedir=savedir,
             nobatchwiseplot=True,
             num_saved_overplots=2000,
         )
@@ -912,9 +919,10 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         })], ignore_index=True)
         logger.info(f"Processed test batch {i+1}/{len(testloader)}, with data indices {indices.cpu().numpy()}, and average amplitude mismatch {mismatch_amp.mean().item():.4e}, frequency mismatch {mismatch_freq.mean().item():.4e}, hplus mismatch {mismatch_hplus.mean().item():.4e}, and hcross mismatch {mismatch_hcross.mean().item():.4e}")
 
-    dfmm.to_hdf(f'../{PROJECT_DIR}/results/{TODAY}/calibrator_test_mismatch_results_{timestamp}.hdf', 
-                key='mismatch_results', mode='w')
-    logger.info(f"Saved calibrator test mismatch results for all test samples to ../{PROJECT_DIR}/results/{TODAY}/calibrator_test_mismatch_results_{timestamp}.hdf")
+    savename = os.path.join(savedir, f'calibrator_test_mismatch_results_{timestamp}')
+    savename += '-dummy' if dummyrun else ''
+    dfmm.to_hdf(savename+'.h5', key='mismatch_results', mode='w')
+    logger.info(f"Saved calibrator test mismatch results for all test samples to {savename}")
     return None
 
 
@@ -942,7 +950,6 @@ def plot_calibration_results(original: torch.Tensor,
 
     It is assumed that a batch of data is passed! The first data in the batch is plotted.
     """
-    os.makedirs(savedir, exist_ok=True)
     orig_amp, orig_freq = original[0, 0, :], original[0, 1, :]
     calibrated_amp, calibrated_freq = calibrated[0, 0, :], calibrated[0, 1, :]
     target_amp_residual, target_freq_residual = target_residual[0, 0, :], target_residual[0, 1, :]

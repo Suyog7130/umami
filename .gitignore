@@ -3,7 +3,6 @@ __pycache__/*
 __pycache__
 
 # Blocklist files/folders in same directory as the .gitignore file
-/*
 *data/*
 *work*/*data*/*
 *gh18-work/models/*
@@ -106,6 +105,8 @@ __pycache__/
 !**/*.ipynb
 !**/*/*.py
 !**/*/*.ipynb
+!*/*/*.py
+
 
 # ==========================================
 # OS Specific & Editor Temp Files
