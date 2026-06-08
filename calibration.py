@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+import matplotlib.ticker as tck
 
 from tqdm import tqdm
 
@@ -859,19 +860,21 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                 calibrated=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
                 target_residual=torch.stack([pred_amp_residual, pred_freq_residual], dim=1),
                 output_residual=torch.stack([pred_amp_residual, pred_freq_residual], dim=1),
-                title=f'$m_1 = {labels[0, 0].item():.2f}, m_2 = {labels[0, 1].item():.2f}, s_1^z = {labels[0, 2].item():.2f}, s_2^z = {labels[0, 3].item():.2f}$',
-                savename=f'calibrator_test_results_wf{int(indices[0].item())}_{NOW}.png'
+                title=f'$m_1 = {labels[0, 0].item():.2f}, m_2 = {labels[0, 1].item():.2f}, \\chi_1(z) = {labels[0, 2].item():.2f}, \\chi_2(z) = {labels[0, 3].item():.2f}$',
+                savename=f'wf{int(indices[0].item())}',
+                savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
             )
 
-        plot_polarization_mismatch(
-            original=originals,
-            reconst=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
-            labels=labels,
-            keys=keys,
-            phases=phases,
-            strains=strains,
-            attr=attr
-        )
+        # plot_polarization_mismatch(
+        #     original=originals,
+        #     reconst=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
+        #     labels=labels,
+        #     keys=keys,
+        #     phases=phases,
+        #     strains=strains,
+        #     attr=attr,
+        #     savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
+        # )
 
 
 def calc_time_array(n, sample_rate=SAMPLE_RATE):
@@ -885,49 +888,65 @@ def plot_calibration_results(original: torch.Tensor,
                              calibrated: torch.Tensor, 
                              target_residual: torch.Tensor, 
                              output_residual: torch.Tensor,
-                             title: str = '', savename: str = None,
+                             title: str = '', 
+                             savename: str = None,
+                             savedir: str = '',
                              fontsize=12, labelsize=10):
     """
-    Plots the calibration results in 4 subplots, one each for original and calibrated 
-    amplitude and frequency, and then two for the target and output residuals.
-    The residual subplot height is scaled for better visualization.
+    Plots the calibration results in 3 plots each consisting of 2 subplots:
+        1. Original vs Calibrated waveforms (amplitude and frequency)
+        2. Target vs Output residuals (amplitude and frequency)
+        3. Error in predicted residuals (target - output) for amplitude and frequency separately
+    The residual and error subplot height is scaled for better visualization.
 
     It is assumed that a batch of data is passed! The first data in the batch is plotted.
     """
+    os.makedirs(savedir, exist_ok=True)
     orig_amp, orig_freq = original[0, 0, :], original[0, 1, :]
     calibrated_amp, calibrated_freq = calibrated[0, 0, :], calibrated[0, 1, :]
     target_amp_residual, target_freq_residual = target_residual[0, 0, :], target_residual[0, 1, :]
     output_amp_residual, output_freq_residual = output_residual[0, 0, :], output_residual[0, 1, :]
     time_arr = calc_time_array(orig_amp.shape[-1])
+
+    plot_twopanel_with_zoom(
+        xarr = time_arr.cpu().numpy(),
+        yarr = [
+            {'Orig Amp': orig_amp.cpu().numpy(), 'Cal Amp': calibrated_amp.cpu().numpy()},
+            {'Orig Freq': orig_freq.cpu().numpy(), 'Cal Freq': calibrated_freq.cpu().numpy()}
+        ],
+        title = title,
+        axes_labels = ['Time (s)', 'Amplitude', 'Frequency (Hz)'],
+        savename = savedir + 'calibration_orig-cal_' + savename if savename is not None else None,
+    )
     
-    fig, axes = plt.subplots(5, 1, figsize=(12, 15), sharex=True,
-                             height_ratios=[1, 1, 0.5, 0.5, 0.5])
-    # adjust the height of the residual subplot for better visualization
-    axes[0].plot(time_arr.cpu(), orig_amp.cpu(), label='Orig Amp', color='blue')
-    axes[0].plot(time_arr.cpu(), calibrated_amp.cpu(), label='Cal Amp', color='orange')
-    axes[0].set_ylabel('Amplitude')
-    axes[0].legend()
-    axes[1].plot(time_arr.cpu(), orig_freq.cpu(), label='Orig Freq', color='blue')
-    axes[1].plot(time_arr.cpu(), calibrated_freq.cpu(), label='Cal Freq', color='orange')
-    axes[1].set_ylabel('Frequency (Hz)')
-    axes[1].legend()
-    axes[2].plot(time_arr.cpu(), target_amp_residual.cpu(), label='Target Amp Residual', color='blue')
-    axes[2].plot(time_arr.cpu(), output_amp_residual.cpu(), label='Output Amp Residual', color='orange')
-    axes[2].plot(time_arr.cpu(), target_freq_residual.cpu(), label='Target Freq Residual', color='green')
-    axes[2].plot(time_arr.cpu(), output_freq_residual.cpu(), label='Output Freq Residual', color='red')
-    axes[2].set_ylabel('Residuals')
-    axes[2].set_xlabel('Time (s)')
-    axes[2].legend()
-    axes[3].plot(time_arr.cpu(), target_amp_residual.cpu(), label='Target Amp Residual', color='blue')
-    axes[3].plot(time_arr.cpu(), output_amp_residual.cpu(), label='Output Amp Residual', color='orange')
-    axes[3].set_ylabel('Amplitude Residuals')
-    axes[3].set_xlabel('Time (s)')
-    axes[3].legend()
-    axes[4].plot(time_arr.cpu(), target_freq_residual.cpu(), label='Target Freq Residual', color='green')
-    axes[4].plot(time_arr.cpu(), output_freq_residual.cpu(), label='Output Freq Residual', color='red')
-    axes[4].set_ylabel('Frequency Residuals')
-    axes[4].set_xlabel('Time (s)')
-    axes[4].legend()
+    # fig, axes = plt.subplots(5, 1, figsize=(12, 15), sharex=True,
+    #                          height_ratios=[1, 1, 0.5, 0.5, 0.5])
+    # # adjust the height of the residual subplot for better visualization
+    # axes[0].plot(time_arr.cpu(), orig_amp.cpu(), label='Orig Amp', color='blue')
+    # axes[0].plot(time_arr.cpu(), calibrated_amp.cpu(), label='Cal Amp', color='orange')
+    # axes[0].set_ylabel('Amplitude')
+    # axes[0].legend()
+    # axes[1].plot(time_arr.cpu(), orig_freq.cpu(), label='Orig Freq', color='blue')
+    # axes[1].plot(time_arr.cpu(), calibrated_freq.cpu(), label='Cal Freq', color='orange')
+    # axes[1].set_ylabel('Frequency (Hz)')
+    # axes[1].legend()
+    # axes[2].plot(time_arr.cpu(), target_amp_residual.cpu(), label='Target Amp Residual', color='blue')
+    # axes[2].plot(time_arr.cpu(), output_amp_residual.cpu(), label='Output Amp Residual', color='orange')
+    # axes[2].plot(time_arr.cpu(), target_freq_residual.cpu(), label='Target Freq Residual', color='green')
+    # axes[2].plot(time_arr.cpu(), output_freq_residual.cpu(), label='Output Freq Residual', color='red')
+    # axes[2].set_ylabel('Residuals')
+    # axes[2].set_xlabel('Time (s)')
+    # axes[2].legend()
+    # axes[3].plot(time_arr.cpu(), target_amp_residual.cpu(), label='Target Amp Residual', color='blue')
+    # axes[3].plot(time_arr.cpu(), output_amp_residual.cpu(), label='Output Amp Residual', color='orange')
+    # axes[3].set_ylabel('Amplitude Residuals')
+    # axes[3].set_xlabel('Time (s)')
+    # axes[3].legend()
+    # axes[4].plot(time_arr.cpu(), target_freq_residual.cpu(), label='Target Freq Residual', color='green')
+    # axes[4].plot(time_arr.cpu(), output_freq_residual.cpu(), label='Output Freq Residual', color='red')
+    # axes[4].set_ylabel('Frequency Residuals')
+    # axes[4].set_xlabel('Time (s)')
+    # axes[4].legend()
     fig.suptitle(title, fontsize=fontsize)
     putils.beautifyPlot(axes, labelsize=labelsize, tickDirection='in', minor=True)
     plt.tight_layout()
@@ -936,6 +955,76 @@ def plot_calibration_results(original: torch.Tensor,
         logger.info(f"Saved calibration results plot to {savename}")
     plt.show()
     plt.close()
+    
+
+
+def _plot_zoom_window(ax, x, y, y2=None, zoom_halfwidth=75, padding=20):
+    zoom_start = max(0, np.argmax(y) - zoom_halfwidth)
+    zoom_end = min(len(y)-1, np.argmax(y) + zoom_halfwidth)
+    ax.plot(x[zoom_start:zoom_end], y[zoom_start:zoom_end], color='blue')
+    if y2 is not None:
+        ax.plot(x[zoom_start:zoom_end], y2[zoom_start:zoom_end], color='orange')
+    yrange = max(y[zoom_start:zoom_end]) - min(y[zoom_start:zoom_end])
+    ypad = yrange * padding / 100  # Convert percentage to actual padding
+    ax.set_xlim(x[zoom_start], x[zoom_end])
+    ax.set_ylim(min(y[zoom_start:zoom_end]) - ypad, max(y[zoom_start:zoom_end]) + ypad)
+
+def plot_twopanel_with_zoom(xarr: np.ndarray, 
+                            yarr: list[dict[str, np.ndarray], dict[str, np.ndarray]],
+                            title=None, axes_labels=['Time (s)', 'Amplitude', 'Frequency (Hz)'],
+                            savename=None, **kwargs):
+    """
+    Plot two panels plot, with 2 more smaller zoomed windows!
+
+    Arguments:
+    ----------
+    xarr: np.ndarray
+        The x-axis array, which is the same for all the curves being plotted.
+    yarr: list of dicts
+        A list of two dictionaries, where each dictionary contains the y-axis arrays for the curves to be plotted in each panel. The keys of the dictionaries are the labels for the curves, and the values are the corresponding y-axis arrays. The first dictionary corresponds to the first panel, and the second dictionary corresponds to the second panel.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 6), width_ratios=[3, 1])
+    axes = axes.flatten()    
+    for ax in [axes[0], axes[2]]:
+        ax.sharex(axes[0])
+
+    for i, ax in enumerate([axes[0], axes[2]]):
+        ax.plot(xarr, list(yarr[i].values())[0], label=list(yarr[i].keys())[0], color='blue')
+        ax.plot(xarr, list(yarr[i].values())[1], label=list(yarr[i].keys())[1], color='orange', linestyle='--')
+
+    # Zoomed view near the maximum
+    _plot_zoom_window(axes[1], xarr, list(yarr[0].values())[0], y2=list(yarr[0].values())[1])
+    _plot_zoom_window(axes[3], xarr, list(yarr[1].values())[0], y2=list(yarr[1].values())[1])
+
+    for i in range(0,4):
+        axes[i].set_xlabel(axes_labels[0], fontsize=15)
+        axes[i].xaxis.set_minor_locator(tck.AutoMinorLocator())
+        axes[i].yaxis.set_minor_locator(tck.AutoMinorLocator())
+        axes[i].tick_params(which='both', direction='in', top=True, right=True)
+        axes[i].tick_params(axis='both', labelsize=12)
+    axes[0].set_ylabel(axes_labels[1], fontsize=15)
+    axes[2].set_ylabel(axes_labels[2], fontsize=15)
+    axes[0].legend(fontsize=8, loc='upper left')
+    axes[2].legend(fontsize=8, loc='upper left')
+
+    # Place suptitle closer to the top of the figure, not too far away
+    plt.suptitle(title, fontsize=15,
+        y=0.97  # Move title closer to the top edge (default is 0.99)
+    )
+
+    plt.tight_layout()
+    # plt.subplots_adjust(wspace=0.2)
+    # putils.beautifyPlot(axes)
+    if savename is not None:
+        savename += '_' + NOW
+        if kwargs.get('transparent', False):
+            plt.savefig(savename+'.png', dpi=300, bbox_inches='tight', transparent=True)
+        else:
+            plt.savefig(savename+'.png', dpi=300, bbox_inches='tight')
+        logger.info(f"Overplot saved to {savename}")
+    plt.show()
+    plt.close()
+
 
 
 

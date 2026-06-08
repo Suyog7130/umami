@@ -1837,6 +1837,8 @@ class CustomDataset(Dataset):
         for some samples. The feature_batch and tag_batch should have the same
         length, so we can use the default collate function for both.
 
+        NOTE: It is assumed that the `feat_dict` will always the last in the batch tuple!
+
         One batch consists of ([amp, freq], labels, [amp_keys, freq_keys]),
         where `labels` is [m1, m2] or [m1, m2, spin1z, spin2z] depending on
         the type of data used.
@@ -1847,7 +1849,7 @@ class CustomDataset(Dataset):
 
         # Determine the maximum number of tags in the batch
         # TODO: Remove this `forwhat` argument and condition in the future!
-        if self.forwhat=='test' and self.returnattr:
+        if self.return_attributes:
             max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the feature dict
         # elif self.return_sample_indices:
         #     max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the sample index, since it a string and not a tag
@@ -1860,9 +1862,8 @@ class CustomDataset(Dataset):
 
         for sample in batch:
 
-            # Append the feature dict to the batch dict
-            # TODO: Remove this `forwhat` behaviour in the future!
-            if self.forwhat=='test' and self.returnattr:
+            # Append the feature dict to the batch dict!
+            if self.return_attributes:
                 *tags, feat_dict = sample
                 logging.debug(f'Number of tags: {len(tags)}')
                 for key, value in feat_dict.items():
@@ -1885,7 +1886,7 @@ class CustomDataset(Dataset):
             tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=getattr(torch, self.precision))
 
         # Ensure all tensors are of the same shape
-        if self.forwhat=='test' and self.returnattr:
+        if self.return_attributes:
             return (*tag_batches, feat_dict_batch)
         # elif self.return_sample_indices:
         #     return (*tag_batches, sample_index)
