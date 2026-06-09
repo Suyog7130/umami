@@ -25,13 +25,18 @@ import bilby
 # Basic configuration
 # ----------------------------------------------------------------------
 
+APPROXIMANT = "SEOBNRv4" #"IMRPhenomD"
 DURATION = 1.0
 SAMPLING_FREQUENCY = 8192.0
 FMIN = 20.0
 FREF = 50.0
 
-DEFAULT_OUTDIR = "out_phenomd_4d"
-DEFAULT_LABEL = "phenomd_4d"
+if APPROXIMANT == "IMRPhenomD":
+    DEFAULT_OUTDIR = "out_phenomd_4d"
+    DEFAULT_LABEL = "phenomd_4d"
+elif APPROXIMANT == "SEOBNRv4":
+    DEFAULT_OUTDIR = "out_seobnr4_4d"
+    DEFAULT_LABEL = "seobnr4_4d"
 
 
 # ----------------------------------------------------------------------
@@ -65,7 +70,7 @@ def signed_chi_to_a_tilt(chi_z):
     return a, tilt
 
 
-def phenomd_aligned_spin_source(
+def aligned_spin_source(
     frequency_array,
     mass_1,
     mass_2,
@@ -77,7 +82,7 @@ def phenomd_aligned_spin_source(
     **kwargs,
 ):
     """
-    Frequency-domain source model for IMRPhenomD with signed aligned spins.
+    Frequency-domain source model for {APPROXIMANT} with signed aligned spins.
 
     Bilby/LAL wants:
         a_1, tilt_1, a_2, tilt_2
@@ -104,7 +109,7 @@ def phenomd_aligned_spin_source(
         phi_jl=0.0,
         theta_jn=theta_jn,
         phase=phase,
-        waveform_approximant="IMRPhenomD",
+        waveform_approximant=APPROXIMANT,
         reference_frequency=FREF,
         minimum_frequency=FMIN,
         catch_waveform_errors=True,
@@ -205,12 +210,12 @@ def make_waveform_generator():
     Use the same waveform generator for injection and recovery.
 
     This is the cleanest sanity check:
-        IMRPhenomD -> IMRPhenomD
+        {APPROXIMANT} -> {APPROXIMANT}
     """
     return bilby.gw.WaveformGenerator(
         duration=DURATION,
         sampling_frequency=SAMPLING_FREQUENCY,
-        frequency_domain_source_model=phenomd_aligned_spin_source,
+        frequency_domain_source_model=aligned_spin_source,
         waveform_arguments=dict(),
     )
 
@@ -358,7 +363,7 @@ def run_pe(
     print(f"sampling_frequency      = {SAMPLING_FREQUENCY}")
     print(f"minimum_frequency       = {FMIN}")
     print("sampled parameters      = mass_1, mass_2, spin_1z, spin_2z")
-    print("waveform approximant    = IMRPhenomD")
+    print(f"waveform approximant    = {APPROXIMANT}")
     print("================================\n")
 
     print("Injection parameters:")
