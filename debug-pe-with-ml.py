@@ -367,6 +367,8 @@ def make_sampler_kwargs(args) -> Dict[str, Any]:
             n_pool=args.n_pool,
             pytorch_threads=args.pytorch_threads,
             resume=args.resume,
+            flow_proposal_class=args.flow_proposal_class,     # 'gwflowproposal' instead reparameterisation full 15D space!
+            analytic_priors=True,
         )
     raise ValueError(f"Unsupported sampler: {args.sampler}")
 
@@ -457,6 +459,7 @@ def parse_args():
     parser.add_argument("--naccept", type=int, default=10)
     parser.add_argument("--n-pool", type=int, default=1, help="nessai likelihood pool")
     parser.add_argument("--pytorch-threads", type=int, default=1, help="nessai PyTorch threads")
+    parser.add_argument("--flow-proposal-class", default="gwflowproposal", choices=["gwflowproposal", "flowproposal"], help="Nessai flow proposal class to use.")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--clean", action="store_true")
     parser.add_argument("--plot-waveform-posterior", action="store_true")
