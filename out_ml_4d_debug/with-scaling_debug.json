@@ -1,0 +1,585 @@
+{
+  "determinism": {
+    "comparisons": [
+      {
+        "frequency_domain": {
+          "cross": {
+            "all_finite_a": true,
+            "all_finite_b": true,
+            "max_abs_a": 4.602857108080392e-23,
+            "max_abs_b": 4.5573441346668616e-23,
+            "max_abs_diff": 6.1667873988488e-24,
+            "relative_diff": 0.13397738087551975,
+            "shape_a": [
+              4097
+            ],
+            "shape_b": [
+              4097
+            ]
+          },
+          "plus": {
+            "all_finite_a": true,
+            "all_finite_b": true,
+            "max_abs_a": 4.677162676005427e-23,
+            "max_abs_b": 4.617318248727509e-23,
+            "max_abs_diff": 6.176665915594003e-24,
+            "relative_diff": 0.13206010445780003,
+            "shape_a": [
+              4097
+            ],
+            "shape_b": [
+              4097
+            ]
+          }
+        },
+        "name_a": "base",
+        "name_b": "trial_0",
+        "time_domain": {
+          "cross": {
+            "all_finite_a": true,
+            "all_finite_b": true,
+            "max_abs_a": 8.486021620951515e-22,
+            "max_abs_b": 8.485372757667464e-22,
+            "max_abs_diff": 2.825918356042651e-22,
+            "relative_diff": 0.33300862079653626,
+            "shape_a": [
+              8192
+            ],
+            "shape_b": [
+              8192
+            ]
+          },
+          "plus": {
+            "all_finite_a": true,
+            "all_finite_b": true,
+            "max_abs_a": 8.345393965994381e-22,
+            "max_abs_b": 8.402006621501972e-22,
+            "max_abs_diff": 2.8590070029000885e-22,
+            "relative_diff": 0.342585025290586,
+            "shape_a": [
+              8192
+            ],
+            "shape_b": [
+              8192
+            ]
+          }
+        }
+      },
+      {
+        "frequency_domain": {
+          "cross": {
+            "all_finite_a": true,
+            "all_finite_b": true,
+            "max_abs_a": 4.6847853500672315e-23,
+            "max_abs_b": 4.6977810373618125e-23,
+            "max_abs_diff": 1.1787928162220043e-24,
+            "relative_diff": 0.025162152118775035,
+            "shape_a": [
+              4097
+            ],
+            "shape_b": [
+              4097
+            ]
+          },
+          "plus": {
+            "all_finite_a": true,
+            "all_finite_b": true,
+            "max_abs_a": 4.769938611757239e-23,
+            "max_abs_b": 4.7804680258176485e-23,
+            "max_abs_diff": 1.1502155526619e-24,
+            "relative_diff": 0.02411384393557556,
+            "shape_a": [
+              4097
+            ],
+            "shape_b": [
+              4097
+            ]
+          }
+        },
+        "name_a": "base",
+        "name_b": "trial_1",
+        "time_domain": {
+          "cross": {
+            "all_finite_a": true,
+            "all_finite_b": true,
+            "max_abs_a": 8.454908598128876e-22,
+            "max_abs_b": 8.57929179586578e-22,
+            "max_abs_diff": 1.9220721170181357e-22,
+            "relative_diff": 0.22733209882878003,
+            "shape_a": [
+              8192
+            ],
+            "shape_b": [
+              8192
+            ]
+          },
+          "plus": {
+            "all_finite_a": true,
+            "all_finite_b": true,
+            "max_abs_a": 8.381257133124873e-22,
+            "max_abs_b": 8.435819920143776e-22,
+            "max_abs_diff": 1.9339492536933393e-22,
+            "relative_diff": 0.23074691815024706,
+            "shape_a": [
+              8192
+            ],
+            "shape_b": [
+              8192
+            ]
+          }
+        }
+      }
+    ],
+    "n_trials": 2
+  },
+  "generator_comparison": {
+    "frequency_domain": {
+      "cross": {
+        "all_finite_a": true,
+        "all_finite_b": true,
+        "max_abs_a": 4.716582054921826e-23,
+        "max_abs_b": 4.552324547578769e-23,
+        "max_abs_diff": 2.0133825163970322e-23,
+        "relative_diff": 0.4268732088093403,
+        "shape_a": [
+          4097
+        ],
+        "shape_b": [
+          4097
+        ]
+      },
+      "plus": {
+        "all_finite_a": true,
+        "all_finite_b": true,
+        "max_abs_a": 4.8033159143152996e-23,
+        "max_abs_b": 4.618020171857216e-23,
+        "max_abs_diff": 2.009913775770321e-23,
+        "relative_diff": 0.4184429697368404,
+        "shape_a": [
+          4097
+        ],
+        "shape_b": [
+          4097
+        ]
+      }
+    },
+    "name_a": "injection",
+    "name_b": "recovery",
+    "time_domain": {
+      "cross": {
+        "all_finite_a": true,
+        "all_finite_b": true,
+        "max_abs_a": 8.47951214426935e-22,
+        "max_abs_b": 8.43143245216399e-22,
+        "max_abs_diff": 1.338652330986912e-22,
+        "relative_diff": 0.15786902692174384,
+        "shape_a": [
+          8192
+        ],
+        "shape_b": [
+          8192
+        ]
+      },
+      "plus": {
+        "all_finite_a": true,
+        "all_finite_b": true,
+        "max_abs_a": 8.411208130218439e-22,
+        "max_abs_b": 8.374630021142584e-22,
+        "max_abs_diff": 1.3372345435060999e-22,
+        "relative_diff": 0.1589824580254884,
+        "shape_a": [
+          8192
+        ],
+        "shape_b": [
+          8192
+        ]
+      }
+    }
+  },
+  "ifo_metadata": {
+    "H1": {
+      "matched_filter_SNR": {
+        "imag": -1.3221339994556218e-17,
+        "real": 28.110827916950214
+      },
+      "name": "H1",
+      "optimal_SNR": 28.110827916950225,
+      "parameters": {
+        "dec": -1.2108,
+        "geocent_time": 1126259642.413,
+        "luminosity_distance": 400.0,
+        "mass_1": 36.0,
+        "mass_2": 32.0,
+        "phase": 1.3,
+        "psi": 2.659,
+        "ra": 1.375,
+        "spin_1z": 0.3,
+        "spin_2z": -0.2,
+        "theta_jn": 0.4
+      }
+    },
+    "L1": {
+      "matched_filter_SNR": {
+        "imag": 2.856343925661893e-17,
+        "real": 22.763525063942414
+      },
+      "name": "L1",
+      "optimal_SNR": 22.763525063942417,
+      "parameters": {
+        "dec": -1.2108,
+        "geocent_time": 1126259642.413,
+        "luminosity_distance": 400.0,
+        "mass_1": 36.0,
+        "mass_2": 32.0,
+        "phase": 1.3,
+        "psi": 2.659,
+        "ra": 1.375,
+        "spin_1z": 0.3,
+        "spin_2z": -0.2,
+        "theta_jn": 0.4
+      }
+    }
+  },
+  "injection_generator_summary": {
+    "frequency_domain": {
+      "cross": {
+        "all_finite": true,
+        "dtype": "complex128",
+        "max": 2.947289955654853e-23,
+        "max_abs": 4.6798689706801406e-23,
+        "min": -4.3509108745205616e-23,
+        "rms": 2.4739513392995857e-24,
+        "shape": [
+          4097
+        ]
+      },
+      "plus": {
+        "all_finite": true,
+        "dtype": "complex128",
+        "max": 3.845129326191077e-23,
+        "max_abs": 4.764377245578346e-23,
+        "min": -2.8203462156997965e-23,
+        "rms": 2.473165665819025e-24,
+        "shape": [
+          4097
+        ]
+      }
+    },
+    "name": "injection_generator",
+    "time_domain": {
+      "cross": {
+        "all_finite": true,
+        "dtype": "float64",
+        "max": 8.073375324195073e-22,
+        "max_abs": 8.503037088039532e-22,
+        "min": -8.503037088039532e-22,
+        "rms": 2.240518876125994e-22,
+        "shape": [
+          8192
+        ]
+      },
+      "plus": {
+        "all_finite": true,
+        "dtype": "float64",
+        "max": 8.350649590796475e-22,
+        "max_abs": 8.425290144627678e-22,
+        "min": -8.425290144627678e-22,
+        "rms": 2.2407560164800467e-22,
+        "shape": [
+          8192
+        ]
+      }
+    }
+  },
+  "injection_parameters": {
+    "dec": -1.2108,
+    "geocent_time": 1126259642.413,
+    "luminosity_distance": 400.0,
+    "mass_1": 36.0,
+    "mass_2": 32.0,
+    "phase": 1.3,
+    "psi": 2.659,
+    "ra": 1.375,
+    "spin_1z": 0.3,
+    "spin_2z": -0.2,
+    "theta_jn": 0.4
+  },
+  "likelihood": {
+    "injection": {
+      "log_likelihood": -181.97566416727238,
+      "log_likelihood_ratio": 472.22269558928895
+    },
+    "random_points": [
+      {
+        "i": 0,
+        "log_likelihood": -972.9459475548199,
+        "log_likelihood_ratio": -318.7475877982586,
+        "sample": {
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 64.82802218501834,
+          "mass_2": 49.74952978884235,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "spin_1z": 0.5737566718582119,
+          "spin_2z": 0.3157888464949823,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 1,
+        "log_likelihood": -1283.5738946758865,
+        "log_likelihood_ratio": -629.3755349193251,
+        "sample": {
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 71.70442449818708,
+          "mass_2": 58.97393040362991,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "spin_1z": 0.516418581233328,
+          "spin_2z": -0.09053728187627019,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 2,
+        "log_likelihood": -1044.5543834589346,
+        "log_likelihood_ratio": -390.35602370237325,
+        "sample": {
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 73.68141109777065,
+          "mass_2": 70.19045045949889,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "spin_1z": 0.44541359531801894,
+          "spin_2z": -0.4885780674368519,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 3,
+        "log_likelihood": -962.3505473729381,
+        "log_likelihood_ratio": -308.1521876163767,
+        "sample": {
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 46.670686771569095,
+          "mass_2": 51.13001150741135,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "spin_1z": -0.4968458254651429,
+          "spin_2z": -0.5921255914632454,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 4,
+        "log_likelihood": -1367.0581674804243,
+        "log_likelihood_ratio": -712.859807723863,
+        "sample": {
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 67.45169106278405,
+          "mass_2": 66.21439608735608,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "spin_1z": -0.1800345935517209,
+          "spin_2z": -0.33867503371160945,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 5,
+        "log_likelihood": -1098.2093127242024,
+        "log_likelihood_ratio": -444.0109529676412,
+        "sample": {
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 65.13280639598855,
+          "mass_2": 50.65120989922529,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "spin_1z": 0.10998591352462994,
+          "spin_2z": -0.5763248029957482,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 6,
+        "log_likelihood": -884.422074573894,
+        "log_likelihood_ratio": -230.22371481733262,
+        "sample": {
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 55.16432223354361,
+          "mass_2": 43.67775441281755,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "spin_1z": -0.750691464691297,
+          "spin_2z": -0.10125217722822022,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 7,
+        "log_likelihood": -933.1052930681392,
+        "log_likelihood_ratio": -278.90693331157786,
+        "sample": {
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 59.78624316271028,
+          "mass_2": 55.066446855357526,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "spin_1z": 0.4542371345702616,
+          "spin_2z": 0.26290166452382,
+          "theta_jn": 0.4
+        }
+      }
+    ]
+  },
+  "priors": {
+    "dec": "-1.2108",
+    "geocent_time": "1126259642.413",
+    "luminosity_distance": "400.0",
+    "mass_1": "Uniform(minimum=30.0, maximum=75.0, name='mass_1', latex_label='$m_1$', unit=None, boundary=None)",
+    "mass_2": "Uniform(minimum=30.0, maximum=75.0, name='mass_2', latex_label='$m_2$', unit=None, boundary=None)",
+    "phase": "1.3",
+    "psi": "2.659",
+    "ra": "1.375",
+    "spin_1z": "Uniform(minimum=-0.8, maximum=0.8, name='spin_1z', latex_label='$\\\\chi_{1z}$', unit=None, boundary=None)",
+    "spin_2z": "Uniform(minimum=-0.8, maximum=0.8, name='spin_2z', latex_label='$\\\\chi_{2z}$', unit=None, boundary=None)",
+    "theta_jn": "0.4"
+  },
+  "recovery_generator_summary": {
+    "frequency_domain": {
+      "cross": {
+        "all_finite": true,
+        "dtype": "complex128",
+        "max": 3.159998555963494e-23,
+        "max_abs": 4.6283044686914614e-23,
+        "min": -4.076880679492376e-23,
+        "rms": 2.4750642243998126e-24,
+        "shape": [
+          4097
+        ]
+      },
+      "plus": {
+        "all_finite": true,
+        "dtype": "complex128",
+        "max": 3.73203458135698e-23,
+        "max_abs": 4.7065768906232106e-23,
+        "min": -2.801948638512891e-23,
+        "rms": 2.474754041017993e-24,
+        "shape": [
+          4097
+        ]
+      }
+    },
+    "name": "recovery_generator",
+    "time_domain": {
+      "cross": {
+        "all_finite": true,
+        "dtype": "float64",
+        "max": 8.0738014655077505e-22,
+        "max_abs": 8.522024837988422e-22,
+        "min": -8.522024837988422e-22,
+        "rms": 2.2405269756749033e-22,
+        "shape": [
+          8192
+        ]
+      },
+      "plus": {
+        "all_finite": true,
+        "dtype": "float64",
+        "max": 8.428118416317607e-22,
+        "max_abs": 8.428118416317607e-22,
+        "min": -8.363136062552446e-22,
+        "rms": 2.2404330922343986e-22,
+        "shape": [
+          8192
+        ]
+      }
+    }
+  },
+  "run_config": {
+    "check_determinism": true,
+    "chi1_max": 0.8,
+    "chi1_min": -0.8,
+    "chi2_max": 0.8,
+    "chi2_min": -0.8,
+    "clean": false,
+    "debug_only": true,
+    "dec": -1.2108,
+    "determinism_trials": 2,
+    "device": "mps",
+    "dlogz": 1.0,
+    "duration": 1.0,
+    "dynesty_sample": "acceptance-walk",
+    "fmin": 20.0,
+    "fref": 50.0,
+    "geocent_time": 1126259642.413,
+    "ifos": [
+      "H1",
+      "L1"
+    ],
+    "inject_mass_1": 36.0,
+    "inject_mass_2": 32.0,
+    "inject_spin_1z": 0.3,
+    "inject_spin_2z": -0.2,
+    "label": "with-scaling",
+    "log_level": "INFO",
+    "luminosity_distance": 400.0,
+    "m1_max": 75.0,
+    "m1_min": 30.0,
+    "m2_max": 75.0,
+    "m2_min": 30.0,
+    "max_abs_log_likelihood_ratio": 1000000.0,
+    "max_relative_generator_diff": 1e-10,
+    "max_td_abs": 1e-18,
+    "ml_generator": "mlwavegen:MLWaveformGenerator",
+    "model_config": "modelconfig-cvae-paper-I",
+    "model_path": "../v0p1/trained-models/model-20251004_072338-10",
+    "n_debug_random": 8,
+    "n_pool": 1,
+    "naccept": 10,
+    "nlive": 100,
+    "npool": 1,
+    "outdir": "out_ml_4d_debug",
+    "parameter_conversion": "mlwavegen:convert_to_ml_parameters",
+    "phase": 1.3,
+    "plot_waveform_posterior": false,
+    "precision": "float32",
+    "psi": 2.659,
+    "pytorch_threads": 1,
+    "ra": 1.375,
+    "resume": false,
+    "sampler": "nessai",
+    "sampling_frequency": 8192.0,
+    "scale_amplitude": true,
+    "seed": 1234,
+    "strict_debug": false,
+    "theta_jn": 0.4,
+    "torch_threads": 1,
+    "waveform_plot_samples": 50,
+    "zero_noise": true
+  }
+}

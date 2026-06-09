@@ -114,6 +114,11 @@ def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
 
     waveforms = {'plus': hplus, 'cross': hcross}
 
+    if kwargs.get('scale_amplitude', False):
+        logger.info("Scaling waveform amplitude by 1e3 to correct SNR value.")
+        waveforms['plus'] /= 1e3
+        waveforms['cross'] /= 1e3
+
     # fig, ax = plt.subplots(figsize=(12, 5))
     # ax.plot(np.arange(len(waveforms['plus'])), waveforms['plus'], label='hp')
     # ax.plot(np.arange(len(waveforms['cross'])), waveforms['cross'], label='hc')

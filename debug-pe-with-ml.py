@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """
-ml_4d_bilby_pe_debug.py
-
 Minimal 4D Bilby PE script for:
 
     ML waveform injection -> ML waveform recovery
@@ -143,9 +141,10 @@ def assert_injection_inside_priors(priors, injection_parameters, keys=("mass_1",
 def build_ml_waveform_generator(args):
     MLWaveformGenerator = import_symbol(args.ml_generator)
     parameter_conversion = import_symbol(args.parameter_conversion)
-    waveform_arguments = {"model_path": args.model_path, "config_path": args.model_config}
-    if args.ml_strain_scale is not None:
-        waveform_arguments["ml_strain_scale"] = args.ml_strain_scale
+    waveform_arguments = {"model_path": args.model_path, 
+                          "config_path": args.model_config,}
+    if args.scale_amplitude is not None:
+        waveform_arguments["scale_amplitude"] = args.scale_amplitude
     generator = MLWaveformGenerator(
         duration=args.duration,
         sampling_frequency=args.sampling_frequency,
@@ -441,7 +440,7 @@ def parse_args():
     parser.add_argument("--device", default=None, help="Optional torch device, e.g. cpu or cuda.")
     parser.add_argument("--precision", default="float32", choices=["float32", "float64"])
     parser.add_argument("--torch-threads", type=int, default=1)
-    parser.add_argument("--ml-strain-scale", type=float, default=None, help="Only works if your ML source model reads waveform_arguments['ml_strain_scale'].")
+    parser.add_argument("--scale-amplitude", action="store_true", help="Scale the generated waveform amplitude.")
     parser.add_argument("--debug-only", action="store_true")
     parser.add_argument("--strict-debug", action="store_true")
     parser.add_argument("--n-debug-random", type=int, default=8)
@@ -464,6 +463,9 @@ def parse_args():
     parser.add_argument("--waveform-plot-samples", type=int, default=50)
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--log-level", default="INFO")
+    print("Command-line arguments:")
+    for arg in vars(parser.parse_args()):
+        print(f"  {arg}: {getattr(parser.parse_args(), arg)}")
     return parser.parse_args()
 
 
