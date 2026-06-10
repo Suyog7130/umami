@@ -53,7 +53,7 @@ def init_logging(args, log_dir='logs', write_to_file=True):
     
     if write_to_file:
         os.makedirs(log_dir, exist_ok=True)
-        fname = os.path.join(log_dir, f'session_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+        fname = os.path.join(log_dir, f'session_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}.log')
         file_handler = logging.FileHandler(fname, mode='w')
         file_handler.setLevel(logging.INFO)   # -- saved logs should be as detailed as possible!
 
