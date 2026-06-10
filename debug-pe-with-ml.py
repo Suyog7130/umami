@@ -113,7 +113,7 @@ def make_injection_parameters(args) -> Dict[str, float]:
         mass_2=args.inject_mass_2,
         spin_1z=args.inject_spin_1z,
         spin_2z=args.inject_spin_2z,
-        luminosity_distance=1.0,  # set to 1.0 MPc for debugging; can be scaled later if needed
+        luminosity_distance=args.luminosity_distance,
         theta_jn=args.theta_jn,
         phase=args.phase,
         geocent_time=args.geocent_time,
@@ -146,8 +146,8 @@ def build_ml_waveform_generator(args):
     parameter_conversion = import_symbol(args.parameter_conversion)
     waveform_arguments = {"model_path": args.model_path, 
                           "config_path": args.model_config,}
-    if args.scale_amplitude is not None:
-        waveform_arguments["scale_amplitude"] = args.scale_amplitude
+    if args.scale_amplitude:
+        waveform_arguments["distance_scale_factor"] = args.luminosity_distance  # scale amplitude by 1/D_L
     generator = MLWaveformGenerator(
         duration=args.duration,
         sampling_frequency=args.sampling_frequency,
@@ -427,7 +427,7 @@ def parse_args():
     parser.add_argument("--inject-mass-2", type=float, default=32.0)
     parser.add_argument("--inject-spin-1z", type=float, default=0.30)
     parser.add_argument("--inject-spin-2z", type=float, default=-0.20)
-    parser.add_argument("--luminosity-distance", type=float, default=1.0)
+    parser.add_argument("--luminosity-distance", type=float, default=400.0)
     parser.add_argument("--theta-jn", type=float, default=0.4)
     parser.add_argument("--phase", type=float, default=1.3)
     parser.add_argument("--geocent-time", type=float, default=1126259642.413)
@@ -445,7 +445,7 @@ def parse_args():
     parser.add_argument("--device", default=None, help="Optional torch device, e.g. cpu or cuda.")
     parser.add_argument("--precision", default="float32", choices=["float32", "float64"])
     parser.add_argument("--torch-threads", type=int, default=1)
-    parser.add_argument("--scale-amplitude", action="store_true", help="Scale the generated waveform amplitude.")
+    parser.add_argument("--scale-amplitude", action="store_true", help="Whether to apply an overall amplitude scaling to the ML waveforms. This can be useful for debugging when the ML model was trained on whitened waveforms or waveforms with a different distance convention.")
     parser.add_argument("--debug-only", action="store_true")
     parser.add_argument("--strict-debug", action="store_true")
     parser.add_argument("--n-debug-random", type=int, default=8)

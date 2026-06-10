@@ -75,18 +75,27 @@ def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
         time_array: np.ndarray
             The array of time points at which to evaluate the waveform.
             This input is ignored by the waveform generator!
-
-    NOTE: Bilby sent a list of `*parameters` to the waveform generator function!
-    We assume this list contains either [m1, m2, chi1z, chi2z] or [mass_1, mass_2, spin_1z, spin_2z],
-    or ['mass_ratio', 'chirp_mass', 'a_1', 'a_2'] depending on how the parameters are formatted!
-    
-    NOTE: Additionally, the `**kwargs` should contain the `modelpath` and `configpath` for the ML model, 
-    which we will use to load the model and generate the waveform!
+        model: torch.nn.Module
+            The trained ML model to use for waveform generation. 
+            If None, the model will be initialized using the provided model_path 
+            and config_path in kwargs.
+        distance_scale_factor: float
+            A distance scale factor to apply to the waveform amplitude to correct for the fact that
+            the ML model generates waveforms at a fixed luminosity distance of 1.0 MPc!
 
     Returns
     -------
         np.ndarray
             The generated time-domain strain waveform as a 1D numpy array.
+    
+    Note
+    ----
+    Bilby sent a list of `*parameters` to the waveform generator function!
+    We assume this list contains either [m1, m2, chi1z, chi2z] or [mass_1, mass_2, spin_1z, spin_2z],
+    or ['mass_ratio', 'chirp_mass', 'a_1', 'a_2'] depending on how the parameters are formatted!
+    
+    Additionally, the `**kwargs` should contain the `modelpath` and `configpath` for the ML model, 
+    which we will use to load the model and generate the waveform!
     """
     logger.info(f"Received parameters for waveform generation: {kwargs}")
     if model is None:
@@ -114,11 +123,10 @@ def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
 
     waveforms = {'plus': hplus, 'cross': hcross}
 
-    if kwargs.get('scale_amplitude', False):
-        logger.warning("This behaviour is deprecated! Set `luminosity_distance` to 1.0 MPc instead!")
-        # logger.info("Scaling waveform amplitude by 1e3 to correct SNR value.")
-        # waveforms['plus'] /= 1e3
-        # waveforms['cross'] /= 1e3
+    distance_scale_factor = kwargs.get('distance_scale_factor', None)
+    if distance_scale_factor is not None:
+        waveforms['plus'] /= distance_scale_factor
+        waveforms['cross'] /= distance_scale_factor
 
     # fig, ax = plt.subplots(figsize=(12, 5))
     # ax.plot(np.arange(len(waveforms['plus'])), waveforms['plus'], label='hp')
