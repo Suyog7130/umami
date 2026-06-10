@@ -14,6 +14,7 @@ running large PP-plot campaigns.
 import os
 import json
 import time
+import datetime
 import argparse
 import logging
 import importlib
@@ -32,11 +33,13 @@ except Exception:
     torch = None
     mp = None
 
+NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
 DEFAULT_DURATION = 1.0
 DEFAULT_SAMPLING_FREQUENCY = 8192.0
 DEFAULT_FMIN = 20.0
 DEFAULT_FREF = 50.0
-DEFAULT_OUTDIR = "out_ml_4d_debug"
+DEFAULT_OUTDIR = f"out_ml_4d_debug_{NOW}"
 DEFAULT_LABEL = "ml_4d_debug"
 
 
@@ -110,7 +113,7 @@ def make_injection_parameters(args) -> Dict[str, float]:
         mass_2=args.inject_mass_2,
         spin_1z=args.inject_spin_1z,
         spin_2z=args.inject_spin_2z,
-        luminosity_distance=args.luminosity_distance,
+        luminosity_distance=1.0,  # set to 1.0 MPc for debugging; can be scaled later if needed
         theta_jn=args.theta_jn,
         phase=args.phase,
         geocent_time=args.geocent_time,
@@ -424,7 +427,7 @@ def parse_args():
     parser.add_argument("--inject-mass-2", type=float, default=32.0)
     parser.add_argument("--inject-spin-1z", type=float, default=0.30)
     parser.add_argument("--inject-spin-2z", type=float, default=-0.20)
-    parser.add_argument("--luminosity-distance", type=float, default=400.0)
+    parser.add_argument("--luminosity-distance", type=float, default=1.0)
     parser.add_argument("--theta-jn", type=float, default=0.4)
     parser.add_argument("--phase", type=float, default=1.3)
     parser.add_argument("--geocent-time", type=float, default=1126259642.413)
