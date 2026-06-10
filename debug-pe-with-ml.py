@@ -372,6 +372,7 @@ def make_sampler_kwargs(args) -> Dict[str, Any]:
             resume=args.resume,
             flow_proposal_class=args.flow_proposal_class,     # 'gwflowproposal' instead reparameterisation full 15D space!
             analytic_priors=True,
+            stopping=0.1,   # Stop if log evidence `logZ` doesn't improve by this amt, ignored if not supplied!
         )
     raise ValueError(f"Unsupported sampler: {args.sampler}")
 
