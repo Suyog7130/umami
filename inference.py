@@ -5,6 +5,7 @@ using Bilby, and obtain a Posterior Probability plot.
 """
 
 import os
+import json
 import argparse
 import logging
 import datetime
@@ -403,8 +404,29 @@ def main(args, label='umamipe',
                                      outdir=outdir,
                                      sampler=sampler, 
                                      **sampler_kwargs)
+    
+    # -- Save all args and config to a results config JSON file!
+    config_snapshot = {
+        'args': vars(args),
+        'pe_run_type': pe_run_type,
+        'sampler': sampler,
+        'sampler_kwargs': sampler_kwargs,
+    }
+    # -- convert any non-serializable objects in config_snapshot to strings or dicts
+    for key, value in config_snapshot['sampler_kwargs'].items():
+        if isinstance(value, (bilby.core.prior.PriorDict, bilby.gw.prior.BBHPriorDict)):
+            config_snapshot['sampler_kwargs'][key] = {k: str(v) for k, v in value.items()}
+        elif isinstance(value, torch.nn.Module):
+            config_snapshot['sampler_kwargs'][key] = str(value)
+        elif isinstance(value, dict):
+            config_snapshot['sampler_kwargs'][key] = {k: str(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            config_snapshot['sampler_kwargs'][key] = [str(v) for v in value]
+    with open(os.path.join(outdir, f'{label}_{NOW}_config.json'), 'w') as f:
+        json.dump(config_snapshot, f, indent=4)
+
     analyze_results(results=results, label=label+f'_{NOW}', outdir=outdir)
-    logger.info("Completed injection campaign and sampling for all injections.")
+    print("Completed injection campaign and sampling for all injections.")
 
 
 
@@ -427,7 +449,6 @@ def analyze_results(fname: str = None, results: Optional[List[bilby.gw.result.CB
 
     # Plot the inferred waveform superposed on the actual data.
     results[0].plot_waveform_posterior(n_samples=100)
-
     logger.info("Saved PP plot, waveform posterior plot, and corner plot for the first injection result.")
 
 
