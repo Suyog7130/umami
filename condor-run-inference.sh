@@ -41,6 +41,9 @@ export TORCH_NUM_THREADS="${PYTORCH_THREADS}"
 # Useful for logs.
 export PYTHONUNBUFFERED=1
 
+export PATH="/home/suyog.garg/.conda/envs/phd/bin:/usr/local/bin:/usr/bin:/bin"
+PYTHON_EXE="/home/suyog.garg/.conda/envs/phd/bin/python"
+
 # Optional debugging. Uncomment only when diagnosing crashes.
 # export CUDA_LAUNCH_BLOCKING=1
 # export OMP_DISPLAY_ENV=TRUE
@@ -50,10 +53,6 @@ export PYTHONUNBUFFERED=1
 # source "${HOME}/.bashrc"
 # conda activate phd
 PYTHON_EXE="/home/suyog.garg/.conda/envs/phd/bin/python3"
-
-echo "Python path:"
-which python3
-python3 --version
 
 echo "Checking important environment variables:"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
@@ -76,7 +75,7 @@ echo "Checking core imports..."
 
 echo "Running inference.py..."
 
-python3 inference.py \
+"${PYTHON_EXE}" inference.py \
     --label "${LABEL}" \
     --num-injections "${NUM_INJECTIONS}" \
     --sampler "${SAMPLER}" \
