@@ -979,7 +979,8 @@ class CVAE(nn.Module):
             hphc[i] = np.stack([hp, hc])
         return hphc
 
-    def generate(self, labels=None, keys_path=None, convert_to_hphc=True) -> np.ndarray:
+    def generate(self, labels=None, keys_path=None, convert_to_hphc=True,
+                 deterministic=False) -> np.ndarray:
         """
         From a trained model, generate new output waveforms using only the
         conditional labels information, by sampling from the latent space and 
@@ -995,6 +996,9 @@ class CVAE(nn.Module):
         convert_to_hphc: bool
             Whether to convert the generated amplitude and frequency series to hp and hc 
             polarizations. Default is True.
+        deterministic: bool
+            Whether to generate waveforms deterministically by using zeros for the latent samples 
+            instead of sampling from the latent space distribution. Default is False.
 
         Returns:
         --------
@@ -1012,11 +1016,16 @@ class CVAE(nn.Module):
         logger.info("Model set to evaluation mode for generation.")
 
         with torch.no_grad():
-            # Encode labels to get the mean and log variance of the latent space
-            zy_mu, zy_logvar = self.encode_label_for_x(labels)
-            zykey_mu, zykey_logvar = self.encode_label_for_key(labels)
-            zy = self.reparameterize(zy_mu, zy_logvar)
-            zykey = self.reparameterize(zykey_mu, zykey_logvar)
+            if deterministic:
+                # -- to make model outputs deterministic, try using zeros for the latent samples!
+                zy = torch.zeros((labels.size(0), self.latent_dim)).to(self.device)
+                zykey = torch.zeros((labels.size(0), self.latent_dim)).to(self.device)
+            else:
+                # Encode labels to get the mean and log variance of the latent space
+                zy_mu, zy_logvar = self.encode_label_for_x(labels)
+                zykey_mu, zykey_logvar = self.encode_label_for_key(labels)
+                zy = self.reparameterize(zy_mu, zy_logvar)
+                zykey = self.reparameterize(zykey_mu, zykey_logvar)
             # NOTE: In this original model, we do not have options to concatenate 
             generated_output = self.decode(zy, zykey, labels)
         

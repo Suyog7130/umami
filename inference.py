@@ -346,8 +346,8 @@ def main(args, label='umamipe',
             reparameterisations=None,  
             # max_iteration=7500,    # NOTE: This forces nessai to abruptly end, leaving results JSON file incomplete!
             stopping=0.1,   # Stop if log evidence `logZ` doesn't improve by this amt, ignored if not supplied!
-            reset_flow=16,          # Periodic reset to clear "stuck" AI states
-            analytic_priors=active_priors,  # Pass the priors to nessai for better sampling efficiency
+            # reset_flow=16,          # Periodic reset to clear "stuck" AI states
+            analytic_priors=True,  # this is a bool, to indicate directly supplying prior samples.
         )
     else:
         logger.info("Not using multiprocessing. Running sampler in single-process mode.")
