@@ -61,6 +61,22 @@ else:
 
 # bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="INFO")
 
+def signed_chi_to_bilby_spins(params):
+    p = dict(params)
+
+    chi1 = p.pop("spin_1z")
+    chi2 = p.pop("spin_2z")
+
+    p["a_1"] = abs(chi1)
+    p["tilt_1"] = 0.0 if chi1 >= 0 else np.pi
+
+    p["a_2"] = abs(chi2)
+    p["tilt_2"] = 0.0 if chi2 >= 0 else np.pi
+
+    p.setdefault("phi_12", 0.0)
+    p.setdefault("phi_jl", 0.0)
+
+    return p
 
 def make_default_base_injection() -> Dict[str, float]:
     return dict(

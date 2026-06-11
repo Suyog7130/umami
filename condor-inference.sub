@@ -1,0 +1,50 @@
+universe = vanilla
+
+executable = condor-run-inference.sh
+
+# Arguments:
+# 1 label
+# 2 num_injections
+# 3 sampler
+# 4 pe_run_type
+# 5 nlive
+# 6 threshold
+# 7 nessai_npool
+# 8 pytorch_threads
+#
+# Conservative first test:
+# nessai_npool = 8
+# pytorch_threads = 1
+arguments = ml2ml-paper-1 10 nessai ml2ml 300 0.2 8 1
+
+# Match this to nessai_npool * pytorch_threads.
+# For arguments ending in "8 1", request_cpus = 8.
+# For "8 2", use request_cpus = 16.
+# For "8 4", use request_cpus = 32.
+request_cpus = 8
+request_memory = 24 GB
+request_disk = 20 GB
+
+# Keep this CPU-only for now. Do not request GPUs for n_pool > 1.
+# request_gpus = 0
+
+getenv = True
+
+initialdir = /home/suyog.garg/phd-main/umami
+
+output = logs/inference_$(Cluster)_$(Process).out
+error  = logs/inference_$(Cluster)_$(Process).err
+log    = logs/inference_$(Cluster).log
+
+should_transfer_files = NO
+
++JobBatchName = "umami_ml2ml_nessai_test"
+
+# Remove or modify these if CIT requires a specific accounting group.
+accounting_group = ligo.dev.o4.cbc.pe
+accounting_group_user = suyog.garg
+
+# Good safety behavior.
+notification = Error
+
+queue 1
