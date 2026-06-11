@@ -288,15 +288,15 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
     return result
 
 
-def run_injection_campaign(N_injections=50, base_seed=1234, 
+def run_injection_campaign(num_injections=50, base_seed=1234, 
                            label_base='umamipe', outdir=f'../{PROJECT_DIR}/results/',
                            injection_generator=None, waveform_generator=None, 
                            sampler=None, **sampler_kwargs):
     if injection_generator is None or waveform_generator is None:
         raise NotImplementedError("Both injection and waveform generators must be provided")
     results = []
-    for i in tqdm(range(N_injections), desc="Running injections"):
-        logger.info(f"Injection {i+1}/{N_injections}")
+    for i in tqdm(range(num_injections), desc="Running injections"):
+        logger.info(f"Injection {i+1}/{num_injections}")
         res = run_single_injection(i, seed=base_seed, outdir=outdir, label_base=label_base,
                                    injection_generator=injection_generator, waveform_generator=waveform_generator, 
                                    sampler=sampler,**sampler_kwargs)
@@ -340,15 +340,15 @@ def main(args, label='umamipe',
         nworkers = min(3, mp.cpu_count() - 1)
         sampler_kwargs = dict(
             nlive=args.nlive,
-            n_pool=1,
-            pytorch_threads=1,   # limit PyTorch to 1 thread per worker!
-            # npool=nworkers, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
+            n_pool=args.nessai_npool,  # Set this arg for nessai's multiprocessing that can use GPU workers!
+            pytorch_threads=args.pytorch_threads,   # limit PyTorch to 1 thread per worker!
+            npool=args.dynesty_npool, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
             flow_proposal_class='flowproposal',     # 'gwflowproposal' instead reparameterisation full 15D space!
             reparameterisations=None,  
             # max_iteration=7500,    # NOTE: This forces nessai to abruptly end, leaving results JSON file incomplete!
             stopping=args.threshold,    # Stop if log evidence `dlogZ` value is this much or less!
             reset_flow=16,          # Periodic reset to clear "stuck" AI states
-            analytic_priors=True,  # this is a bool, to indicate directly supplying prior samples.
+            analytic_priors=True,  # this is a bool, to indicate directly using supplying prior samples.
         )
     else:
         logger.info("Not using multiprocessing. Running sampler in single-process mode.")
@@ -357,7 +357,7 @@ def main(args, label='umamipe',
             dlogz=args.threshold,
             naccept=10,
             sample="acceptance-walk",
-            npool=8,  # Set this arg for Bilby's internal multiprocessing that only works on CPU!
+            npool=args.dynesty_npool,  # Set this arg for Bilby's internal multiprocessing that only works on CPU!
         )
 
     project_dir = '../' + args.project_dir + '/'
@@ -418,7 +418,7 @@ def main(args, label='umamipe',
                                                                'config_path': args.model_config})
         logger.info("Initialized EOB waveform generator for injection and ML waveform generator for recovery.")
 
-    results = run_injection_campaign(N_injections=3, 
+    results = run_injection_campaign(num_injections=args.num_injections, 
                                      base_seed=42,
                                      injection_generator=injection_generator, 
                                      waveform_generator=waveform_generator,
@@ -480,7 +480,13 @@ if __name__ == "__main__":
                         help="Number of live points for the sampler (default: %(default)s)")
     parser.add_argument('--threshold', type=float, default=0.1,
                         help="Stopping threshold for the sampler (default: %(default)s)")
-    
+    parser.add_argument('--nessai-npool', type=int, default=1,
+                        help="Number of workers for nessai's multiprocessing kwarg `n_pool` (default: %(default)s)")
+    parser.add_argument('--dynesty-npool', type=int, default=1,
+                        help="Number of workers for dynesty's multiprocessing kwarg `npool` (default: %(default)s)")
+    parser.add_argument('--pytorch-threads', type=int, default=1,
+                        help="Number of threads for PyTorch (default: %(default)s)")
+
     parser.add_argument('--with-original-model', action='store_true',
                         help="Whether to use the original CVAE model instead of the FlexCVAE (default: False)")
     
