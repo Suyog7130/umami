@@ -47,8 +47,9 @@ export PYTHONUNBUFFERED=1
 
 # Activate your environment.
 # Modify this path/name if needed.
-source "${HOME}/.bashrc"
-conda activate phd
+# source "${HOME}/.bashrc"
+# conda activate phd
+PYTHON_EXE="/home/suyog.garg/.conda/envs/phd/bin/python3"
 
 echo "Python path:"
 which python3
@@ -62,6 +63,18 @@ echo "OPENBLAS_NUM_THREADS=${OPENBLAS_NUM_THREADS}"
 echo "TORCH_NUM_THREADS=${TORCH_NUM_THREADS}"
 
 mkdir -p logs
+
+echo "Checking Python executable..."
+ls -l "${PYTHON_EXE}"
+"${PYTHON_EXE}" --version
+
+echo "Checking core imports..."
+"${PYTHON_EXE}" -c "import sys; print(sys.executable)"
+"${PYTHON_EXE}" -c "import torch; print('torch', torch.__version__)"
+"${PYTHON_EXE}" -c "import bilby; print('bilby', bilby.__version__)"
+"${PYTHON_EXE}" -c "import nessai; print('nessai import ok')"
+
+echo "Running inference.py..."
 
 python3 inference.py \
     --label "${LABEL}" \
