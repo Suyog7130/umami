@@ -28,8 +28,6 @@ request_disk = 20 GB
 # Keep this CPU-only for now. Do not request GPUs for n_pool > 1.
 # request_gpus = 0
 
-getenv = True
-
 initialdir = /home/suyog.garg/phd-main/umami
 
 output = logs/inference_$(Cluster)_$(Process).out
@@ -37,6 +35,13 @@ error  = logs/inference_$(Cluster)_$(Process).err
 log    = logs/inference_$(Cluster).log
 
 should_transfer_files = NO
+
+
+# Admin disabled getenv=True, so pass only what we need.
+# Keep CUDA hidden for CPU multiprocessing safety.
+# getenv = True
+environment = "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 TORCH_NUM_THREADS=1 PYTHONUNBUFFERED=1"
+
 
 +JobBatchName = "umami_ml2ml_nessai_test"
 
