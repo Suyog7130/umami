@@ -124,9 +124,14 @@ def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
     waveforms = {'plus': hplus, 'cross': hcross}
 
     distance_scale_factor = kwargs.get('distance_scale_factor', None)
+    luminosity_distance = kwargs.get('luminosity_distance', 1.0)
     if distance_scale_factor is not None:
         waveforms['plus'] /= distance_scale_factor
         waveforms['cross'] /= distance_scale_factor
+    elif luminosity_distance != 1.0:
+        waveforms['plus'] /= luminosity_distance
+        waveforms['cross'] /= luminosity_distance
+    logger.info(f"Applied distance scaling to waveforms with distance_scale_factor: {distance_scale_factor} and luminosity_distance: {luminosity_distance}")
 
     # fig, ax = plt.subplots(figsize=(12, 5))
     # ax.plot(np.arange(len(waveforms['plus'])), waveforms['plus'], label='hp')

@@ -44,6 +44,7 @@ SAMPLE_RATE = 8192  # Hz
 DURATION = 1.0  # seconds
 FMIN = 20.0  # Hz
 FREF = 50.0  # Hz
+LUMINOSITY_DISTANCE = 400.0  # Mpc, should be same as for the ML waveform training data, to avoid bias in amplitudes!
 
 
 if torch.cuda.is_available():
@@ -70,7 +71,7 @@ def make_default_base_injection() -> Dict[str, float]:
         tilt_2=0.0,
         phi_12=0.0,
         phi_jl=0.0,
-        luminosity_distance=400.0,  # NOTE: This should be same as for the ML waveform training data, to avoid bias in amplitudes!
+        luminosity_distance=LUMINOSITY_DISTANCE,
         theta_jn=0.4,
         psi=2.659,
         phase=1.3,
@@ -244,7 +245,6 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
         rng_seed=seed + run_idx if seed is not None else None
     )
 
-
     ifos.set_strain_data_from_power_spectral_densities(
         sampling_frequency=SAMPLE_RATE,
         duration=DURATION,
@@ -326,7 +326,8 @@ def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = None):
             time_domain_source_model=None,   # We will load ML model at initialization!
             parameter_conversion=convert_to_ml_parameters,
             waveform_arguments={'model_path': wfkwargs.get('model_path'), 
-                                'config_path': wfkwargs.get('config_path')},
+                                'config_path': wfkwargs.get('config_path'),
+                                'distance_scale_factor': LUMINOSITY_DISTANCE},
             )
 
 
@@ -338,22 +339,22 @@ def main(args, label='umamipe',
         logger.info("Using multiprocessing with spawn context for parallel sampling.")
         nworkers = min(3, mp.cpu_count() - 1)
         sampler_kwargs = dict(
-            nlive=750,
+            nlive=args.nlive,
             n_pool=1,
-            pytorch_threads=nworkers,
-            npool=1, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
+            pytorch_threads=1,   # limit PyTorch to 1 thread per worker!
+            # npool=nworkers, # Set this arg for Bilby's internal multiprocessing that only works on CPU!
             flow_proposal_class='flowproposal',     # 'gwflowproposal' instead reparameterisation full 15D space!
             reparameterisations=None,  
             # max_iteration=7500,    # NOTE: This forces nessai to abruptly end, leaving results JSON file incomplete!
-            stopping=0.1,   # Stop if log evidence `logZ` doesn't improve by this amt, ignored if not supplied!
-            # reset_flow=16,          # Periodic reset to clear "stuck" AI states
+            stopping=args.threshold,    # Stop if log evidence `dlogZ` value is this much or less!
+            reset_flow=16,          # Periodic reset to clear "stuck" AI states
             analytic_priors=True,  # this is a bool, to indicate directly supplying prior samples.
         )
     else:
         logger.info("Not using multiprocessing. Running sampler in single-process mode.")
         sampler_kwargs = dict(
-            nlive=100,
-            dlogz=0.5,
+            nlive=args.nlive,
+            dlogz=args.threshold,
             naccept=10,
             sample="acceptance-walk",
             npool=8,  # Set this arg for Bilby's internal multiprocessing that only works on CPU!
@@ -463,18 +464,22 @@ if __name__ == "__main__":
                         help="Label for the analysis (default: umamipe)")
     
     parser.add_argument('--project-dir', type=str, choices=['cvae@taiwan', 'v0p1', '@alvin', '@korea'], 
-                        default=PROJECT_DIR, help="Base directory for the project (default: v0p1)")
+                        default=PROJECT_DIR, help="Base directory for the project (default: %(default)s)")
     parser.add_argument('--model-config', type=str, default='modelconfig-cvae-paper-I',
-                        help="Name of the model configuration JSON file (default: None)")
+                        help="Name of the model configuration JSON file (default: %(default)s)")
     parser.add_argument('--model-name', type=str, default='model-20251004_072338-10',
-                        help="Name of the trained model checkpoint (default: None)")
+                        help="Name of the trained model checkpoint (default: %(default)s)")
     
     parser.add_argument('--num-injections', type=int, default=50,
-                        help="Number of injections to run in the campaign (default: 50)")
+                        help="Number of injections to run in the campaign (default: %(default)s)")
     parser.add_argument('--sampler', type=str, choices=['nessai', 'dynesty'], default='nessai',
                         help="Sampler to use for parameter estimation: 'nessai' for neural density estimation sampler, 'dynesty' for nested sampling (default: nessai)")
     parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml'], default='ml2ml',
                         help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
+    parser.add_argument('--nlive', type=int, default=300,
+                        help="Number of live points for the sampler (default: %(default)s)")
+    parser.add_argument('--threshold', type=float, default=0.1,
+                        help="Stopping threshold for the sampler (default: %(default)s)")
     
     parser.add_argument('--with-original-model', action='store_true',
                         help="Whether to use the original CVAE model instead of the FlexCVAE (default: False)")
