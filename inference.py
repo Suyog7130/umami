@@ -505,8 +505,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     init_logging(args, log_dir=f'../{PROJECT_DIR}/logs/{TODAY}')
 
-    # logging.getLogger("bilby").setLevel(logging.INFO)  # Allow INFO level logs from Bilby to be printed, but suppress DEBUG logs
-    logging.getLogger("nessai").setLevel(logging.INFO)  # Allow INFO level logs from nessai to be printed, but suppress DEBUG logs
+    logging.getLogger("bilby").setLevel(logging.INFO)  # Allow INFO level logs from Bilby to be printed, but suppress DEBUG logs
 
     # Force PyTorch's spawn context globally
     mp.set_start_method('spawn', force=True)
