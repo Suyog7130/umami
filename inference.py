@@ -112,9 +112,6 @@ def make_analysis_priors(
 
     Fixed parameters become delta-function priors at injected values.
     Active parameters are sampled.
-
-    spin_magnitudes=True means a_1, a_2 are non-negative spin magnitudes.
-    If you truly want signed aligned spins, use different parameter names.
     """
 
     priors = bilby.gw.prior.BBHPriorDict()
@@ -282,9 +279,13 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
         outdir=outdir,
         label=this_label,
         resume=False,
+        save=True,
         **sampler_kwargs
     )
     logger.info(f"Completed sampler for injection {run_idx} with label {this_label}.")
+
+    # Make a corner plot.
+    result.plot_corner(save=True, filename=f'{this_label}_corner.png')
     return result
 
 
@@ -377,31 +378,7 @@ def main(args, label='umamipe',
             raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
     logger.info(f"Using MODEL_PATH: {model_path}")
 
-    # configpath = args.model_config
-    # if configpath is not None:
-    #     if not configpath.endswith('.json'):
-    #         configpath += '.json'
-    #     if not os.path.isfile(configpath):
-    #         logger.error(f"Provided MODEL_CONFIG path does not exist: {configpath}")
-    #         raise FileNotFoundError(f"MODEL_CONFIG file not found at {configpath}")
-    #     logger.info(f"Using MODEL_CONFIG: {configpath}")
-    #     MODEL_CONFIG = json.load(open(configpath, 'r'))
-
-    # if args.with_original_model:
-    #     # Load the trained model
-    #     preset_array_size = 8190
-    #     num_classes = 4
-    #     model = CVAE(input_shape=(2, preset_array_size), num_classes=num_classes, key_shape=(2,2),
-    #                  MODEL_CONFIG=MODEL_CONFIG)
-    #     model.load_state_dict(torch.load(model_path, map_location=DEVICE))
-    #     model.to(getattr(torch, PRECISION))
-    #     model.to(DEVICE)
-    #     model.eval()
-    #     logger.info("Model loaded and set to evaluation mode.")
-
-    # else:
-    # model = load_flex_model(model_path=model_path, 
-    #                         configpath=args.model_config)
+    # TODO: For EOB waveforms, priors should be [m_1, m_2, a_1, a_2, tilt_1, tilt_2], since otherwise the "spin1z" and "spin2z" parameters will be ignored by the EOB waveform generator, since internally Bilby requires aforementioned parameter names, and then uses its the `bilby_to_lal_bbh_...` function to convert them to LAL parameters, before calling the waveform model.
 
     if pe_run_type == 'eob2eob':
         injection_generator = make_wf_generator('eob')
@@ -440,12 +417,6 @@ def analyze_results(fname: str = None, results: Optional[List[bilby.gw.result.CB
             fname += '.json'
         results = bilby.gw.result.CBCResult.from_json(f"{outdir}/{fname}")
 
-    # Plot the inferred waveform superposed on the actual data.
-    results[0].plot_waveform_posterior(n_samples=100)
-
-    # Make a corner plot.
-    results[0].plot_corner(save=True, filename=f'{label}_corner.png')
-
     # Bilby built-in PP plot
     fig, pvals = make_pp_plot(
         results,
@@ -453,6 +424,9 @@ def analyze_results(fname: str = None, results: Optional[List[bilby.gw.result.CB
         save=True,
     )
     print("Combined p-value:", pvals.combined_pvalue)
+
+    # Plot the inferred waveform superposed on the actual data.
+    results[0].plot_waveform_posterior(n_samples=100)
 
     logger.info("Saved PP plot, waveform posterior plot, and corner plot for the first injection result.")
 
@@ -494,7 +468,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     init_logging(args, log_dir=f'../{PROJECT_DIR}/logs/{TODAY}')
 
-    logging.getLogger("bilby").setLevel(logging.INFO)  # Allow INFO level logs from Bilby to be printed, but suppress DEBUG logs
+    # logging.getLogger("bilby").setLevel(logging.INFO)  # Allow INFO level logs from Bilby to be printed, but suppress DEBUG logs
     logging.getLogger("nessai").setLevel(logging.INFO)  # Allow INFO level logs from nessai to be printed, but suppress DEBUG logs
 
     # Force PyTorch's spawn context globally
