@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 LABEL="${1:-ml2ml-paper-1}"
 NUM_INJECTIONS="${2:-10}"

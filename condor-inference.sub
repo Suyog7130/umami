@@ -28,7 +28,7 @@ request_disk = 20 GB
 # Keep this CPU-only for now. Do not request GPUs for n_pool > 1.
 # request_gpus = 0
 
-initialdir = .
+# initialdir = .
 
 output = logs/inference_$(Cluster)_$(Process).out
 error  = logs/inference_$(Cluster)_$(Process).err
