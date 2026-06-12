@@ -1810,25 +1810,26 @@ class CustomDataset(Dataset):
             if self.target=='unnorm_ampfreq':
                 logging.debug("Returning normalized amp and freq as input, and unnormalized amp and freq as target since `unnorm_target` is True.")
                 # -- Inputs are normalized amp and freq, targets are unnormalized amp and freq.
-                return tuple([out_normed, out_unnormed] + returnables)
-            if self.target=='logamp_freq':
+                input, target = out_normed, out_unnormed
+            elif self.target=='normed_logamp_freq':
                 logging.debug("Returning normalized log-amp and freq as input, and log-amp as target since `logamp_target` is True.")
                 out_logamp_freq = np.vstack((np.log(amp), freq)).astype(getattr(np, self.precision))
                 # -- Inputs and targets are normalized log-amp and freq.
-                return tuple([out_logamp_freq, out_logamp_freq] + returnables)
-            if self.target=='amp_phase':
+                input, target = out_logamp_freq, out_logamp_freq
+            elif self.target=='normed_amp_phase':
                 logging.debug("Returning normalized amp and freq as input, and phase as target since `phase_target` is True.")
                 out_amp_phase = np.vstack((amp, phase)).astype(getattr(np, self.precision))
                 # -- Inputs and targets are normalized amp and phase.
-                return tuple([out_amp_phase, out_amp_phase] + returnables)
-            if self.target=='logamp_phase':
+                input, target = out_amp_phase, out_amp_phase
+            elif self.target=='normed_logamp_phase':
                 logging.debug("Returning normalized log-amp and freq as input, and phase as target since `logamp_phase_target` is True.")
                 out_logamp_phase = np.vstack((np.log(amp), phase)).astype(getattr(np, self.precision))
                 # -- Inputs and targets are normalized log-amp and phase.
-                return tuple([out_logamp_phase, out_logamp_phase] + returnables)
-            logging.debug("Returning normalized amp and freq as both input and target since `unnorm_target` is False.")
-            # -- Default case: Inputs and targets are normalized amp and freq.
-            return tuple([out_normed, out_normed] + returnables)
+                input, target = out_logamp_phase, out_logamp_phase
+                logging.debug("Returning normalized amp and freq as both input and target since `unnorm_target` is False.")
+            else:  # -- Default case: Inputs and targets are normalized amp and freq.
+                input, target = out_normed, out_normed
+            return tuple([input, target] + returnables)
         
     def collate_fn(self, batch):
         """ 
