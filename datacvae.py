@@ -1903,6 +1903,45 @@ class CustomDataset(Dataset):
             return self.read_strain_hdf(idx, write_access=True)
         else:
             return self.make_strain(idx, custom_batch=custom_batch)
+
+    def save_to_input_file(self, savename='input-target-data.hdf',):
+        """
+        Save the Dataset items to a file using the `read_strain_hdf` method.
+        """
+        if self.target is None:
+            keys = ['amp', 'freq']
+        elif self.target=='unnorm_ampfreq':
+            keys = ['unnorm_amp', 'unnorm_freq']
+        elif self.target=='logamp_freq':
+            keys = ['logamp', 'freq']
+        elif self.target=='amp_phase':
+            keys = ['amp', 'phase']
+        elif self.target=='logamp_phase':
+            keys = ['logamp', 'phase']
+
+        # -- labels for input and target data for different kinds of targets.
+        keys_dict = {'unnorm_ampfreq': {'inputkeys': ['normed_amp', 'normed_freq'],
+                                         'targetkeys': ['unnorm_amp', 'unnorm_freq']},
+                'logamp_freq': {'inputkeys': ['logamp', 'normed_freq'], 
+                                'targetkeys': ['logamp', 'normed_freq']},
+                'amp_phase': {'inputkeys': ['normed_amp', 'normed_freq'],
+                                'targetkeys': ['normed_amp', 'phase']},
+                'logamp_phase': {'inputkeys': ['logamp', 'normed_freq'],
+                                'targetkeys': ['logamp', 'phase']}}
+        keys = keys_dict[self.target] if self.target is not None else keys_dict['default']
+        logging.debug(f"Keys for input and target data: {keys}")
+
+        hf = h5py.File(input_fname, 'a')
+
+        for idx in range(self.nsamples):
+            data = self.read_strain_hdf(idx, write_access=False)
+            # Save the data to a new HDF5 file with the same name but with `_input` suffix
+            input_fname = savename if savename.endswith('.hdf') else savename + '_input.hdf'
+            hf.create_group(f'wf{idx}')
+            inputdata, targetdata, _, = data
+
+
+        logging.info(f"Saved dataset items to {input_fname} successfully.")
         
 
 class CustomDataLoader(DataLoader):

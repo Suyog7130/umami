@@ -5,6 +5,7 @@ hyper-parameters and number of layers etc.
 
 import os
 import gc
+import h5py
 import json
 import argparse
 import pandas as pd
@@ -65,6 +66,7 @@ BASE_MODEL_CONFIG = {
 datadir = "../data/"
 train_hdf = datadir + 'SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen'
 val_hdf = datadir + "SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen"
+test_hdf = datadir + "SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen"
 
 # -- get mean and std of labels for normalization
 params_fname = '../data/params-' + APPROXIMANT + '-train-100000-fcutoff-uniform-aligned-regen'
@@ -102,6 +104,86 @@ def set_dataloaders(batch_size=BATCH_SIZE, target=BASE_MODEL_CONFIG['target']):
                                   num_workers=8, pin_memory=False)
     logger.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(valid_set)}")
     return train_loader, val_loader
+
+
+def save_data_from_dataset(savedir='../data/', label='', target=BASE_MODEL_CONFIG['target']):
+    """
+    Save input and target waveform data the datasets
+    """
+    label += f'-{target}'
+    train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=True,
+                            hdf_fname=train_hdf, train_device=DEVICE, precision=PRECISION,
+                            target=target)
+    valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=True,
+                            hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION,
+                            target=target)
+    test_set = CustomDataset(forwhat='test', approximant=APPROXIMANT, returnattr=True,
+                            hdf_fname=test_hdf, train_device=DEVICE, precision=PRECISION,
+                            target=target)
+    train_set.save_to_input_file(savename=savedir+f'inputdata_train_{label}.hdf')
+    valid_set.save_to_input_file(savename=savedir+f'inputdata_val_{label}.hdf')
+    test_set.save_to_input_file(savename=savedir+f'inputdata_test_{label}.hdf')
+
+
+
+class WaveformDataset(torch.utils.data.Dataset):
+    """
+    Custom PyTorch Dataset for loading waveform data from HDF5 files.
+    This is a simplified version that only loads the input waveforms and targets,
+    without labels, keys, strains, or additional attributes.
+    """
+    def __init__(self, hdf_fname, target=BASE_MODEL_CONFIG['target'], train_device=DEVICE, precision=PRECISION):
+        super(WaveformDataset, self).__init__()
+        self.hdf_fname = hdf_fname
+        self.target = target
+        self.train_device = train_device
+        self.precision = precision
+        assert self.params_mean is None or self.params_mean.shape == (4,), f"Expected params_mean to be of shape (4,), but got {self.params_mean.shape}"
+        assert self.params_std is None or self.params_std.shape == (4,), f"Expected params_std to be of shape (4,), but got {self.params_std.shape}"
+        self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
+
+    def __len__(self):
+        return len(self.data_file.keys())  # number of groups in the HDF file, which corresponds to the number of data samples
+    
+    def init_hdf(self):
+        # -- check if the HDF file exists, if not, create an empty HDF file with the same name, so that we can write to it later on in the `get_calibrator_input` function without having to worry about file not found errors.
+        data_hdf = self.data_hdf + '.hdf' if not self.data_hdf.endswith('.hdf') else self.data_hdf
+        data_path = f'../data/{data_hdf}'
+
+        if not os.path.exists(data_path):
+            with h5py.File(data_path, 'w') as f:
+                pass  # just create an empty HDF file
+            logger.info(f"Created empty HDF file at {data_path} for storing calibrator input and target residuals.")
+        else:
+            logger.info(f"HDF file {data_path} already exists. Will read from it or append to it when generating calibrator input and target residuals.")
+
+        # open the HDF file for reading in the dataset initialization, so that we can read from it in the `__getitem__` method without having to open and close the file every time, which is inefficient. We will keep this file open for the lifetime of the dataset, and close it when the dataset is deleted.
+        self.data_file = h5py.File(data_path, 'r')
+        logger.info(f"Opened HDF file {data_path} for reading calibrator input and target residuals in the CalibratorDataset.")
+
+    def close_hdf(self):
+        # close the HDF file when the dataset is deleted, to free up resources
+        if hasattr(self, 'data_file') and self.data_file is not None:
+            self.data_file.close()
+            logger.info(f"Closed HDF file {self.data_hdf} after reading calibrator input and target residuals.")
+
+    def __del__(self):
+        self.close_hdf()
+
+    def read_data_from_hdf(self, idx):
+        # -- read the input waveform and target residual from the HDF file for the given index, and return them as tensors
+        group_name = f'sample_{idx}'
+        if group_name not in self.data_file:
+            logger.error(f"Group {group_name} not found in HDF file {self.data_hdf}. Cannot read data for index {idx}.")
+            raise KeyError(f"Group {group_name} not found in HDF file {self.data_hdf}.")
+        group = self.data_file[group_name]
+        x = torch.tensor(group['input_waveform'][:], dtype=getattr(torch, self.precision)).to(self.train_device)
+        target = torch.tensor(group['target_residual'][:], dtype=getattr(torch, self.precision)).to(self.train_device)
+        return x, target
+
+    def __getitem__(self, idx):
+        return self.read_data_from_hdf(idx)
+
 
 def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase}, 
              train_loader=None, val_loader=None,
@@ -633,14 +715,19 @@ if __name__ == "__main__":
                         help="Model type for Optuna or Training study naming")
     parser.add_argument('--trials', type=int, default=20, 
                         help="Number of Optuna trials to run")
-    parser.add_argument('--train', action='store_true', 
-                        help="Run training with specified hyperparameters")
     parser.add_argument('--model-config', type=str, default=None,
                         help="Path to JSON file containing model configuration for training")
     parser.add_argument('--model-path', type=str, default=None,
                         help="Path to pre-trained model checkpoint")
     parser.add_argument('--epochs', type=int, default=EPOCHS,
                         help="Number of epochs for training (default: EPOCHS)")
+    parser.add_argument('--label', type=str, default=None,
+                        help="Additional label to add to saved model and log filenames for better identification")
+    
+    parser.add_argument('--train', action='store_true', 
+                        help="Run training with specified hyperparameters")
+    parser.add_argument('--save-data-from-dataset', action='store_true',
+                        help="Save input and target data from main datasets for easier loading during training.")
     
     parser.add_argument('--dummyrun', action='store_true',
                         help="Run a dummy training with 10 batches for training loop testing and debugging! 'dummy' also works for this flag, so you can use --dummy or --dummyrun (dunno why?)")
@@ -690,6 +777,9 @@ if __name__ == "__main__":
         run_training(configpath=args.model_config,
                      model_path=args.model_path,
                      epochs=args.epochs, datafrac=1.0)
+    elif args.save_data_from_dataset:
+        logger.info("Saving input and target data from main datasets for easier loading during training!")
+        save_data_from_dataset(label='')
         
     elif args.dummyrun:
         logger.info("Running dummy training with 10 batches for training loop testing and debugging!")
