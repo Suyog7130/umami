@@ -392,8 +392,8 @@ def main(args, label='umamipe',
          pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml', 
          sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',):
     label = label + f'_{pe_run_type}_{sampler}'
-    project_dir = '../' + args.project_dir + '/'
-    outdir = os.path.join(project_dir, f'results/{TODAY}')
+    project_dir = f'../{args.project_dir}/'
+    outdir = os.path.join(project_dir, f'results/{TODAY}/')
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
