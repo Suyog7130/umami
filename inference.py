@@ -346,8 +346,9 @@ def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = None):
             waveform_arguments={'model_path': wfkwargs.get('model_path'), 
                                 'config_path': wfkwargs.get('config_path'),
                                 'distance_scale_factor': LUMINOSITY_DISTANCE},
-            )
-    
+        )
+    logger.error(f"Invalid waveform generator type: {type}. Must be 'eob' or 'ml'.")
+
 
 def set_sampler_kwargs(args, sampler):
     if sampler=='nessai':
@@ -428,14 +429,24 @@ def main(args, label='umamipe',
 
     sampler_kwargs = set_sampler_kwargs(args, sampler)
 
-    results = run_injection_campaign(num_injections=args.num_injections, 
-                                     base_seed=42,
-                                     injection_generator=injection_generator, 
-                                     waveform_generator=waveform_generator,
-                                     label_base=label+f'_{NOW}', 
-                                     outdir=outdir,
-                                     sampler=sampler, 
-                                     **sampler_kwargs)
+    if args.run_one_injection:
+        logger.info(f"Running a single injection and PE, for index {args.injection_index}...")
+        results = run_single_injection(args.injection_index, seed=42, 
+                                        label_base=label, outdir=outdir,
+                                       injection_generator=injection_generator, 
+                                       waveform_generator=waveform_generator, 
+                                       sampler=sampler, **sampler_kwargs)
+    elif args.run_pe_campaign:
+        logger.info(f"Running a PE campaign with {args.num_injections} injections...")
+
+        results = run_injection_campaign(num_injections=args.num_injections, 
+                                        base_seed=42,
+                                        injection_generator=injection_generator, 
+                                        waveform_generator=waveform_generator,
+                                        label_base=label+f'_{NOW}', 
+                                        outdir=outdir,
+                                        sampler=sampler, 
+                                        **sampler_kwargs)
     
     # -- Save all args and config to a results config JSON file!
     config_snapshot = {
@@ -443,6 +454,7 @@ def main(args, label='umamipe',
         'pe_run_type': pe_run_type,
         'sampler': sampler,
         'sampler_kwargs': sampler_kwargs,
+        'base_seed': 42,
     }
     # -- convert any non-serializable objects in config_snapshot to strings or dicts
     for key, value in config_snapshot['sampler_kwargs'].items():
@@ -462,7 +474,8 @@ def main(args, label='umamipe',
 
 
 
-def analyze_results(fname: str = None, results: Optional[List[bilby.gw.result.CBCResult]] = None,
+def analyze_results(fname: str = None, 
+                    results: Optional[List[bilby.gw.result.CBCResult]] = None,
                     label: str = 'umamipe',
                     outdir: str = f'../{PROJECT_DIR}/results/'):
     
@@ -470,6 +483,8 @@ def analyze_results(fname: str = None, results: Optional[List[bilby.gw.result.CB
         if not fname.endswith('.json'):
             fname += '.json'
         results = bilby.gw.result.CBCResult.from_json(f"{outdir}/{fname}")
+    if not isinstance(results, list):
+        results = [results]
 
     # Bilby built-in PP plot
     fig, pvals = make_pp_plot(
@@ -480,7 +495,7 @@ def analyze_results(fname: str = None, results: Optional[List[bilby.gw.result.CB
     print("Combined p-value:", pvals.combined_pvalue)
 
     # Plot the inferred waveform superposed on the actual data.
-    results[0].plot_waveform_posterior(n_samples=100)
+    # results[0].plot_waveform_posterior(n_samples=100)
     logger.info("Saved PP plot, waveform posterior plot, and corner plot for the first injection result.")
 
 
@@ -497,12 +512,23 @@ if __name__ == "__main__":
     parser.add_argument('--model-name', type=str, default='model-20251004_072338-10',
                         help="Name of the trained model checkpoint (default: %(default)s)")
     
+    parser.add_argument('--results-fname', type=str, default=None,
+                        help="Filename of the results JSON file to analyze in analyze-only mode (default: None, required if --analyze-only is set)")
+    parser.add_argument('--results-run-index-start', type=int, default=1,
+                        help="Starting index of the injection runs to analyze (default: %(default)s)")
+    parser.add_argument('--results-run-index-end', type=int, default=50,
+                        help="Ending index of the injection runs to analyze (default: %(default)s)")
+    
     parser.add_argument('--num-injections', type=int, default=50,
                         help="Number of injections to run in the campaign (default: %(default)s)")
-    parser.add_argument('--sampler', type=str, choices=['nessai', 'dynesty', 'pocomc'], default='nessai',
-                        help="Sampler to use for parameter estimation: 'nessai' for neural density estimation sampler, 'dynesty' for nested sampling, 'pocomc' for preconditioned Monte Carlo (default: nessai)")
+    parser.add_argument('--injection-index', type=int, default=1,
+                        help="Index of the specific injection to run (default: %(default)s)")
+    
     parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml'], default='ml2ml',
                         help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
+    parser.add_argument('--sampler', type=str, choices=['nessai', 'dynesty', 'pocomc'], default='nessai',
+                        help="Sampler to use for parameter estimation: 'nessai' for neural density estimation sampler, 'dynesty' for nested sampling, 'pocomc' for preconditioned Monte Carlo (default: nessai)")
+    
     parser.add_argument('--nlive', type=int, default=300,
                         help="Number of live points for the sampler (default: %(default)s)")
     parser.add_argument('--threshold', type=float, default=0.1,
@@ -519,6 +545,14 @@ if __name__ == "__main__":
     parser.add_argument('--with-original-model', action='store_true',
                         help="Whether to use the original CVAE model instead of the FlexCVAE (default: False)")
     
+    methodargs = parser.add_mutually_exclusive_group(required=True)
+    methodargs.add_argument('--run-one-injection', action='store_true',
+                              help="Whether to run a single injection (default: False)")
+    methodargs.add_argument('--run-pe-campaign', action='store_true', 
+                              help="Whether to run the full PE campaign (default: False)")
+    methodargs.add_argument('--analyze-only', action='store_true', 
+                              help="Whether to only analyze results from a previous run, using the provided JSON file (default: False)")
+    
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
     init_logging(args, log_dir=f'../{PROJECT_DIR}/logs/{TODAY}')
@@ -527,9 +561,16 @@ if __name__ == "__main__":
     mp.set_start_method('spawn', force=True)
 
 
-    main(args, label=args.label, 
-         pe_run_type=args.pe_run_type,
-         sampler=args.sampler,)
+    if args.run_one_injection:
+        logger.info("Running a single injection and PE...")
+    elif args.run_pe_campaign:
+        logger.info(f"Running a PE campaign with {args.num_injections} injections...")
+        main(args, label=args.label, 
+            pe_run_type=args.pe_run_type,
+            sampler=args.sampler,)
+    elif args.analyze_only:
+        logger.info("Running in analyze-only mode. Will analyze results from a previous run using the provided JSON file.")
+        analyze_results(fname=args.results_fname, label=args.label, outdir=f'../{PROJECT_DIR}/results/{TODAY}')
 
     # analyze_results(fname='ml2ml-4d_20260607-153120_inj_0001_result.json', 
     #                 label=args.label, 

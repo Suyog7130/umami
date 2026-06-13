@@ -212,6 +212,9 @@ class MLWaveformGenerator(WaveformGenerator):
     We will use the `generate()` method of the ML model to produce the waveform, 
     and then return it in the format expected by Bilby.
     """
+
+    _cached_model = None
+
     def __init__(self, **kwargs):
         time_domain_source_model = kwargs.get('time_domain_source_model', None)
         frequency_domain_source_model = kwargs.get('frequency_domain_source_model', None)
@@ -258,6 +261,9 @@ class MLWaveformGenerator(WaveformGenerator):
             else:
                 logger.info(f"Model parameter '{name}' is already on the correct device: {device}.")
 
+    # TODO: Saving `results` obj fails because `time_domain_source_model` is a method and cannot be serialized.
+    # NOTE: I can `bilby.core.utils.io.BilbyJSONEncoder` to accept `method` type, using:
+    # ` or inspect.ismethod(obj)` but, this would then be specific to my conda environment!
     def get_ml_waveform(self, time_array, **kwargs):
         return get_td_SEOBNRv4ml(time_array, model=self.loaded_mlmodel, **kwargs)
     
