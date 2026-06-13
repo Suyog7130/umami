@@ -66,7 +66,19 @@ logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 bilby.core.utils.random.seed(42)
 
 
-def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
+CACHED_MLMODEL = None
+
+
+def set_cached_mlmodel(model):
+    global CACHED_MLMODEL
+    CACHED_MLMODEL = model
+    logger.info("ML model cached successfully for future use in waveform generation.")
+
+def get_cached_mlmodel():
+    return CACHED_MLMODEL
+
+
+def get_td_SEOBNRv4ml(time_array, **kwargs):
     """
     Generate a waveform using the ML model based on the input parameters.
 
@@ -98,6 +110,7 @@ def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
     which we will use to load the model and generate the waveform!
     """
     logger.info(f"Received parameters for waveform generation: {kwargs}")
+    model = get_cached_mlmodel()
     if model is None:
         logger.warning("No ML model provided to get_td_SEOBNRv4ml. We will initialize the model using the provided model_path and config_path in kwargs!")
         # mlmodel=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
@@ -106,6 +119,7 @@ def get_td_SEOBNRv4ml(time_array, model=None, **kwargs):
         model = load_flex_model(model_path=kwargs['model_path'], 
                                 configpath=kwargs['config_path'], 
                                 device=DEVICE, precision=PRECISION)
+        set_cached_mlmodel(model)
     
     parameters = {model_param: kwargs[model_param] for model_param in ['mass_1', 'mass_2', 'spin_1z', 'spin_2z']}
     labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
@@ -212,9 +226,6 @@ class MLWaveformGenerator(WaveformGenerator):
     We will use the `generate()` method of the ML model to produce the waveform, 
     and then return it in the format expected by Bilby.
     """
-
-    _cached_model = None
-
     def __init__(self, **kwargs):
         time_domain_source_model = kwargs.get('time_domain_source_model', None)
         frequency_domain_source_model = kwargs.get('frequency_domain_source_model', None)
@@ -239,7 +250,8 @@ class MLWaveformGenerator(WaveformGenerator):
         logger.info(f"Initializing ML model with model_path: {model_path} and config_path: {config_path}")
         self.loaded_mlmodel = load_flex_model(model_path=model_path, configpath=config_path, 
                                               device=None, precision=None)
-        self.time_domain_source_model = self.get_ml_waveform
+        set_cached_mlmodel(self.loaded_mlmodel)
+        self.time_domain_source_model = get_td_SEOBNRv4ml
         self.frequency_domain_source_model = None  # We will only use the time-domain model for now!
         logger.info("ML model initialized for waveform generation in MLWaveformGenerator.")
 
@@ -265,6 +277,9 @@ class MLWaveformGenerator(WaveformGenerator):
     # NOTE: I can `bilby.core.utils.io.BilbyJSONEncoder` to accept `method` type, using:
     # ` or inspect.ismethod(obj)` but, this would then be specific to my conda environment!
     def get_ml_waveform(self, time_array, **kwargs):
+        """ DEPRECATED!
+        This method is now replaced by `get_td_SEOBNRv4ml` function and CACHED_MODEL global variable.
+        """
         return get_td_SEOBNRv4ml(time_array, model=self.loaded_mlmodel, **kwargs)
     
     def time_domain_strain(self, parameters=None):
