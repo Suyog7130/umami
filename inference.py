@@ -364,7 +364,7 @@ def main(args, label='umamipe',
             flow_proposal_class='flowproposal',     # 'gwflowproposal' instead reparameterisation full 15D space!
             reparameterisations=None,  
             # max_iteration=7500,    # NOTE: This forces nessai to abruptly end, leaving results JSON file incomplete!
-            stopping=args.threshold,    # Stop if log evidence `dlogZ` value is this much or less!
+            stopping=args.threshold,    # Stop if log evidence `logZ` value will change by less than this amount in next iteration!
             reset_flow=16,          # Periodic reset to clear "stuck" AI states
             analytic_priors=True,  # this is a bool, to indicate directly using supplying prior samples.
         )
@@ -490,7 +490,7 @@ if __name__ == "__main__":
     parser.add_argument('--nlive', type=int, default=300,
                         help="Number of live points for the sampler (default: %(default)s)")
     parser.add_argument('--threshold', type=float, default=0.1,
-                        help="Stopping threshold for the sampler (default: %(default)s)")
+                        help="Stopping threshold for the sampler, corresponding to the change in the log evidence `logZ` in the next iteration. If the change falls below this threshold, the sampler will stop! (default: %(default)s)")
     parser.add_argument('--nessai-npool', type=int, default=1,
                         help="Number of workers for nessai's multiprocessing kwarg `n_pool` (default: %(default)s)")
     parser.add_argument('--dynesty-npool', type=int, default=1,
