@@ -351,9 +351,9 @@ def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = None):
 
 def main(args, label='umamipe', 
          pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml', 
-         sampler: {'nessai', 'dynesty'} = 'nessai',):
+         sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',):
 
-    if sampler == 'nessai':
+    if sampler=='nessai':
         logger.info("Using multiprocessing with spawn context for parallel sampling.")
         nworkers = min(3, mp.cpu_count() - 1)
         sampler_kwargs = dict(
@@ -367,6 +367,16 @@ def main(args, label='umamipe',
             stopping=args.threshold,    # Stop if log evidence `logZ` value will change by less than this amount in next iteration!
             reset_flow=16,          # Periodic reset to clear "stuck" AI states
             analytic_priors=True,  # this is a bool, to indicate directly using supplying prior samples.
+        )
+    elif sampler=='pocomc':
+        logger.info("Using the preconditioned Monte Carlo sampler (pocoMC)!")
+        sampler_kwargs = dict(
+            # NOTE: Bilby by default removes the "vectorize" behaviour from any samplers that support it, since the waveforms that are supported by Bilby cannot generate data in batches!!! Thus, "pocomc" also basically the same amount of time as `nessai` or more!
+            vectorize=True,   # THIS IS IGNORED!
+            npool=args.npool,
+            n_active=args.nlive,
+            save_every=15,  # Save intermediate results every 15 iterations (default: 5)
+            track_sampling_time=True,
         )
     else:
         logger.info("Not using multiprocessing. Running sampler in single-process mode.")
@@ -483,8 +493,8 @@ if __name__ == "__main__":
     
     parser.add_argument('--num-injections', type=int, default=50,
                         help="Number of injections to run in the campaign (default: %(default)s)")
-    parser.add_argument('--sampler', type=str, choices=['nessai', 'dynesty'], default='nessai',
-                        help="Sampler to use for parameter estimation: 'nessai' for neural density estimation sampler, 'dynesty' for nested sampling (default: nessai)")
+    parser.add_argument('--sampler', type=str, choices=['nessai', 'dynesty', 'pocomc'], default='nessai',
+                        help="Sampler to use for parameter estimation: 'nessai' for neural density estimation sampler, 'dynesty' for nested sampling, 'pocomc' for preconditioned Monte Carlo (default: nessai)")
     parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml'], default='ml2ml',
                         help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
     parser.add_argument('--nlive', type=int, default=300,
@@ -495,6 +505,8 @@ if __name__ == "__main__":
                         help="Number of workers for nessai's multiprocessing kwarg `n_pool` (default: %(default)s)")
     parser.add_argument('--dynesty-npool', type=int, default=1,
                         help="Number of workers for dynesty's multiprocessing kwarg `npool` (default: %(default)s)")
+    parser.add_argument('--npool', type=int, default=1,
+                        help="Number of workers for Bilby's internal multiprocessing or for the sampler (default: %(default)s)")
     parser.add_argument('--pytorch-threads', type=int, default=1,
                         help="Number of threads for PyTorch (default: %(default)s)")
 
