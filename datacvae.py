@@ -57,6 +57,7 @@ from sklearn import metrics
 from datetime import datetime
 
 import logging
+logger = logging.getLogger(__name__)
 
 import sys
 sys.path.append('~Dropbox/plotutils-work/plotutils/')
@@ -169,37 +170,37 @@ def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
                     masses.append([m1,m2])
 
     masses = np.random.permutation(np.array(masses))
-    logging.debug(f'type(masses)={type(masses)}')
+    logger.debug(f'type(masses)={type(masses)}')
     if not splitTT:
-        logging.debug(f'type(masses)={type(masses)}')
+        logger.debug(f'type(masses)={type(masses)}')
         return masses
 
     if splitTT:
         ntraining = int(ntraining*len(masses))
         nvald = int(nvald*len(masses))
         ntest = int(ntest*len(masses))
-        logging.debug(f'Training: {ntraining}, Validation: {nvald}, Testing: {ntest}')
+        logger.debug(f'Training: {ntraining}, Validation: {nvald}, Testing: {ntest}')
 
-    logging.debug(f'type(masses)={type(masses)}')
+    logger.debug(f'type(masses)={type(masses)}')
     if not splitTT:
-        logging.debug(f'type(masses)={type(masses)}')
+        logger.debug(f'type(masses)={type(masses)}')
         return masses
 
     if splitTT:
         ntraining = int(ntraining*len(masses))
         nvald = int(nvald*len(masses))
         ntest = int(ntest*len(masses))
-        logging.debug(f'Training: {ntraining}, Validation: {nvald}, Testing: {ntest}')
+        logger.debug(f'Training: {ntraining}, Validation: {nvald}, Testing: {ntest}')
 
         ttsplits = np.split(masses, [ntraining,ntraining+nvald,ntraining+nvald+ntest])
-        logging.debug(f"Training set shape: {ttsplits[0].shape}")
-        logging.debug(f"Validation set shape: {ttsplits[1].shape}")
-        logging.debug(f"Testing set shape: {ttsplits[2].shape}")
-        logging.debug(f'type(ttsplits)={type(ttsplits)}')
-        logging.debug(f"Training set shape: {ttsplits[0].shape}")
-        logging.debug(f"Validation set shape: {ttsplits[1].shape}")
-        logging.debug(f"Testing set shape: {ttsplits[2].shape}")
-        logging.debug(f'type(ttsplits)={type(ttsplits)}')
+        logger.debug(f"Training set shape: {ttsplits[0].shape}")
+        logger.debug(f"Validation set shape: {ttsplits[1].shape}")
+        logger.debug(f"Testing set shape: {ttsplits[2].shape}")
+        logger.debug(f'type(ttsplits)={type(ttsplits)}')
+        logger.debug(f"Training set shape: {ttsplits[0].shape}")
+        logger.debug(f"Validation set shape: {ttsplits[1].shape}")
+        logger.debug(f"Testing set shape: {ttsplits[2].shape}")
+        logger.debug(f'type(ttsplits)={type(ttsplits)}')
 
         if plot:
             fig, ax = plt.subplots(1, 1, figsize=(5,5))
@@ -226,9 +227,9 @@ def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
                 plt.savefig(fname+'.png', dpi=300, transparent=True)
             else:
                 plt.savefig(fname+'.png', dpi=300)
-            logging.info(f"Mass plot saved to {fname+'.png'}")
+            logger.info(f"Mass plot saved to {fname+'.png'}")
             plt.show()
-        logging.debug(f'type(ttsplits)={type(ttsplits)}')
+        logger.debug(f'type(ttsplits)={type(ttsplits)}')
         if plot:
             fig, ax = plt.subplots(1, 1, figsize=(5,5))
             if splitTT:
@@ -254,9 +255,9 @@ def get_mass(m1start=5, m1end=75, m1delta=0.25, m2end=None, m2start=None,
                 plt.savefig(fname+'.png', dpi=300, transparent=True)
             else:
                 plt.savefig(fname+'.png', dpi=300)
-            logging.info(f"Mass plot saved to {fname+'.png'}")
+            logger.info(f"Mass plot saved to {fname+'.png'}")
             plt.show()
-        logging.debug(f'type(ttsplits)={type(ttsplits)}')
+        logger.debug(f'type(ttsplits)={type(ttsplits)}')
         return ttsplits
 
 
@@ -297,7 +298,7 @@ def get_strain (m1, m2, approximant='IMRPhenomD', convert=False,
         strains : array
             Strain values for the two detector.
     """
-    logging.debug('logging started!')
+    logger.debug('logging started!')
 
     # Initialize random distributions.
     angles = np_gen.uniform(0., 2*np.pi, 3)
@@ -320,14 +321,14 @@ def get_strain (m1, m2, approximant='IMRPhenomD', convert=False,
 
     hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
 
-    logging.debug(f'waveform_kwargs: {waveform_kwargs}')
+    logger.debug(f'waveform_kwargs: {waveform_kwargs}')
 
-    logging.debug(f"Type of hp: {type(hp)}, Type of hc: {type(hc)}")
-    logging.debug(f"Length of hp: {len(hp)}, Length of hc: {len(hc)}")
-    # logging.debug(dir(hp))
-    # logging.debug(dir(hp))
-    logging.debug(f'duration={hp.duration}')
-    logging.debug(f'sample-rate={hp.sample_rate}')
+    logger.debug(f"Type of hp: {type(hp)}, Type of hc: {type(hc)}")
+    logger.debug(f"Length of hp: {len(hp)}, Length of hc: {len(hc)}")
+    # logger.debug(dir(hp))
+    # logger.debug(dir(hp))
+    logger.debug(f'duration={hp.duration}')
+    logger.debug(f'sample-rate={hp.sample_rate}')
 
     hp = hp.trim_zeros()
     hc = hc.trim_zeros()
@@ -346,7 +347,7 @@ def get_strain (m1, m2, approximant='IMRPhenomD', convert=False,
         hp.append_zeros(int(SAMPLE_RATE * DURATION) - len(hp))
         hc.append_zeros(int(SAMPLE_RATE * DURATION) - len(hc))
 
-    logging.debug(f'hp slice duration={hp.duration}')
+    logger.debug(f'hp slice duration={hp.duration}')
 
     # # Don't need to project this ~
 
@@ -357,19 +358,19 @@ def get_strain (m1, m2, approximant='IMRPhenomD', convert=False,
     # waveform_kwargs['pol_angle'] = pol_angle
 
     # shift_time = np_gen.uniform(0.0, 0.2)
-    # logging.debug(shift_time)
-    # logging.debug(SAMPLE_RATE)
+    # logger.debug(shift_time)
+    # logger.debug(SAMPLE_RATE)
 
     # for strain in strains:
-    #     logging.debug('hi', strain.sample_rate, len(strain))
+    #     logger.debug('hi', strain.sample_rate, len(strain))
     #     # `append_zeros` is a `pycbc.TimeSeries` function
     #     strain.append_zeros(strain.sample_rate*shift_time) #time shift
     #     strain.prepend_zeros(max(0,sample_len-len(strain))) #prepend zeros if the length is shorter than 1.25 seconds
-    #     logging.debug(len(strain))
+    #     logger.debug(len(strain))
 
     # # TODO: I cut-off initial part here ~
     # strains = [strain[len(strain)-sample_len:] for strain in strains if len(strain) > sample_len]
-    # logging.debug(len(strains[int(np.random.randint(len(strains)))]))
+    # logger.debug(len(strains[int(np.random.randint(len(strains)))]))
     
     if plot:
         # Plot original strain data
@@ -399,12 +400,12 @@ def get_strain (m1, m2, approximant='IMRPhenomD', convert=False,
     # It should be ensured that the merger is always within the data.
     if len(hp) > PRESET_ARRAY_SIZE:
         diff = len(hp) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         hp = hp[diff:]
     if len(hc) > PRESET_ARRAY_SIZE:
         diff = len(hc) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         hc = hc[diff:]
 
@@ -454,7 +455,7 @@ def get_strain_convert(hp, hc, nokeys=False, plotfreqamp=False,
     # theta = np.arctan(hc, hp)
     # amp = np.sqrt(hp**2 + hc**2)
     #hp, hc = hp.trim_zeros(), hc.trim_zeros()
-    logging.debug('Converting `hp` & `hc` to Freq Amp!')
+    logger.debug('Converting `hp` & `hc` to Freq Amp!')
     amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
     phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
     freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
@@ -463,14 +464,14 @@ def get_strain_convert(hp, hc, nokeys=False, plotfreqamp=False,
     # amp = np.sqrt(hp**2 + hc**2)
     # freq = np.diff(phase) / 2 * np.pi * DELTA_T
 
-    logging.debug(f'length of amp: {len(amp)}')
-    logging.debug(f'length of phase: {len(phase)}')
-    logging.debug(f'length of freq: {len(freq)}')
-    # logging.debug(freq.__dict__)
-    logging.debug(f'length of freq.data: {len(freq.data)}')
+    logger.debug(f'length of amp: {len(amp)}')
+    logger.debug(f'length of phase: {len(phase)}')
+    logger.debug(f'length of freq: {len(freq)}')
+    # logger.debug(freq.__dict__)
+    logger.debug(f'length of freq.data: {len(freq.data)}')
 
     if plotfreqamp:
-        logging.debug('# printing Freq Amp plot')
+        logger.debug('# printing Freq Amp plot')
         fig, axes = plt.subplots(1, 4, figsize=(20,5))
         axes[0].plot(amp.sample_times, amp)
         axes[0].set_xlabel('Time (s)')
@@ -495,34 +496,34 @@ def get_strain_convert(hp, hc, nokeys=False, plotfreqamp=False,
     # Ensure freq and amp are numeric arrays
     amp = np.array(amp.data, dtype=np.float64)
     freq = np.array(freq.data, dtype=np.float64)
-    logging.debug(f'shape of freq: {freq.shape}')
+    logger.debug(f'shape of freq: {freq.shape}')
 
     # Rescale the amp by 10^20
-    logging.debug(f'Original Amp: {amp}')
-    logging.debug(f'Type of Amp: {type(amp)}, Type of Amp[0]: {type(amp[0])}')
+    logger.debug(f'Original Amp: {amp}')
+    logger.debug(f'Type of Amp: {type(amp)}, Type of Amp[0]: {type(amp[0])}')
     amp = amp * 10**20
-    logging.debug(f'Rescaled Amp: {amp}')
-    logging.debug(f'Type of Rescaled Amp: {type(amp)}, Type of Rescaled Amp[0]: {type(amp[0])}')
+    logger.debug(f'Rescaled Amp: {amp}')
+    logger.debug(f'Type of Rescaled Amp: {type(amp)}, Type of Rescaled Amp[0]: {type(amp[0])}')
 
     # Have correct input lengths
     # amp = amp[1:] # to have equal sized arrays
     if len(amp) > PRESET_ARRAY_SIZE:
         diff = len(amp) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         amp = amp[diff:]
-    logging.debug(amp.shape)
+    logger.debug(amp.shape)
     if len(freq) > PRESET_ARRAY_SIZE:
         diff = len(freq) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         freq = freq[diff:]
 
     # Stack freq and amp into strains
     strains = np.vstack((amp, freq)).astype(np.float64)
-    logging.debug(strains.shape)
-    logging.debug(amp.shape)
-    logging.debug(freq.shape)
+    logger.debug(strains.shape)
+    logger.debug(amp.shape)
+    logger.debug(freq.shape)
 
     if nokeys:
         return (np.array([amp, freq]), np.array([m1,m2]))
@@ -532,8 +533,8 @@ def get_strain_convert(hp, hc, nokeys=False, plotfreqamp=False,
         # for a single data sample.
         amp_keys = [np.mean(amp), np.std(amp)]
         freq_keys = [np.mean(freq), np.std(freq)]
-        logging.debug(f"Amplitude Keys: {amp_keys}")
-        logging.debug(f"Frequency Keys: {freq_keys}")
+        logger.debug(f"Amplitude Keys: {amp_keys}")
+        logger.debug(f"Frequency Keys: {freq_keys}")
         
         # Normallize the input data
         # This is the standard normalization, centers the distro
@@ -545,14 +546,14 @@ def get_strain_convert(hp, hc, nokeys=False, plotfreqamp=False,
         # plt.plot(range(len(freq)), freq, '-')
         # plt.show()
         # plt.close()
-        logging.debug(type(amp), type(amp[0]))
+        logger.debug(type(amp), type(amp[0]))
         return (strains, np.array([m1,m2]), np.array([amp_keys, freq_keys]))
 
 
 def get_fd_strain(m1, m2, approximant='IMRPhenomD', plot=False):
     """
     """
-    logging.debug('logging started!')
+    logger.debug('logging started!')
 
     # Initialize random distributions.
     angles = np_gen.uniform(0., 2*np.pi, 3)
@@ -629,7 +630,7 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         waveform_kwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
         # TODO: check if the inclination has to be in this range ??
         waveform_kwargs['inclination'] = np_gen.uniform(0., np.pi)
-    logging.info(waveform_kwargs)
+    logger.info(waveform_kwargs)
     hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
 
     plt.plot(hp.sample_times, hp, label='hp')
@@ -652,10 +653,10 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         extra['padded_at'] = len(hp)
         hp.append_zeros(int(SAMPLE_RATE * DURATION) - len(hp))
         hc.append_zeros(int(SAMPLE_RATE * DURATION) - len(hc))
-    logging.debug(f'hp slice duration={hp.duration}')
+    logger.debug(f'hp slice duration={hp.duration}')
 
     # Calculate the amplitude and phase from the polarizations.
-    logging.debug('Converting `hp` & `hc` to Freq Amp!')
+    logger.debug('Converting `hp` & `hc` to Freq Amp!')
     amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
     phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
     freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
@@ -664,30 +665,30 @@ def get_vals_for_hdf(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     # It should be ensured that the merger is always within the data.
     if len(hp) > PRESET_ARRAY_SIZE:
         diff = len(hp) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         hp = hp[diff:]
     if len(hc) > PRESET_ARRAY_SIZE:
         diff = len(hc) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         hc = hc[diff:]
     # Have correct input lengths
     if len(amp) > PRESET_ARRAY_SIZE:
         diff = len(amp) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         amp = amp[diff:]
-    logging.debug(f'amp.shape: {amp.shape}')
-    logging.debug(f'amp.shape: {amp.shape}')
+    logger.debug(f'amp.shape: {amp.shape}')
+    logger.debug(f'amp.shape: {amp.shape}')
     if len(phase) > PRESET_ARRAY_SIZE:
         diff = len(phase) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(phase) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(phase) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         phase = phase[diff:]
     if len(freq) > PRESET_ARRAY_SIZE:
         diff = len(freq) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         freq = freq[diff:]
 
@@ -760,7 +761,7 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         waveform_kwargs['coa_phase'] = np_gen.uniform(0., 2*np.pi)
         # TODO: check if the inclination has to be in this range ??
         waveform_kwargs['inclination'] = np_gen.uniform(0., np.pi)
-    logging.info(f"waveform_kwargs: {waveform_kwargs}")
+    logger.info(f"waveform_kwargs: {waveform_kwargs}")
     hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
 
     # plt.plot(hp.sample_times, hp, label='hp')
@@ -771,13 +772,13 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
     hc = hc.trim_zeros()
 
     if dataset=='f_cutoff' and hp.duration < DURATION:
-        logging.info(f'f_low={f_lower}, duration={hp.duration}')
+        logger.info(f'f_low={f_lower}, duration={hp.duration}')
 
         # calculate new f_lower
         mchirp = (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
         new_fcutoff = ( DURATION / (cutoffconst * mchirp ** (-5/3)) )**(-3/8)
         extra['f_lower'] = new_fcutoff
-        logging.info(f'New f_lower={new_fcutoff}')
+        logger.info(f'New f_lower={new_fcutoff}')
         # adjust the new f_lower to allow for some error
         new_fcutoff -= 0.2*new_fcutoff
 
@@ -787,12 +788,12 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         hp = hp.trim_zeros()
         hc = hc.trim_zeros()
         extra['delta_t'] = hp.delta_t
-        logging.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
+        logger.info(f'New f_lower={new_fcutoff}, duration={hp.duration}')
 
         # plt.plot(hp.sample_times, hp, label='hp')
         # plt.plot(hc.sample_times, hc, label='hc')
         # plt.show()
-        logging.info(f'sample_len={len(hp)}')
+        logger.info(f'sample_len={len(hp)}')
         if calc_duration_mean:
             return hp.duration
 
@@ -800,21 +801,21 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
         # DEPRECATED!
 
         # # Resample the waveform to the desired sample rate
-        # logging.debug('Resampling the waveform to the desired sample rate')
+        # logger.debug('Resampling the waveform to the desired sample rate')
         # sample_rate = len(hp) / 1.0
-        # logging.info(f'Sample rate: {sample_rate}')
+        # logger.info(f'Sample rate: {sample_rate}')
         # delta_t = 1 / sample_rate
         # hp = resample_to_delta_t(hp, delta_t)
         # hc = resample_to_delta_t(hc, delta_t)
         sample_len = len(hp)
-        logging.info(f'Sample length: {sample_len}, duration: {hp.duration}')
-        logging.info(f'Sample rate: {hp.sample_rate}, delta_t: {hp.delta_t}')
+        logger.info(f'Sample length: {sample_len}, duration: {hp.duration}')
+        logger.info(f'Sample rate: {hp.sample_rate}, delta_t: {hp.delta_t}')
         new_sample_rate = 0.25 * hp.sample_rate
         new_delta_t = 1 / (hp.duration * SAMPLE_RATE)
         waveform_kwargs['delta_t'] = new_delta_t
-        logging.info(f'New sample rate: {new_sample_rate}, new delta_t: {new_delta_t}')
+        logger.info(f'New sample rate: {new_sample_rate}, new delta_t: {new_delta_t}')
         hp, hc = pycbc.waveform.get_td_waveform(**waveform_kwargs)
-        logging.info(f'Sample rate: {hp.sample_rate}, duration: {hp.duration}')
+        logger.info(f'Sample rate: {hp.sample_rate}, duration: {hp.duration}')
 
         hp = hp.trim_zeros()
         hc = hc.trim_zeros()
@@ -824,25 +825,25 @@ def get_vals(m1, m2, approximant='SEOBNRv4', eccentricity=None,
 
         hp = pycbc.filter.resample.resample_to_delta_t(hp, new_delta_t)
         hc = pycbc.filter.resample.resample_to_delta_t(hc, new_delta_t)
-        logging.info(f'Sample rate: {hp.sample_rate}, duration: {hp.duration}')
+        logger.info(f'Sample rate: {hp.sample_rate}, duration: {hp.duration}')
 
     # Have correct input lengths!
     # It should be ensured that the merger is always within the data.
     if len(hp) > PRESET_ARRAY_SIZE:
         extra['truncated'] = True
         extra['truncated_len'] = diff = len(hp) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(freq) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         hp = hp[diff:]
     if len(hc) > PRESET_ARRAY_SIZE:
         extra['truncated'] = True
         extra['truncated_len'] = diff = len(hc) - PRESET_ARRAY_SIZE
-        logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
+        logger.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
                             \n So truncating array from the left!')
         hc = hc[diff:]
 
     # Calculate the amplitude and phase from the polarizations.
-    logging.debug('Converting `hp` & `hc` to Freq Amp!')
+    logger.debug('Converting `hp` & `hc` to Freq Amp!')
     amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
     phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
     freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
@@ -872,15 +873,15 @@ def write_hdf_grp(hf, data, grpname):
     Either passed as a list or a dictionary.
     """
     if isinstance(data, np.ndarray):
-        logging.info('Assuming data is the `hp` strain.')
+        logger.info('Assuming data is the `hp` strain.')
         hf[grpname].create_dataset('hp', data=data)
 
     elif isinstance(data, list):
         dsnames = ['hp', 'hc', 'amp', 'phase', 'freq']
-        logging.info(f'Assuming data array is in the form {dsnames}')
+        logger.info(f'Assuming data array is in the form {dsnames}')
         # Do not write the extra info since it was already written!
         for name, tsdata in zip(dsnames, data[:-1]):
-            logging.info(name, tsdata.shape)
+            logger.info(name, tsdata.shape)
             ds = hf[grpname].create_dataset(name, data=tsdata)
             # ds.attrs['sample_rate'] = tsdata.sample_rate
             # ds.attrs['delta_t'] = tsdata.delta_t
@@ -888,7 +889,7 @@ def write_hdf_grp(hf, data, grpname):
             # ds.attrs['merger_time'] = tsdata.merger_time
 
     elif isinstance(data, dict):
-        logging.info(f'Assuming data array is in the form {data.keys()}')
+        logger.info(f'Assuming data array is in the form {data.keys()}')
         for name, d in data.items():
             if isinstance(d, np.ndarray):
                 hf[grpname].create_dataset(name, data=d)
@@ -900,11 +901,11 @@ def write_hdf_grp(hf, data, grpname):
 
 def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
                       otherparams=False, dataset=None):
-    logging.info(f'Writing data to HDF5 file {fname}')
+    logger.info(f'Writing data to HDF5 file {fname}')
     if os.path.exists(fname+'.hdf'):
-        logging.info(f'File {fname}.hdf already exists. Using an incremented name.')
+        logger.info(f'File {fname}.hdf already exists. Using an incremented name.')
     if os.path.exists(fname+'.hdf'):
-        logging.info(f'File {fname}.hdf already exists. Using an incremented name.')
+        logger.info(f'File {fname}.hdf already exists. Using an incremented name.')
         fname = fname.split('.hdf')[0] + '-1.hdf'
     if dataset is not None:
         fname += f'-{dataset}'
@@ -962,7 +963,7 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
             # extra info like truncated or padded
             # save these for all samples, with `False` vals when no padding.
             # save these for all samples, with `False` vals when no padding.
-            logging.info(f'extra: {data[-1]}')
+            logger.info(f'extra: {data[-1]}')
             hfgrp.attrs['truncated'] = data[-1]['truncated']
             hfgrp.attrs['padded'] = data[-1]['padded']
             # This is the length of the original waveform
@@ -975,7 +976,7 @@ def write_data_to_hdf(fname='SEOBNRv4', masses=None, approximant='SEOBNRv4',
             if data[-1]['padded_at'] is not None:
                 hfgrp.attrs['padded_at'] = data[-1]['padded_at']
             write_hdf_grp(hf, data, grpname)
-        logging.info(f"Data written to {fname+'.hdf'} successfully.")
+        logger.info(f"Data written to {fname+'.hdf'} successfully.")
         hf.close()
 
 
@@ -1163,7 +1164,7 @@ def check_ampfreq(fname, noshow=False, usephase=False):
     and back is consistent and does not lead to any significant loss of information.
     """
     if usephase:
-        logging.warning('Using the original phase saved in the HDF5 file for reconstruction.')
+        logger.warning('Using the original phase saved in the HDF5 file for reconstruction.')
     datadir = '../data/'
     mismatchs = [[],[]] # for hp and hc respectively
     with h5py.File(datadir+fname+'.hdf', 'r') as hf:
@@ -1189,7 +1190,7 @@ def check_ampfreq(fname, noshow=False, usephase=False):
             # Get the correct phase from the original polarization strains, since
             # the assholic `pycbc` function set the start phase to zero, without
             # any warnings.
-            logging.info('Calculating the phase from the original polarizations using `arctan2` for better accuracy.')
+            logger.info('Calculating the phase from the original polarizations using `arctan2` for better accuracy.')
             phase = np.unwrap(np.arctan2(hc, hp))
             print(f'Original start phase value from HDF5: {phase_hdf[0]}, correct start phase: {phase[0]}')
             
@@ -1199,7 +1200,7 @@ def check_ampfreq(fname, noshow=False, usephase=False):
             # which is derived from the original waveform and thus may have some numerical errors.
             print(f'Reference phase: {phase[0]}')
             if usephase:
-                logging.info('Using the original phase saved in the HDF5 file for reconstruction.')
+                logger.info('Using the original phase saved in the HDF5 file for reconstruction.')
                 recon_hp = amp * np.cos(phase)
                 recon_hc = amp * np.sin(phase)
             else:
@@ -1280,7 +1281,7 @@ def check_ampfreq(fname, noshow=False, usephase=False):
         f.write(f"Mean mismatch for hc: {mean_mismatch_hc}, std: {std_mismatch_hc}\n")
         for i, (mismatch_hp, mismatch_hc) in enumerate(zip(mismatchs[0], mismatchs[1])):
             f.write(f"Sample {i}: Mismatch for hp: {mismatch_hp}, Mismatch for hc: {mismatch_hc}\n")
-    logging.info(f"Checked amp-freq reconstruction for {fname}.hdf successfully.")
+    logger.info(f"Checked amp-freq reconstruction for {fname}.hdf successfully.")
 
 
 def check_ampfreq_via_wavegen(noshow=False, usephase=False, f_lower=20.0):
@@ -1315,7 +1316,7 @@ def check_ampfreq_via_wavegen(noshow=False, usephase=False, f_lower=20.0):
     # phase = np.unwrap(np.arctan2(hc, hp))
     # freq = np.gradient(phase) / (2 * np.pi * hp.delta_t)
     if usephase:
-        logging.info('Using the original phase for reconstruction.')
+        logger.info('Using the original phase for reconstruction.')
         recon_hp = amp * np.cos(phase)
         recon_hc = amp * np.sin(phase)
     else:
@@ -1358,7 +1359,7 @@ def check_ampfreq_via_wavegen(noshow=False, usephase=False, f_lower=20.0):
         axes[1].legend()
         plt.tight_layout()
         plt.show()
-    logging.info(f"Checked amp-freq reconstruction via direct waveform generation successfully.")
+    logger.info(f"Checked amp-freq reconstruction via direct waveform generation successfully.")
 
 
 # -- Save param values in CSV by reading pre-saved HDF files for training set
@@ -1375,15 +1376,15 @@ def save_params_from_hdf(hdf_fname, txt_fname='params'):
         txt_fname += '.csv'
     os.makedirs(os.path.dirname(txt_fname), exist_ok=True)
     with h5py.File(hdf_fname, 'r') as hf, open(txt_fname, 'w') as f:
-        logging.info(f'Reading parameters from {hdf_fname} and saving to {txt_fname}')
+        logger.info(f'Reading parameters from {hdf_fname} and saving to {txt_fname}')
         attr_names = ['mass1', 'mass2', 'spin1z', 'spin2z', 'delta_t', 'f_lower', 'sample_rate', 'padded', 'truncated']
-        logging.info(f'Attributes found in HDF5 file: {attr_names}')
+        logger.info(f'Attributes found in HDF5 file: {attr_names}')
         f.write(','.join(['sample'] + attr_names) + '\n')
         for key in hf.keys():
             grp = hf[key]
             attr_values = [str(grp.attrs.get(attr, 'NA')) for attr in attr_names]
             f.write(','.join([key] + attr_values) + '\n')
-    logging.info(f"Saved parameters to {txt_fname} successfully.")
+    logger.info(f"Saved parameters to {txt_fname} successfully.")
 
 
 class CustomDataset(Dataset):
@@ -1443,14 +1444,18 @@ class CustomDataset(Dataset):
                  store_device: str = 'cpu', 
                  train_device: str = 'mps', 
                  inputsize: int = 2048, outputsize: int = 1994, 
-                 forwhat: {'train', 'test', 'val'} = 'train', 
+                 forwhat: {'train', 'test', 'val'} = 'train', # DEPRECATED argument!
                  approximant: str = 'IMRPhenomD',
                  plot: bool = False, convert: bool = False, nokeys: bool = False, hdf_fname: str = None, 
                  return_attributes: bool = False, 
                  return_sample_indices: bool = False,
                  return_phases: bool = False,
                  precision: {'float32', 'float64'} = 'float64', 
-                 target: {'unnorm_ampfreq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = None,
+                 target_type: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_freq',
+                 target_normalized: bool = True,
+                 input_normalized: bool = True,
+                 input_normalization_keys=None,
+                 regenerate_data: bool = False,
                  **kwargs):
         super().__init__()
         self.train_device = train_device
@@ -1466,7 +1471,12 @@ class CustomDataset(Dataset):
         self.return_sample_indices = return_sample_indices
         self.return_phases = return_phases
         self.precision = precision
-        self.target = target
+        
+        self.target_type = self.input_type = target_type
+        self.target_normalized = target_normalized
+        self.input_normalized = input_normalized
+        self.input_normalization_keys = input_normalization_keys
+        self.regenerate_data = regenerate_data
 
         self.forwhat = forwhat
         if hdf_fname is None:
@@ -1479,18 +1489,18 @@ class CustomDataset(Dataset):
             if approximant.split('-')[0][-7:]=='padinfo':
                 # If the approximant is of the form `IMRPhenomDpadinfo-<something>.hdf`,
                 # self.approximant = approximant.split('-')[0].removesuffix('padinfo')
-                # logging.warning(f"Approximant {approximant} is a padded info \
+                # logger.warning(f"Approximant {approximant} is a padded info \
                 #                 approximant. Using {self.approximant} instead.")
-                logging.info('Approximant is a padded info approximant.')
+                logger.info('Approximant is a padded info approximant.')
             else:
                 raise ValueError(f"Invalid approximant: {approximant}. \
                                 Choose from {APPROXIMANTS}")
             if approximant.split('-')[0][-7:]=='padinfo':
                 # If the approximant is of the form `IMRPhenomDpadinfo-<something>.hdf`,
                 # self.approximant = approximant.split('-')[0].removesuffix('padinfo')
-                # logging.warning(f"Approximant {approximant} is a padded info \
+                # logger.warning(f"Approximant {approximant} is a padded info \
                 #                 approximant. Using {self.approximant} instead.")
-                logging.info('Approximant is a padded info approximant.')
+                logger.info('Approximant is a padded info approximant.')
             else:
                 raise ValueError(f"Invalid approximant: {approximant}. \
                                 Choose from {APPROXIMANTS}")
@@ -1508,7 +1518,7 @@ class CustomDataset(Dataset):
         self.hdf_fname = self.hdf_fname if self.hdf_fname.endswith('.hdf') else self.hdf_fname + '.hdf'
         with h5py.File(self.hdf_fname, 'r') as hf:
             self.nsamples = len(hf.keys())
-            logging.info(f'Set nsamples to {self.nsamples}')
+            logger.info(f'Set nsamples to {self.nsamples}')
         return self.nsamples
     
     def _get_data_old(self, n_samples=1000, masses=get_mass(), approximant='IMRPhenomD', paramsonly=False):
@@ -1593,8 +1603,8 @@ class CustomDataset(Dataset):
         strains, labels, keys = get_strain(m1, m2, approximant=self.approximant,
                                     convert=self.convert, nokeys=self.nokeys, plot=self.plot)
         # strains, labels, keys = get_fd_strain(m1, m2, plot=True)
-        logging.debug(f"Strains shape: {strains.shape}")
-        logging.debug(f"Type of strains: {type(strains)}, Type of strains[0]: {type(strains[0])}, Type of strains[0][0]: {type(strains[0][0])}")
+        logger.debug(f"Strains shape: {strains.shape}")
+        logger.debug(f"Type of strains: {type(strains)}, Type of strains[0]: {type(strains[0])}, Type of strains[0][0]: {type(strains[0][0])}")
         # use `torch.float64` dtype b'cuz mps only supports that!
         sample = torch.from_numpy(strains).to(device=self.train_device, dtype=getattr(torch, self.precision))
         label = torch.from_numpy(labels).to(device=self.train_device, dtype=getattr(torch, self.precision))
@@ -1611,7 +1621,7 @@ class CustomDataset(Dataset):
         """
         extra = {}
         f_lower = 0.75 * data.attrs['f_lower']
-        logging.info(f'new f_lower: {f_lower}')
+        logger.info(f'new f_lower: {f_lower}')
         wfkwargs = {'approximant': data.attrs['approximant'],
                     'mass1': data.attrs['mass1'],
                     'mass2': data.attrs['mass2'],
@@ -1629,12 +1639,13 @@ class CustomDataset(Dataset):
             hp, hc = pycbc.waveform.get_td_waveform(**wfkwargs)
             hp = hp.trim_zeros()
             hc = hc.trim_zeros()
-        logging.info(f'new sample duration: {hp.duration}')
+        logger.info(f'new sample duration: {hp.duration}')
 
         if len(hc) > PRESET_ARRAY_SIZE:
+            # NOTE: It is here that the first element of the regenerated waveform is being removed!
             extra['truncated'] = True
             extra['truncated_len'] = diff = len(hc) - PRESET_ARRAY_SIZE
-            logging.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
+            logger.debug(f'len(amp) > {PRESET_ARRAY_SIZE} by {diff} ele \
                                 \n So truncating array from the left!')
             hc = hc[diff:]
             hp = hp[diff:]
@@ -1664,7 +1675,7 @@ class CustomDataset(Dataset):
                     data[f"{key}_backup"] = data[key][:]
                     del data[key]
                 data.create_dataset(key, data=arr)
-            logging.info(f'Sample regenerated and updated in the HDF5 file successfully.')
+            logger.info(f'Sample regenerated and updated in the HDF5 file successfully.')
         else:
             data['hp'] = hp
             data['hc'] = hc
@@ -1672,6 +1683,16 @@ class CustomDataset(Dataset):
             data['freq'] = freq
             data['phase'] = phase
         return data
+
+    
+    def close_hdf(self):
+        # close the HDF file when the dataset is deleted, to free up resources
+        if hasattr(self, 'data_file') and self.data_file is not None:
+            self.data_file.close()
+            logger.info(f"Closed HDF file {self.data_hdf} after reading calibrator input and target residuals.")
+
+    def __del__(self):
+        self.close_hdf()
 
     def read_strain_hdf(self, idx, write_access=False):
         """
@@ -1693,7 +1714,7 @@ class CustomDataset(Dataset):
             - keys: np.ndarray
                 The keys as a 2D numpy array with shape (2, 2).
         """
-        logging.debug(f'Reading strain data from HDF5 file {self.hdf_fname}.hdf for sample {idx}')
+        logger.debug(f'Reading strain data from HDF5 file {self.hdf_fname}.hdf for sample {idx}')
         if write_access:
             open_mode = 'r+'
         else:
@@ -1701,9 +1722,7 @@ class CustomDataset(Dataset):
         self.hdf_fname = self.hdf_fname if self.hdf_fname.endswith('.hdf') else self.hdf_fname+'.hdf'
         with h5py.File(self.hdf_fname, open_mode) as hf:
             data = hf[f'sample{idx}']
-            logging.debug(f'keys: {data.keys()}')
-
-            logging.debug(f'keys: {data.keys()}')
+            logger.debug(f'keys: {data.keys()}')
 
             m1, m2 = data.attrs['mass1'], data.attrs['mass2']
             labels = [m1,m2]
@@ -1712,9 +1731,9 @@ class CustomDataset(Dataset):
             if spin1z is not None and spin2z is not None:
                 labels.append(spin1z)
                 labels.append(spin2z)
-            # logging.debug(f'Labels: {labels}')
+            # logger.debug(f'Labels: {labels}')
 
-            if not "regen" in self.hdf_fname:
+            if self.regenerate_data:
                 # Regenerate sample if it is shorter duration, but is not padded!
                 # NOTE: Once this is checked, since I also write the data into the
                 # HDF file, the next epoch onwards, this check will not be necessary, 
@@ -1723,16 +1742,16 @@ class CustomDataset(Dataset):
                 # so this check will still be necessary for the next epoch, until the file is
                 # properly closed and the changes are saved.
                 if len(data['amp']) < PRESET_ARRAY_SIZE and not data.attrs.get('padded', False):
-                    logging.info(f"\nSample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. Regenerating!")
+                    logger.info(f"\nSample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. Regenerating!")
                     data = self._regenerate_sample(data, write_access=write_access)
 
             hp, hc = np.array(data['hp']), np.array(data['hc'])
             amp, freq = np.array(data['amp']), np.array(data['freq'])
             phase = np.array(data['phase'])
-            logging.debug(f'Phase shape: {phase.shape}')
+            logger.debug(f'Phase shape: {phase.shape}')
 
             # # freq array will be one less in length than amp
-            # logging.debug(f'len(amp)={len(amp)}, len(freq)={len(freq)}')
+            # logger.debug(f'len(amp)={len(amp)}, len(freq)={len(freq)}')
             # if len(freq) < len(amp):
             #     amp = amp[1:]
             # assert len(amp) == len(freq), "Amplitude and Frequency arrays must be of the same length."
@@ -1750,19 +1769,19 @@ class CustomDataset(Dataset):
             # calculating the mismatch later on during testing.
             freq = np.insert(freq, 0, freq[0])
             assert len(amp) == len(freq) == len(phase), "Amplitude, Frequency, and Phase arrays must be of the same length after adjustment."
-            logging.debug(f'Adjusted len(amp)={len(amp)}, len(freq)={len(freq)}, len(phase)={len(phase)}')
+            logger.debug(f'Adjusted len(amp)={len(amp)}, len(freq)={len(freq)}, len(phase)={len(phase)}')
 
             # Rescale the amp by 10^20
-            logging.debug(f'Original Amp: {amp}')
-            logging.debug(f'Type of Amp: {type(amp)}, Type of Amp[0]: {type(amp[0])}')
+            logger.debug(f'Original Amp: {amp}')
+            logger.debug(f'Type of Amp: {type(amp)}, Type of Amp[0]: {type(amp[0])}')
             amp = amp * 10**20
-            logging.debug(f'Rescaled Amp: {amp}')
-            logging.debug(f'Type of Rescaled Amp: {type(amp)}, Type of Rescaled Amp[0]: {type(amp[0])}')
+            logger.debug(f'Rescaled Amp: {amp}')
+            logger.debug(f'Type of Rescaled Amp: {type(amp)}, Type of Rescaled Amp[0]: {type(amp[0])}')
 
             amp_keys = [np.mean(amp), np.std(amp)]
             freq_keys = [np.mean(freq), np.std(freq)]
-            logging.debug(f"Amplitude Keys: {amp_keys}")
-            logging.debug(f"Frequency Keys: {freq_keys}")
+            logger.debug(f"Amplitude Keys: {amp_keys}")
+            logger.debug(f"Frequency Keys: {freq_keys}")
             unnorm_amp, unnorm_freq = amp.copy(), freq.copy()
             unnorm_amp, unnorm_freq = amp.copy(), freq.copy()
             amp = (amp - np.mean(amp)) / np.std(amp)
@@ -1776,6 +1795,8 @@ class CustomDataset(Dataset):
             out_strains = np.vstack((hp, hc)).astype(getattr(np, self.precision))
             out_attr = data.attrs if type(data) is not dict else data.get('attrs', {})
             out_attr = dict(out_attr)  # Convert HDF5 attributes to a regular dictionary for easier handling
+
+            # TODO: Save keys in attr!
                         
             # # TODO: make this work with `self.target` argument and be back compatible with `maincvae.py` code!
             # if self.forwhat=='test':
@@ -1787,7 +1808,7 @@ class CustomDataset(Dataset):
             #                 out_strains,
             #                 out_attr)
             #     else:
-            #         logging.debug(f"Attributes: {out_attr}")
+            #         logger.debug(f"Attributes: {out_attr}")
             #         # also return the loc of padding or truncation
             #         return (out_normed, 
             #                 out_normed, # -- target are normed amp & freq.
@@ -1805,28 +1826,28 @@ class CustomDataset(Dataset):
                 returnables.append(np.array(idx))  
             if self.return_attributes:
                 returnables.append(out_attr)
-            logging.debug(f"Returnables is of length {len(returnables)}")
+            logger.debug(f"Returnables is of length {len(returnables)}")
                 
             if self.target=='unnorm_ampfreq':
-                logging.debug("Returning normalized amp and freq as input, and unnormalized amp and freq as target since `unnorm_target` is True.")
+                logger.debug("Returning normalized amp and freq as input, and unnormalized amp and freq as target since `unnorm_target` is True.")
                 # -- Inputs are normalized amp and freq, targets are unnormalized amp and freq.
                 input, target = out_normed, out_unnormed
             elif self.target=='normed_logamp_freq':
-                logging.debug("Returning normalized log-amp and freq as input, and log-amp as target since `logamp_target` is True.")
+                logger.debug("Returning normalized log-amp and freq as input, and log-amp as target since `logamp_target` is True.")
                 out_logamp_freq = np.vstack((np.log(amp), freq)).astype(getattr(np, self.precision))
                 # -- Inputs and targets are normalized log-amp and freq.
                 input, target = out_logamp_freq, out_logamp_freq
             elif self.target=='normed_amp_phase':
-                logging.debug("Returning normalized amp and freq as input, and phase as target since `phase_target` is True.")
+                logger.debug("Returning normalized amp and freq as input, and phase as target since `phase_target` is True.")
                 out_amp_phase = np.vstack((amp, phase)).astype(getattr(np, self.precision))
                 # -- Inputs and targets are normalized amp and phase.
                 input, target = out_amp_phase, out_amp_phase
             elif self.target=='normed_logamp_phase':
-                logging.debug("Returning normalized log-amp and freq as input, and phase as target since `logamp_phase_target` is True.")
+                logger.debug("Returning normalized log-amp and freq as input, and phase as target since `logamp_phase_target` is True.")
                 out_logamp_phase = np.vstack((np.log(amp), phase)).astype(getattr(np, self.precision))
                 # -- Inputs and targets are normalized log-amp and phase.
                 input, target = out_logamp_phase, out_logamp_phase
-                logging.debug("Returning normalized amp and freq as both input and target since `unnorm_target` is False.")
+                logger.debug("Returning normalized amp and freq as both input and target since `unnorm_target` is False.")
             else:  # -- Default case: Inputs and targets are normalized amp and freq.
                 input, target = out_normed, out_normed
             return tuple([input, target] + returnables)
@@ -1846,7 +1867,7 @@ class CustomDataset(Dataset):
         """
         tag_batches = []
         feat_dict_batch = {}
-        logging.debug(f'Batch size: {len(batch)}')
+        logger.debug(f'Batch size: {len(batch)}')
 
         # Determine the maximum number of tags in the batch
         # TODO: Remove this `forwhat` argument and condition in the future!
@@ -1866,14 +1887,14 @@ class CustomDataset(Dataset):
             # Append the feature dict to the batch dict!
             if self.return_attributes:
                 *tags, feat_dict = sample
-                logging.debug(f'Number of tags: {len(tags)}')
+                logger.debug(f'Number of tags: {len(tags)}')
                 for key, value in feat_dict.items():
                     if key not in feat_dict_batch:
                         feat_dict_batch[key] = []
                     feat_dict_batch[key].append(value)
             # elif self.return_sample_indices:
             #     *tags, sample_index = sample
-            #     logging.debug(f'Number of tags: {len(tags)}, Sample index: {sample_index}')
+            #     logger.debug(f'Number of tags: {len(tags)}, Sample index: {sample_index}')
             else:
                 tags = sample
 
@@ -1894,12 +1915,12 @@ class CustomDataset(Dataset):
         return tag_batches
 
     def __getitem__(self, idx, custom_batch=None):
-        # logging.debug(idx)
+        # logger.debug(idx)
         if idx>self.nsamples:
             raise IndexError('Index out of range')
         if self.hdf_fname is not None:
             if "regen" in self.hdf_fname:
-                logging.debug("No need to have write-access, since waveforms in HDF file are already regenerated.")
+                logger.debug("No need to have write-access, since waveforms in HDF file are already regenerated.")
                 return self.read_strain_hdf(idx, write_access=False)
             return self.read_strain_hdf(idx, write_access=True)
         else:
@@ -1921,28 +1942,26 @@ class CustomDataset(Dataset):
             keys = ['logamp', 'phase']
 
         # -- labels for input and target data for different kinds of targets.
-        keys_dict = {'unnorm_ampfreq': {'inputkeys': ['normed_amp', 'normed_freq'],
-                                         'targetkeys': ['unnorm_amp', 'unnorm_freq']},
-                'logamp_freq': {'inputkeys': ['logamp', 'normed_freq'], 
-                                'targetkeys': ['logamp', 'normed_freq']},
-                'amp_phase': {'inputkeys': ['normed_amp', 'normed_freq'],
-                                'targetkeys': ['normed_amp', 'phase']},
-                'logamp_phase': {'inputkeys': ['logamp', 'normed_freq'],
-                                'targetkeys': ['logamp', 'phase']}}
-        keys = keys_dict[self.target] if self.target is not None else keys_dict['default']
-        logging.debug(f"Keys for input and target data: {keys}")
+        name_dict = {'amp_freq': ['amp', 'freq'],
+                    'logamp_freq': ['logamp', 'freq'],
+                    'amp_phase': ['amp', 'phase'],
+                    'logamp_phase': ['logamp', 'phase']}
+        inputnames, targetnames = name_dict[self.input_type], name_dict[self.target]
+        if self.input_normalized:
+            inputnames = ['normed_'+name for name in inputnames]
+        if self.target_normalized:
+            targetnames = ['normed_'+name for name in targetnames]
 
-        hf = h5py.File(input_fname, 'a')
-
-        for idx in range(self.nsamples):
-            data = self.read_strain_hdf(idx, write_access=False)
-            # Save the data to a new HDF5 file with the same name but with `_input` suffix
-            input_fname = savename if savename.endswith('.hdf') else savename + '_input.hdf'
-            hf.create_group(f'wf{idx}')
-            inputdata, targetdata, _, = data
+        with h5py.File(input_fname, 'a') as hf:
+            for idx in range(self.nsamples):
+                data = self.read_strain_hdf(idx, write_access=False)
+                # Save the data to a new HDF5 file with the same name but with `_input` suffix
+                input_fname = savename if savename.endswith('.hdf') else savename + '_input.hdf'
+                hf.create_group(f'wf{idx}')
+                inputdata, targetdata, _, = data
 
 
-        logging.info(f"Saved dataset items to {input_fname} successfully.")
+        logger.info(f"Saved dataset items to {input_fname} successfully.")
         
 
 class CustomDataLoader(DataLoader):
@@ -1954,7 +1973,7 @@ class CustomDataLoader(DataLoader):
 
 def example_input_plot():
     inputs, outputs = get_data(n_samples=3)
-    logging.debug(inputs.shape,outputs.shape)
+    logger.debug(inputs.shape,outputs.shape)
     fig, ax = plt.subplots(1,1,figsize=(7,3))
     for i in range(len(outputs)):
         #ax[0].plot(np.arange(len(inputs[i])),inputs[i])
@@ -1974,8 +1993,8 @@ def example_input_plot():
 
     fig, ax1 = plt.subplots(1,1,figsize=(2,2))
     impulse = inputs[len(inputs)//2][6:]
-    # logging.debug(impulse)
-    # logging.debug(impulse)
+    # logger.debug(impulse)
+    # logger.debug(impulse)
     ax1.plot(np.arange(len(impulse)),impulse,)
     #plotAnal.beautifyPlot([ax1],xTicks=False,yTicks=False)
     ax1.set_axis_off()
@@ -2017,15 +2036,15 @@ def example2 (appoximant='SEONRv4', nsamples=10, qlim=5, m1end=75):
     for i in range(nsamples):
         m1 = np.random.choice(masses[:,0])
         m2 = np.random.choice(masses[:,1])
-        logging.debug(f"Masses: {m1}, {m2}")
+        logger.debug(f"Masses: {m1}, {m2}")
         hp, hc = get_td_waveform(approximant=appoximant, mass1=m1, mass2=m2,
                                  delta_t=DELTA_T, f_lower=f_lower)
         hp, hc = hp.trim_zeros(), hc.trim_zeros()
         amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
         phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
         freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
-        logging.debug(f'Length of {appoximant} hp: {len(hp)}, hc: {len(hc)}')
-        logging.debug(f'Length of {appoximant} amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
+        logger.debug(f'Length of {appoximant} hp: {len(hp)}, hc: {len(hc)}')
+        logger.debug(f'Length of {appoximant} amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
         axes[0].plot(phase, amp, label=f'{m1} & {m2}'+'$M_{\\odot}$')
         axes[1].plot(freq.sample_times, freq, label=f'{m1} & {m2}'+'$M_{\\odot}$')
         axes[2].plot(range(len(amp)), amp, label=f'{m1} & {m2}'+'$M_{\\odot}$')
@@ -2052,20 +2071,20 @@ def example3 (approximant='SEONRv4', ecc=True, transparent=True):
     for i in range(len(masses)):
         m1 = masses[i,0]
         m2 = masses[i,1]
-        logging.info(f"Masses: {m1}, {m2}")
+        logger.info(f"Masses: {m1}, {m2}")
         waveform_kwargs = {'delta_t':DELTA_T, 
                            'f_lower':f_lower}
         if ecc:
             waveform_kwargs['eccentricity'] = 0.2
         hp, hc = get_td_waveform(approximant=approximant, mass1=m1, mass2=m2,
                                  **waveform_kwargs)
-        logging.info('Strain polarizations generated!')
+        logger.info('Strain polarizations generated!')
         hp, hc = hp.trim_zeros(), hc.trim_zeros()
         amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
         phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc)
         freq = pycbc.waveform.utils.frequency_from_polarizations(hp, hc)
-        logging.debug(f'Length of {approximant} hp: {len(hp)}, hc: {len(hc)}')
-        logging.debug(f'Length of {approximant} amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
+        logger.debug(f'Length of {approximant} hp: {len(hp)}, hc: {len(hc)}')
+        logger.debug(f'Length of {approximant} amp: {len(amp)}, phase: {len(phase)}, freq: {len(freq)}')
         axes[0].plot(amp.sample_times, amp, label=f'{m1} & {m2}'+'$M_{\\odot}$')
         axes[1].plot(freq.sample_times, freq, label=f'{m1} & {m2}'+'$M_{\\odot}$')
     axes[0].set_xlabel('Sample Times')
@@ -2102,14 +2121,14 @@ def example4(approximant='SEOBNRv4', ecc=True, transparent=True):
     for i in range(len(masses)):
         m1 = masses[i, 0]
         m2 = masses[i, 1]
-        logging.info(f"Masses: {m1}, {m2}")
+        logger.info(f"Masses: {m1}, {m2}")
         waveform_kwargs = {'delta_t':DELTA_T, 
                            'f_lower':f_lower}
         if ecc:
             waveform_kwargs['eccentricity'] = 0.2
         hp, hc = get_td_waveform(approximant=approximant, mass1=m1, mass2=m2,
                                  **waveform_kwargs)
-        logging.info('Strain polarizations generated!')
+        logger.info('Strain polarizations generated!')
         hp, hc = hp.trim_zeros(), hc.trim_zeros()
         ax.plot(hp.sample_times, hp, label=f'{m1} & {m2}' + '$M_{\\odot}$')
     ax.set_xlabel('Sample Times')
@@ -2143,7 +2162,7 @@ def example4b(approximant='EccentricTD', m1=15, m2=10, e=0.2):
                            'eccentricity':0.2}
         hp, hc = get_td_waveform(approximant=approximant, mass1=m1, mass2=m2,
                                 **waveform_kwargs)
-        logging.info('Strain polarizations generated!')
+        logger.info('Strain polarizations generated!')
         print(f'duration={hp.duration}')
         # hp, hc = hp.trim_zeros(), hc.trim_zeros()
         ax.plot(hp.sample_times, hp, label='$f_{min}$='+str(f_lower))
@@ -2172,7 +2191,7 @@ def flower_duration_plot(approximant='EccentricTD', noshow=False):
     for m1, m2 in masses:
         durations = []
         for f_lower in f_lowers:
-            logging.info(f'm1={m1}, m2={m2}, f_lower={f_lower}')
+            logger.info(f'm1={m1}, m2={m2}, f_lower={f_lower}')
             label = f'm1={m1}, m2={m2}'
             waveform_kwargs = {'delta_t':DELTA_T,
                             'f_lower':f_lower,}
@@ -2184,7 +2203,7 @@ def flower_duration_plot(approximant='EccentricTD', noshow=False):
             hp, hc = get_td_waveform(approximant=approximant, mass1=m1, mass2=m2,
                                     **waveform_kwargs)
             durations.append(hp.duration)
-            logging.info(f'Duration: {hp.duration}')
+            logger.info(f'Duration: {hp.duration}')
             # hp, hc = hp.trim_zeros(), hc.trim_zeros()
         ax.plot(durations, f_lowers, '-', label=label)
         # # Add text annotation for the last point
@@ -2226,7 +2245,7 @@ def srate_duration_plot(approximant='SEOBNRv4'):
     for m1, m2 in masses:
         durations = []
         for delta_t in deltaTs:
-            logging.info(f'm1={m1}, m2={m2}, f_lower={f_lower}')
+            logger.info(f'm1={m1}, m2={m2}, f_lower={f_lower}')
             label = f'm1={m1}, m2={m2}'
             waveform_kwargs = {'delta_t':delta_t,
                             'f_lower':f_lower,}
@@ -2238,7 +2257,7 @@ def srate_duration_plot(approximant='SEOBNRv4'):
             hp, hc = get_td_waveform(approximant=approximant, mass1=m1, mass2=m2,
                                     **waveform_kwargs)
             durations.append(hp.duration)
-            logging.info(f'Duration: {hp.duration}')
+            logger.info(f'Duration: {hp.duration}')
             # hp, hc = hp.trim_zeros(), hc.trim_zeros()
         ax.plot(durations, sample_rates, '-', label=label)
     ax.set_xscale('log')
@@ -2285,7 +2304,7 @@ def m1_duration_vs_srate_plot(approximant='SEOBNRv4', m2=10):
 
     for idx, (delta_t, srate) in enumerate(zip(deltaTs, sample_rates)):
         durations = []
-        logging.info
+        logger.info
         for m1 in m1s:
             waveform_kwargs = {'delta_t': delta_t, 'f_lower': f_lower}
             if approximant == 'EccentricTD' or approximant == 'SEOBNRE':
@@ -2591,7 +2610,7 @@ def calc_cutoffconst(approximant='SEOBNRv4', nsamples=500, aligned=False):
         hp, hc = get_td_waveform(**wfkwargs)
         consts[i] = hp.duration / (40 ** (-8/3) * mchirp[i] ** (-5/3))
     const = np.mean(consts)
-    logging.info(f"Proportionality constant (k) for {approximant}: {const}")
+    logger.info(f"Proportionality constant (k) for {approximant}: {const}")
     return const
 
 
@@ -2599,14 +2618,14 @@ def check_datasets(nsamples=10,):
     """
     Checks the datasets obtained via changing f_cutoff and f_sample.
     """
-    logging.info("Checking datasets with different f_cutoff and f_sample values.")
+    logger.info("Checking datasets with different f_cutoff and f_sample values.")
     masses = get_mass(splitTT=False)
     cutoffconst = calc_cutoffconst()
     durations = np.zeros(nsamples)
     for i in tqdm(range(nsamples)):
         m1 = np.random.choice(masses[:,0])
         m2 = np.random.choice(masses[:,1])
-        logging.info(f"Masses: {m1}, {m2}")
+        logger.info(f"Masses: {m1}, {m2}")
         durations[i] = get_vals(m1, m2, dataset='f_cutoff', cutoffprop=cutoffconst, 
                                 calc_duration_mean=True)
         print(f"Mean duration: {np.mean(durations)}")
@@ -2643,7 +2662,7 @@ def calc_cutoffconst(approximant='SEOBNRv4', nsamples=500, aligned=False):
         hp, hc = get_td_waveform(**wfkwargs)
         consts[i] = hp.duration / (40 ** (-8/3) * mchirp[i] ** (-5/3))
     const = np.mean(consts)
-    logging.info(f"Proportionality constant (k) for {approximant}: {const}")
+    logger.info(f"Proportionality constant (k) for {approximant}: {const}")
     return const
 
 
@@ -2651,14 +2670,14 @@ def check_datasets(nsamples=10,):
     """
     Checks the datasets obtained via changing f_cutoff and f_sample.
     """
-    logging.info("Checking datasets with different f_cutoff and f_sample values.")
+    logger.info("Checking datasets with different f_cutoff and f_sample values.")
     masses = get_mass(splitTT=False)
     cutoffconst = calc_cutoffconst()
     durations = np.zeros(nsamples)
     for i in tqdm(range(nsamples)):
         m1 = np.random.choice(masses[:,0])
         m2 = np.random.choice(masses[:,1])
-        logging.info(f"Masses: {m1}, {m2}")
+        logger.info(f"Masses: {m1}, {m2}")
         durations[i] = get_vals(m1, m2, dataset='f_cutoff', cutoffprop=cutoffconst, 
                                 calc_duration_mean=True)
         print(f"Mean duration: {np.mean(durations)}")
@@ -2767,12 +2786,12 @@ if __name__=="__main__":
         ds =  CustomDataset(forwhat='valid', plot=args.plot, 
                             approximant=args.approximant, convert=args.convert)
         for i, x in enumerate(ds):
-            logging.debug(f'x: {x}')
-            logging.debug(f'x: {x}')
+            logger.debug(f'x: {x}')
+            logger.debug(f'x: {x}')
             if i==args.nsamples:
                 break
-        logging.debug(f"Length of dataset: {len(ds)}")
-        logging.debug(f"Length of dataset: {len(ds)}")
+        logger.debug(f"Length of dataset: {len(ds)}")
+        logger.debug(f"Length of dataset: {len(ds)}")
     
     if args.plotmass:
         get_mass(plot=args.plot, qlim=10)
