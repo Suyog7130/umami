@@ -302,7 +302,7 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
     logger.info(f"Completed sampler for injection {run_idx} with label {this_label}.")
 
     # Make a corner plot.
-    result.plot_corner(save=True, filename=f'{this_label}_corner.png')
+    result.plot_corner(save=True, filename=outdir+f'{this_label}_corner.png')
     return result
 
 
@@ -490,7 +490,7 @@ if __name__ == "__main__":
     parser.add_argument('--nlive', type=int, default=300,
                         help="Number of live points for the sampler (default: %(default)s)")
     parser.add_argument('--threshold', type=float, default=0.1,
-                        help="Stopping threshold for the sampler, corresponding to the change in the log evidence `logZ` in the next iteration. If the change falls below this threshold, the sampler will stop! (default: %(default)s)")
+                        help="Stopping threshold for the sampler, corresponding to the change in the log evidence `logZ` in the next iteration. If the change falls below this threshold, the sampler will stop! This value is equal to `dlogZ`! (default: %(default)s)")
     parser.add_argument('--nessai-npool', type=int, default=1,
                         help="Number of workers for nessai's multiprocessing kwarg `n_pool` (default: %(default)s)")
     parser.add_argument('--dynesty-npool', type=int, default=1,
