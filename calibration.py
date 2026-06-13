@@ -775,6 +775,75 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
     print("Training complete!")
 
 
+def load_calibrator_model(model_path, device=DEVICE, precision=PRECISION):
+    """
+    Loads a trained calibrator model from a checkpoint file.
+    """
+    calmodel = ResidualCalibrationCNN(
+        input_channels=6,  # [ml_amp, ml_freq, param_m1, param_m2, param_s1z, param_s2z]
+        output_channels=2,
+        hidden_channels=128,
+        num_blocks=5,
+        kernel_size=7,
+        dropout=0.0,
+    )
+    calmodel.to(device=device, dtype=getattr(torch, precision))
+    calmodel.load_state_dict(torch.load(model_path, map_location=device))
+    calmodel.eval()
+    return calmodel
+
+
+class CalibrationModel:
+    """
+    A wrapper class to use a trained calibrator model for residual prediction.
+    This will allow easy 
+    """
+    def __init__(self, calibrator_model_path, 
+                 input_type: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_freq',
+                 params_mean=None, params_std=None,
+                 device=DEVICE, precision=PRECISION):
+        self.calibrator_model = load_calibrator_model(calibrator_model_path, device=device, precision=precision)
+        logger.info(f"Initialized CalibrationModel with calibrator model loaded from {calibrator_model_path}")
+
+    def preprocess_params(self, params, repeat_length):
+        """
+        Preprocess the parameters by normalizing them and repeating them across the time 
+        dimension to match the shape of the ML generated waveform inputs.
+        """
+        param_m1, param_m2, param_s1z, param_s2z = params[:, 0], params[:, 1], params[:, 2], params[:, 3]
+        if self.params_mean is not None and self.params_std is not None:
+            param_m1 = (param_m1 - self.params_mean[0].item()) / self.params_std[0].item()
+            param_m2 = (param_m2 - self.params_mean[1].item()) / self.params_std[1].item()
+            param_s1z = (param_s1z - self.params_mean[2].item()) / self.params_std[2].item()
+            param_s2z = (param_s2z - self.params_mean[3].item()) / self.params_std[3].item()
+            logger.debug(f"Preprocessed parameters: param_m1={param_m1}, param_m2={param_m2}, param_s1z={param_s1z}, param_s2z={param_s2z}")
+        params = torch.stack([param_m1, param_m2, param_s1z, param_s2z], dim=1)  # shape: (batch, 4)
+        params = params.unsqueeze(-1).expand(-1, repeat_length)  # shape: (batch, 4, n)
+        return params
+
+    def predict_residuals(self, inputs, params):
+        """
+        Predict the amplitude and frequency residuals given the ML generated amplitude and frequency, and the parameters.
+        """
+        assert inputs.shape[1] == 2, f"Expected inputs to have shape (batch, 2, n), but got {inputs.shape}"
+        assert params.shape[1] == 4, f"Expected params to have shape (batch, 4), but got {params.shape}"
+        params = self.preprocess_params(params, repeat_length=inputs.shape[-1])  # shape: (batch, 4, n)
+        self.calibrator_model.eval()
+        with torch.no_grad():
+            input_tensor = torch.stack([inputs[:, 0], inputs[:, 1], params[:, 0], params[:, 1], params[:, 2], params[:, 3]], dim=1)  # shape: (batch, 6, n)
+            pred_input_residual = self.calibrator_model(input_tensor)  # shape: (batch, 2, n)
+        return (pred_input_residual[:, 0, :], pred_input_residual[:, 1, :])
+
+    def calibrate_waveform(self, ml_amp, ml_freq, params):
+        """
+        Calibrate the ML generated amplitude and frequency by adding the predicted residuals to them.
+        """
+        pred_amp_residual, pred_freq_residual = self.predict_residuals(ml_amp, ml_freq, params)
+        calibrated_amp = ml_amp + pred_amp_residual
+        calibrated_freq = ml_freq + pred_freq_residual
+        return calibrated_amp, calibrated_freq
+
+
 
 def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10', 
                     wfmodel_configpath='modelconfig-cvae-paper-I.json',
@@ -813,17 +882,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     params_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE)
 
     # -- init calibrator model
-    calmodel = ResidualCalibrationCNN(
-        input_channels=6,  # [ml_amp, ml_freq, param_m1, param_m2, param_s1z, param_s2z]
-        output_channels=2,
-        hidden_channels=128,
-        num_blocks=5,
-        kernel_size=7,
-        dropout=0.0,
-    )
-    calmodel.to(device=DEVICE, dtype=getattr(torch, PRECISION))
-    calmodel.load_state_dict(torch.load(calibrator_modelpath, map_location=DEVICE))
-    calmodel.eval()
+    calmodel = load_calibrator_model(calibrator_modelpath, device=DEVICE, precision=PRECISION)
     logger.info(f"Loaded calibrator model from {calibrator_modelpath} for testing: {calmodel}")
 
     test_dataset = CustomDataset(approximant='SEOBNRv4', 
