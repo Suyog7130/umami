@@ -55,7 +55,7 @@ def init_logging(args, log_dir='logs', write_to_file=True):
         os.makedirs(log_dir, exist_ok=True)
         fname = os.path.join(log_dir, f'session_{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}.log')
         file_handler = logging.FileHandler(fname, mode='w')
-        file_handler.setLevel(logging.INFO)   # -- saved logs should be as detailed as possible!
+        file_handler.setLevel(root_level)   # -- saved logs should be as detailed as possible!
 
     # 3. Initialize Root Logger
     # We set basicConfig to the lowest logical level so handlers can filter up
@@ -113,7 +113,10 @@ def init_logging(args, log_dir='logs', write_to_file=True):
     bilby_logger = logging.getLogger('bilby')
     bilby_logger.handlers = []   # STRIP its private handlers
     bilby_logger.propagate = True   # ENABLE propagation to our root logger, so it follows our configured levels
-    bilby_logger.setLevel(logging.WARNING)
+    bilby_logger.setLevel(root_level)  # Set to root level to ensure it follows our hierarchy
+    
+    # NOTE: Some issue with `nessai` and `nessai.sampler.xxx` loggers, so better to not propagate them!
+    logging.getLogger("nessai").propagate = True
 
     # 5. Manual Overrides for Noisy Libraries
     # Even in verbose modes, these are often too noisy
