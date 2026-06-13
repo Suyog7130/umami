@@ -347,12 +347,9 @@ def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = None):
                                 'config_path': wfkwargs.get('config_path'),
                                 'distance_scale_factor': LUMINOSITY_DISTANCE},
             )
+    
 
-
-def main(args, label='umamipe', 
-         pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml', 
-         sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',):
-
+def set_sampler_kwargs(args, sampler):
     if sampler=='nessai':
         logger.info("Using multiprocessing with spawn context for parallel sampling.")
         nworkers = min(3, mp.cpu_count() - 1)
@@ -387,7 +384,13 @@ def main(args, label='umamipe',
             sample="acceptance-walk",
             npool=args.dynesty_npool,  # Set this arg for Bilby's internal multiprocessing that only works on CPU!
         )
+    return sampler_kwargs
 
+
+def main(args, label='umamipe', 
+         pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml', 
+         sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',):
+    label = label + f'_{pe_run_type}_{sampler}'
     project_dir = '../' + args.project_dir + '/'
     outdir = os.path.join(project_dir, f'results/{TODAY}')
     if not os.path.exists(outdir):
@@ -421,6 +424,8 @@ def main(args, label='umamipe',
         waveform_generator = make_wf_generator('ml', wfkwargs={'model_path': model_path, 
                                                                'config_path': args.model_config})
         logger.info("Initialized EOB waveform generator for injection and ML waveform generator for recovery.")
+
+    sampler_kwargs = set_sampler_kwargs(args, sampler)
 
     results = run_injection_campaign(num_injections=args.num_injections, 
                                      base_seed=42,
