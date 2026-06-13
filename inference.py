@@ -374,6 +374,7 @@ def set_sampler_kwargs(args, sampler):
             n_active=args.nlive,
             save_every=15,  # Save intermediate results every 15 iterations (default: 5)
             track_sampling_time=True,
+            pytorch_threads=args.pytorch_threads,
         )
     else:
         logger.info("Not using multiprocessing. Running sampler in single-process mode.")
@@ -473,7 +474,7 @@ def analyze_results(fname: str = None, results: Optional[List[bilby.gw.result.CB
     # Bilby built-in PP plot
     fig, pvals = make_pp_plot(
         results,
-        filename=f"{outdir}/{label}_pp.png",
+        filename=f"{outdir}/{label}_pp-plot.png",
         save=True,
     )
     print("Combined p-value:", pvals.combined_pvalue)

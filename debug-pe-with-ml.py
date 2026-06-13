@@ -399,7 +399,8 @@ def run_sampler(args, likelihood, priors, injection_parameters):
 
 def make_plots(args, result):
     corner_file = os.path.join(args.outdir, f"{args.label}_corner.png")
-    result.plot_corner(parameters=["mass_1", "mass_2", "spin_1z", "spin_2z"], save=True, filename=corner_file)
+    result.plot_corner(parameters=["mass_1", "mass_2", "spin_1z", "spin_2z"], 
+    save=True, filename=corner_file)
     print(f"Saved corner plot: {corner_file}")
     if args.plot_waveform_posterior:
         try:
