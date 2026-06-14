@@ -789,12 +789,12 @@ class FlexTwoC2E1D(nn.Module):
         logging.debug(f"Normalizing labels with global mean: {self.labels_mean}, global std: {self.labels_std}")
         return (labels - self.labels_mean) / self.labels_std
                                
-    def __call__(self, x, labels, keys):
+    def __call__(self, input, labels, keys):
         """
         Overrides the __call__ method to directly call the forward method.
         
         Args:
-            x (Tensor): Input data.
+            input (Tensor): Input data.
             labels (Tensor): Conditional labels.
             keys (Tensor): Key data.
 
@@ -806,14 +806,14 @@ class FlexTwoC2E1D(nn.Module):
         If `paramsnorm` is False, the labels will be used as they are without normalization.
         """
         # logging.debug('__call__')
-        logging.debug(f'__call__ with x.shape={x.shape}, labels.shape={labels.shape}, keys.shape={keys.shape}')
+        logging.debug(f'__call__ with input.shape={input.shape}, labels.shape={labels.shape}, keys.shape={keys.shape}')
         if hasattr(self, 'labels_mean') and hasattr(self, 'labels_std'):
             if self.labels_mean is None or self.labels_std is None:
                 logging.warning("Labels mean or std is None, skipping normalization.")
             else:
                 labels = self.normalize_labels(labels)
-        return self.forward(x, labels, keys)
-    
+        return self.forward(input, labels, keys)
+
     def encode_x(self, x, labels):
         """
         Inputs are encoded into a 2 channel latent space,
@@ -1454,7 +1454,7 @@ class FlexCAEPhase(FlexCAE):
     All other functions and attributes are the same as FlexCAE, since the model architecture is the same, and only the 
     input and output data are different.
     """
-    def mismatch_nokl_loss_func(self, x, x_recon, zvars, strains, keys, attr):
+    def mismatch_nokl_loss_func(self, target, x_recon, zvars, strains, keys, attr):
         """
         Computes the mismatch loss between the reconstructed output and the keys.
 
@@ -1465,8 +1465,8 @@ class FlexCAEPhase(FlexCAE):
 
         Parameters:
         -----------
-        x : torch.Tensor
-            Original input data.
+        target : torch.Tensor
+            Original target data.
         x_recon : torch.Tensor
             Reconstructed input data.
         zvars : list of torch.Tensor
@@ -1485,25 +1485,30 @@ class FlexCAEPhase(FlexCAE):
         """
         z1_mean, z1_log_var, z2_mean, z2_log_var, \
             z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
+        zx_mu, zx_logvar, zy_mu, zy_logvar, \
+            zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
         logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
             z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
         
-        # latent loss between encoders and conditional encoders,
-        # to ensure that the same latent representation is learned.
-        # However, we simply calculate this as the MSE loss between the z_mu!
-        ll1 = F.mse_loss(z1_mean, z2_mean, reduction='mean')
-        ll2 = F.mse_loss(z1p_mean, z2p_mean, reduction='mean')
-        latent_loss = ll1 + ll2
+        # NOTE: If the targets are unnormalized [amp,phase], then there is no need to have the keys as input to the model, since we can have normalized inputs, but the loss function can measure loss wrt unnormalized targets! This is the 1C1E1D kind of model then. We will define this in a new class, however, for current implementation, we keep the Key Encoder and calculate the latent loss terms for all six comparison pairs between the two encoders and two conditional encoders.
+        ll_enc_x = F.mse_loss(zx_mu, zy_mu, reduction='mean')
+        ll_enc_key = F.mse_loss(zkey_mu, zykey_mu, reduction='mean')
+        ll_cond_x = F.mse_loss(zx_mu, zykey_mu, reduction='mean')
+        ll_cond_key = F.mse_loss(zkey_mu, zy_mu, reduction='mean')
+        ll_cross1 = F.mse_loss(zx_mu, zkey_mu, reduction='mean')
+        ll_cross2 = F.mse_loss(zy_mu, zykey_mu, reduction='mean')
+        latent_loss = ll_enc_x + ll_enc_key + ll_cond_x + ll_cond_key + ll_cross1 + ll_cross2
         logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
-        recon_loss = F.mse_loss(x_recon, x, reduction='mean')
+        recon_loss = F.mse_loss(x_recon, target, reduction='mean')
 
         # -- Calculate the total mismatch loss for the batch (vectorized)
+        # TODO: All these operations should be done on PyTorch tensors and on GPU!
         amp_recon = x_recon[:, 0].cpu().detach().numpy()
         phase_recon = x_recon[:, 1].cpu().detach().numpy()
-        amp_orig = x[:, 0].cpu().detach().numpy()
-        phase_orig = x[:, 1].cpu().detach().numpy()
+        amp_orig = target[:, 0].cpu().detach().numpy()
+        phase_orig = target[:, 1].cpu().detach().numpy()
 
         # -- Denormalize using keys (vectorized)
         keys_reshaped = keys.reshape(-1, 2, 2).cpu().detach().numpy()
@@ -1517,7 +1522,7 @@ class FlexCAEPhase(FlexCAE):
 
         # -- Calculate mismatch loss (vectorized)
         mmloss = 0.0
-        for i in range(x.size(0)):
+        for i in range(target.size(0)):
             hp_recon = amp_recon[i] * np.cos(phase_recon[i])
             hc_recon = amp_recon[i] * np.sin(phase_recon[i])
             hp_orig = amp_orig[i] * np.cos(phase_orig[i])
