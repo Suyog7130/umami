@@ -112,7 +112,10 @@ def save_data_from_dataset(savedir='../data/',
     """
     Save input and target waveform data the datasets
     """
-    label = f'-{target_type}'
+    assert input_type == target_type, "Both input and target types should be same, normalization can differ."
+    label = f'{APPROXIMANT}-{target_type}'
+    label += '-normIN' if input_normalized else '-unnormIN'
+    label += '-normOUT' if target_normalized else '-unnormOUT'
     data_dir = '/Users/suyoggarg/Desktop/'
     # train_hdf_path = data_dir + 'waveforms-SEOBNRv4-aligned-fcutoff-1sec-8192Hz-train-70k-seed42-params_002-20260430-225157.hdf'
     # val_hdf_path = data_dir + 'waveforms-SEOBNRv4-aligned-fcutoff-1sec-8192Hz-val-10k-seed42-params_002-20260430-225157.hdf'
@@ -135,9 +138,9 @@ def save_data_from_dataset(savedir='../data/',
                             train_device=DEVICE, precision=PRECISION,
                             input_type=input_type, target_type=target_type,
                             input_normalized=input_normalized, target_normalized=target_normalized)
-    train_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-train.hdf')
-    valid_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-val.hdf')
-    test_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-test.hdf')
+    train_set.save_to_input_file(savename=savedir+f'-train.hdf')
+    valid_set.save_to_input_file(savename=savedir+f'-val.hdf')
+    test_set.save_to_input_file(savename=savedir+f'-test.hdf')
 
 
 

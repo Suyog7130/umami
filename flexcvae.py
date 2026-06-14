@@ -1483,13 +1483,11 @@ class FlexCAEPhase(FlexCAE):
         mmloss : float
             Total mismatch loss for the batch.
         """
-        z1_mean, z1_log_var, z2_mean, z2_log_var, \
-            z1p_mean, z1p_log_var, z2p_mean, z2p_log_var = zvars
         zx_mu, zx_logvar, zy_mu, zy_logvar, \
             zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
-        logging.debug(f'z1_mean={z1_mean}, z1_log_var={z1_log_var}, z2_mean={z2_mean}, z2_log_var={z2_log_var}, \
-            z1p_mean={z1p_mean}, z1p_log_var={z1p_log_var}, z2p_mean={z2p_mean}, z2p_log_var={z2p_log_var}')
-        
+        logging.debug(f'zx_mu={zx_mu}, zx_logvar={zx_logvar}, zy_mu={zy_mu}, zy_logvar={zy_logvar}, \
+            zkey_mu={zkey_mu}, zkey_logvar={zkey_logvar}, zykey_mu={zykey_mu}, zykey_logvar={zykey_logvar}')
+
         # NOTE: If the targets are unnormalized [amp,phase], then there is no need to have the keys as input to the model, since we can have normalized inputs, but the loss function can measure loss wrt unnormalized targets! This is the 1C1E1D kind of model then. We will define this in a new class, however, for current implementation, we keep the Key Encoder and calculate the latent loss terms for all six comparison pairs between the two encoders and two conditional encoders.
         ll_enc_x = F.mse_loss(zx_mu, zy_mu, reduction='mean')
         ll_enc_key = F.mse_loss(zkey_mu, zykey_mu, reduction='mean')
