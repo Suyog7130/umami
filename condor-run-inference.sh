@@ -2,12 +2,12 @@
 set -eo pipefail
 
 LABEL="${1:-ml2ml-paper-1}"
-NUM_INJECTIONS="${2:-10}"
-SAMPLER="${3:-nessai}"
+INJECTION_INDEX="${2:-0}"
+SAMPLER="${3:-pocomc}"
 PE_RUN_TYPE="${4:-ml2ml}"
 NLIVE="${5:-300}"
 THRESHOLD="${6:-0.2}"
-NESSAI_NPOOL="${7:-8}"
+NPOOL="${7:-8}"
 PYTORCH_THREADS="${8:-1}"
 
 echo "============================================================"
@@ -16,12 +16,12 @@ echo "Host: $(hostname)"
 echo "Date: $(date)"
 echo "PWD: $(pwd)"
 echo "LABEL: ${LABEL}"
-echo "NUM_INJECTIONS: ${NUM_INJECTIONS}"
+echo "INJECTION_INDEX: ${INJECTION_INDEX}"
 echo "SAMPLER: ${SAMPLER}"
 echo "PE_RUN_TYPE: ${PE_RUN_TYPE}"
 echo "NLIVE: ${NLIVE}"
 echo "THRESHOLD: ${THRESHOLD}"
-echo "NESSAI_NPOOL: ${NESSAI_NPOOL}"
+echo "NPOOL: ${NPOOL}"
 echo "PYTORCH_THREADS: ${PYTORCH_THREADS}"
 echo "============================================================"
 
@@ -75,21 +75,21 @@ echo "Checking core imports..."
 
 echo "Running inference.py..."
 
-"${PYTHON_EXE}" inference.py \
+"${PYTHON_EXE}" inference.py --run-single-injection \
     --label "${LABEL}" \
-    --num-injections "${NUM_INJECTIONS}" \
+    --injection-index "${INJECTION_INDEX}" \
     --sampler "${SAMPLER}" \
     --pe-run-type "${PE_RUN_TYPE}" \
     --nlive "${NLIVE}" \
     --threshold "${THRESHOLD}" \
-    --nessai-npool "${NESSAI_NPOOL}" \
+    --npool "${NPOOL}" \
     --pytorch-threads "${PYTORCH_THREADS}" \
     --quiet
 
 EXIT_CODE=$?
 
 echo "============================================================"
-echo "Finished inference job"
+echo "Finished inference job for label ${LABEL} and injection index ${INJECTION_INDEX} with sampler ${SAMPLER} and PE run type ${PE_RUN_TYPE}."
 echo "Exit code: ${EXIT_CODE}"
 echo "Date: $(date)"
 echo "============================================================"
