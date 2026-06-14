@@ -138,9 +138,9 @@ def save_data_from_dataset(savedir='../data/',
                             train_device=DEVICE, precision=PRECISION,
                             input_type=input_type, target_type=target_type,
                             input_normalized=input_normalized, target_normalized=target_normalized)
-    train_set.save_to_input_file(savename=savedir+f'-train.hdf')
-    valid_set.save_to_input_file(savename=savedir+f'-val.hdf')
-    test_set.save_to_input_file(savename=savedir+f'-test.hdf')
+    train_set.save_to_input_file(savename=savedir+f'{label}-train.hdf')
+    valid_set.save_to_input_file(savename=savedir+f'{label}-val.hdf')
+    test_set.save_to_input_file(savename=savedir+f'{label}-test.hdf')
 
 
 
@@ -152,7 +152,7 @@ class WaveformDataset(torch.utils.data.Dataset):
     """
     def __init__(self, hdf_fname, 
                  target_type: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_phase',
-                 input_nomalized=True, target_normalized=False,
+                 input_normalized=True, target_normalized=False,
                  params_mean=None, params_std=None,
                  train_device=DEVICE, precision=PRECISION):
         super(WaveformDataset, self).__init__()
@@ -161,7 +161,7 @@ class WaveformDataset(torch.utils.data.Dataset):
         self.precision = precision
 
         self.target_type = self.input_type = target_type
-        self.input_normalized = input_nomalized
+        self.input_normalized = input_normalized
         self.target_normalized = target_normalized
         self._set_input_target_names()
 
