@@ -10,7 +10,8 @@ import numpy as np
 def ensure_dir(path: str) -> None:
     """ NOTE: All dir paths should end with a '/' to distinguish from file paths. """
     if not path.endswith('/'):
-        raise ValueError("Directory path must end with a '/'")
+        if not os.path.isdir(path) or not os.path.exists(path):
+            raise ValueError("Directory path must end with a '/'")
     os.makedirs(path, exist_ok=True)
 
 def ensure_file(path: str) -> None:
@@ -54,4 +55,8 @@ def save_txt(obj: str, path: str) -> None:
         f.write(obj)
 
 def write_DONE_file(outdir: str, label: str) -> None:
-    save_txt("", os.path.join(outdir, f"{label}_DONE"))
+    if label=='':
+        filename = os.path.join(outdir, "DONE")
+    else:
+        filename = os.path.join(outdir, f"{label}_DONE")
+    save_txt("", filename)

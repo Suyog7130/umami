@@ -6,6 +6,7 @@ using Bilby, and obtain a Posterior Probability plot.
 
 import os
 import json
+import time
 import argparse
 import logging
 import datetime
@@ -30,7 +31,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from tqdm import tqdm
 from mlwavegen import MLWaveformGenerator, convert_to_ml_parameters
 
-from utils.io import save_json, save_pickle
+from utils.io import save_json, save_pickle, save_txt, write_DONE_file, ensure_dir
 
 from utils.generic import init_logging, init_verbosity_args
 logger = logging.getLogger(__name__)
@@ -284,6 +285,7 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
     logger.debug(f"Injection parameters for run {run_idx}: {injection_parameters}")
 
     # -- Save IFOs with injected signal and noise to file
+    print(outdir, this_label)
     save_pickle(ifos, os.path.join(outdir, f"{this_label}_ifos.pkl"))
     save_json(injection_parameters, os.path.join(outdir, f"{this_label}_injection_parameters.json"))
 
@@ -292,6 +294,7 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
         waveform_generator=waveform_generator,
     )
 
+    time_start = time.time()
     result = bilby.run_sampler(
         likelihood=likelihood,
         priors=active_priors,
@@ -305,7 +308,11 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
         save=True,
         **sampler_kwargs
     )
-    logger.info(f"Completed sampler for injection {run_idx} with label {this_label}.")
+    time_end = time.time()
+    logger.info(f"Completed sampler for injection {run_idx} with label {this_label}. Time taken: {time_end - time_start:.2f} seconds.")
+
+    # Write total sampling time to TXT file
+    save_txt(f"{time_end - time_start:.2f}", os.path.join(outdir, f"{this_label}_sampling_time.txt"))
 
     # Make a corner plot.
     result.plot_corner(save=True, filename=outdir+f'{this_label}_corner.png')
@@ -436,6 +443,8 @@ def main(args, label='umamipe',
     sampler_kwargs = set_sampler_kwargs(args, sampler)
 
     if args.run_one_injection:
+        outdir = os.path.join(outdir, f'inj_{args.injection_index}_{NOW}/')
+        ensure_dir(outdir)
         logger.info(f"Running a single injection and PE with fixed seed 42, for index {args.injection_index}...")
         results = run_single_injection(args.injection_index, seed=42, 
                                         label_base=label, outdir=outdir,
@@ -475,7 +484,8 @@ def main(args, label='umamipe',
     with open(os.path.join(outdir, f'{label}_{NOW}_config.json'), 'w') as f:
         json.dump(config_snapshot, f, indent=4)
 
-    analyze_results(results=results, label=label+f'_{NOW}', outdir=outdir)
+    write_DONE_file(outdir, '')
+    # analyze_results(results=results, label=label+f'_{NOW}', outdir=outdir)
     print("Completed injection campaign and sampling for all injections.")
 
 
