@@ -1540,13 +1540,13 @@ class CustomDataset(Dataset):
 
         # open the HDF file for reading in the dataset initialization, so that we can read from it in the `__getitem__` method without having to open and close the file every time, which is inefficient. We will keep this file open for the lifetime of the dataset, and close it when the dataset is deleted.
         self.data_file = h5py.File(data_path, open_mode)
-        logger.info(f"Opened HDF file {data_path} for reading calibrator input and target residuals in the CalibratorDataset.")
+        logger.info(f"Opened HDF file {data_path} for reading or writing data.")
 
     def _close_hdf(self):
         # close the HDF file when the dataset is deleted, to free up resources
         if hasattr(self, 'data_file') and self.data_file is not None:
             self.data_file.close()
-            logger.info(f"Closed HDF file {self.hdf_fname} after reading calibrator input and target residuals.")
+            logger.info(f"Closed HDF file {self.hdf_fname}.")
 
     def __del__(self):
         self._close_hdf()

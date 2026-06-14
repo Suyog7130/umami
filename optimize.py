@@ -135,9 +135,9 @@ def save_data_from_dataset(savedir='../data/',
                             train_device=DEVICE, precision=PRECISION,
                             input_type=input_type, target_type=target_type,
                             input_normalized=input_normalized, target_normalized=target_normalized)
-    train_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-train-70k-seed42-params_002.hdf')
-    valid_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-val-10k-seed42-params_002.hdf')
-    test_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-test-20k-seed42-params_002.hdf')
+    train_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-train.hdf')
+    valid_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-val.hdf')
+    test_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-test.hdf')
 
 
 
@@ -147,23 +147,43 @@ class WaveformDataset(torch.utils.data.Dataset):
     This is a simplified version that only loads the input waveforms and targets,
     without labels, keys, strains, or additional attributes.
     """
-    def __init__(self, hdf_fname, target=BASE_MODEL_CONFIG['target'], train_device=DEVICE, precision=PRECISION):
+    def __init__(self, hdf_fname, 
+                 target_type: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_phase',
+                 input_nomalized=True, target_normalized=False,
+                 params_mean=None, params_std=None,
+                 train_device=DEVICE, precision=PRECISION):
         super(WaveformDataset, self).__init__()
         self.hdf_fname = hdf_fname
-        self.target = target
         self.train_device = train_device
         self.precision = precision
+
+        self.target_type = self.input_type = target_type
+        self.input_normalized = input_nomalized
+        self.target_normalized = target_normalized
+        self._set_input_target_names()
+
+        self.params_mean = params_mean
+        self.params_std = params_std
         assert self.params_mean is None or self.params_mean.shape == (4,), f"Expected params_mean to be of shape (4,), but got {self.params_mean.shape}"
         assert self.params_std is None or self.params_std.shape == (4,), f"Expected params_std to be of shape (4,), but got {self.params_std.shape}"
+
         self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
+
+    def _set_input_target_names(self):
+        # -- labels for input and target data for different kinds of targets.
+        name_dict = {'amp_freq': ['amp', 'freq'],
+                    'logamp_freq': ['logamp', 'freq'],
+                    'amp_phase': ['amp', 'phase'],
+                    'logamp_phase': ['logamp', 'phase']}
+        self.inputnames, self.targetnames = name_dict[self.input_type], name_dict[self.target_type]
 
     def __len__(self):
         return len(self.data_file.keys())  # number of groups in the HDF file, which corresponds to the number of data samples
     
     def init_hdf(self):
         # -- check if the HDF file exists, if not, create an empty HDF file with the same name, so that we can write to it later on in the `get_calibrator_input` function without having to worry about file not found errors.
-        data_hdf = self.data_hdf + '.hdf' if not self.data_hdf.endswith('.hdf') else self.data_hdf
-        data_path = f'../data/{data_hdf}'
+        hdf_fname = self.hdf_fname + '.hdf' if not self.hdf_fname.endswith('.hdf') else self.hdf_fname
+        data_path = f'../data/{hdf_fname}'
 
         if not os.path.exists(data_path):
             with h5py.File(data_path, 'w') as f:
@@ -174,30 +194,45 @@ class WaveformDataset(torch.utils.data.Dataset):
 
         # open the HDF file for reading in the dataset initialization, so that we can read from it in the `__getitem__` method without having to open and close the file every time, which is inefficient. We will keep this file open for the lifetime of the dataset, and close it when the dataset is deleted.
         self.data_file = h5py.File(data_path, 'r')
-        logger.info(f"Opened HDF file {data_path} for reading calibrator input and target residuals in the CalibratorDataset.")
+        logger.info(f"Opened HDF file {data_path} for reading or writing data.")
 
     def close_hdf(self):
         # close the HDF file when the dataset is deleted, to free up resources
         if hasattr(self, 'data_file') and self.data_file is not None:
             self.data_file.close()
-            logger.info(f"Closed HDF file {self.data_hdf} after reading calibrator input and target residuals.")
+            logger.info(f"Closed HDF file {self.hdf_fname}.")
 
     def __del__(self):
         self.close_hdf()
 
     def read_data_from_hdf(self, idx):
         # -- read the input waveform and target residual from the HDF file for the given index, and return them as tensors
-        group_name = f'sample_{idx}'
-        if group_name not in self.data_file:
-            logger.error(f"Group {group_name} not found in HDF file {self.data_hdf}. Cannot read data for index {idx}.")
-            raise KeyError(f"Group {group_name} not found in HDF file {self.data_hdf}.")
-        group = self.data_file[group_name]
-        x = torch.tensor(group['input_waveform'][:], dtype=getattr(torch, self.precision)).to(self.train_device)
-        target = torch.tensor(group['target_residual'][:], dtype=getattr(torch, self.precision)).to(self.train_device)
-        return x, target
+        grp = f'sample{idx}'
+        if grp not in self.data_file:
+            logger.error(f"Group {grp} not found in HDF file {self.hdf_fname}. Cannot read data for index {idx}.")
+            raise KeyError(f"Group {grp} not found in HDF file {self.hdf_fname}.")
+        data = self.data_file[grp]
+        input_one = data[f'input_{self.inputnames[0]}'][:]
+        input_two = data[f'input_{self.inputnames[1]}'][:]
+        target_one = data[f'target_{self.targetnames[0]}'][:]
+        target_two = data[f'target_{self.targetnames[1]}'][:]
+        input = torch.stack([torch.tensor(input_one, dtype=getattr(torch, self.precision)),
+                            torch.tensor(input_two, dtype=getattr(torch, self.precision))], dim=0).to(self.train_device)
+        target = torch.stack([torch.tensor(target_one, dtype=getattr(torch, self.precision)),
+                             torch.tensor(target_two, dtype=getattr(torch, self.precision))], dim=0).to(self.train_device)
+        return input, target
 
     def __getitem__(self, idx):
         return self.read_data_from_hdf(idx)
+    
+
+class WaveformDataLoader(torch.utils.data.DataLoader):
+    """
+    A custom dataloader for the `WaveformDataset`, which inherits from `torch.utils.data.DataLoader`!
+    It allows for shuffling and batching of the waveform data.
+    """
+    def __init__(self, dataset, batch_size=32, shuffle=True):
+        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle)
 
 
 def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase}, 
