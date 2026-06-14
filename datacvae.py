@@ -2011,7 +2011,7 @@ class CustomDataset(Dataset):
                 logger.debug(f"Saved group {grp} with inputnames {inputnames} and targetnames {targetnames}.")
 
         logger.info(f"Saved dataset items to {input_fname} successfully.")
-        self.close_hdf()  # Close the main data HDF file after saving the data
+        self._close_hdf()  # Close the main data HDF file after saving the data
         
 
 class CustomDataLoader(DataLoader):
