@@ -232,7 +232,10 @@ class WaveformDataset(torch.utils.data.Dataset):
                             torch.tensor(input_two, dtype=getattr(torch, self.precision))], dim=0).to(self.train_device)
         target = torch.stack([torch.tensor(target_one, dtype=getattr(torch, self.precision)),
                              torch.tensor(target_two, dtype=getattr(torch, self.precision))], dim=0).to(self.train_device)
-        return input, target
+        labels = data['labels'][:]
+        keys = data['keys'][:]
+        strains = data['strains'][:]
+        return input, target, labels, keys, strains
 
     def __getitem__(self, idx):
         return self.read_data_from_hdf(idx)
@@ -386,11 +389,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         for idx, databatch in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
             if idx >= num_train_batches:
                 break
-            if using_waveform_dataloaders:
-                x, target = databatch
-                labels, keys, strains, attr = None, None, None, None
-            else:
-                x, target, labels, keys, strains = databatch
+            x, target, labels, keys, strains = databatch
             x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
@@ -744,6 +743,8 @@ def run_training(configpath=None, model_path=None, fname=None,
     model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
                              epochs=epochs, datafrac=datafrac)
     logger.info(f"Model configuration saved to ../trained-models/modelconfig-flexcvae-{NOW}.json")
+    train_loader.dataset.close_hdf()  # Close the HDF files after training
+    val_loader.dataset.close_hdf()
     print("Training completed and model saved.")
     
 

@@ -1998,12 +1998,16 @@ class CustomDataset(Dataset):
         with h5py.File(input_fname, 'a') as hf:
             for grp in tqdm(self.data_file.keys(), desc='Saved', unit=' wfs', ncols=100):
                 data = self.read_strain_hdf(grp)
-                inputdata, targetdata = data[0], data[1]
+                inputdata, targetdata, labels, keys, strains, *rest = data
                 hf.create_group(grp)
                 hf[grp].create_dataset(f'input_{inputnames[0]}', data=inputdata[0])
                 hf[grp].create_dataset(f'input_{inputnames[1]}', data=inputdata[1])
                 hf[grp].create_dataset(f'target_{targetnames[0]}', data=targetdata[0])
                 hf[grp].create_dataset(f'target_{targetnames[1]}', data=targetdata[1])
+                # -- Save all other datasets, copying the original dataset name!
+                hf[grp].create_dataset('labels', data=labels)
+                hf[grp].create_dataset('keys', data=keys)
+                hf[grp].create_dataset('strains', data=strains)
                 if self.return_attributes:
                     attributes = data[-1]
                     for key, value in attributes.items():
