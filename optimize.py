@@ -69,8 +69,8 @@ val_hdf = datadir + "SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen"
 test_hdf = datadir + "SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen"
 
 # -- get mean and std of labels for normalization
-params_fname = '../data/params-' + APPROXIMANT + '-train-100000-fcutoff-uniform-aligned-regen'
-params_df = pd.read_csv(params_fname+'.csv', index_col=0, sep=',')
+params_fname = '../data/params-' + APPROXIMANT + '-train-100000-fcutoff-uniform-aligned-regen-4vals.csv'
+params_df = pd.read_csv(params_fname, index_col=0, sep=',')
 params_mean = params_df.mean().values
 params_std = params_df.std().values
 logger.info(f"Labels mean: {params_mean}")
@@ -167,6 +167,7 @@ class WaveformDataset(torch.utils.data.Dataset):
 
         self.params_mean = params_mean
         self.params_std = params_std
+        logger.info(f'Parameters mean: {self.params_mean}, Parameters std: {self.params_std}')
         assert self.params_mean is None or self.params_mean.shape == (4,), f"Expected params_mean to be of shape (4,), but got {self.params_mean.shape}"
         assert self.params_std is None or self.params_std.shape == (4,), f"Expected params_std to be of shape (4,), but got {self.params_std.shape}"
 
@@ -179,6 +180,14 @@ class WaveformDataset(torch.utils.data.Dataset):
                     'amp_phase': ['amp', 'phase'],
                     'logamp_phase': ['logamp', 'phase']}
         self.inputnames, self.targetnames = name_dict[self.input_type], name_dict[self.target_type]
+        if self.input_normalized:
+            self.inputnames = ['normed_' + name for name in self.inputnames]
+        else:
+            self.inputnames = ['unnormed_' + name for name in self.inputnames]
+        if self.target_normalized:
+            self.targetnames = ['normed_' + name for name in self.targetnames]
+        else:
+            self.targetnames = ['unnormed_' + name for name in self.targetnames]
 
     def __len__(self):
         return len(self.data_file.keys())  # number of groups in the HDF file, which corresponds to the number of data samples
@@ -186,12 +195,10 @@ class WaveformDataset(torch.utils.data.Dataset):
     def init_hdf(self):
         # -- check if the HDF file exists, if not, create an empty HDF file with the same name, so that we can write to it later on in the `get_calibrator_input` function without having to worry about file not found errors.
         hdf_fname = self.hdf_fname + '.hdf' if not self.hdf_fname.endswith('.hdf') else self.hdf_fname
-        data_path = f'../data/{hdf_fname}'
+        data_path = f'../data/{hdf_fname}' if not hdf_fname.startswith('../data/') else hdf_fname
 
         if not os.path.exists(data_path):
-            with h5py.File(data_path, 'w') as f:
-                pass  # just create an empty HDF file
-            logger.info(f"Created empty HDF file at {data_path} for storing calibrator input and target residuals.")
+            logger.error(f"HDF file {data_path} does not exist. Please run the `save_data_from_dataset` function to create the HDF file with the input and target data before initializing the dataset.")
         else:
             logger.info(f"HDF file {data_path} already exists. Will read from it or append to it when generating calibrator input and target residuals.")
 
@@ -205,16 +212,18 @@ class WaveformDataset(torch.utils.data.Dataset):
             self.data_file.close()
             logger.info(f"Closed HDF file {self.hdf_fname}.")
 
-    def __del__(self):
-        self.close_hdf()
+    # def __del__(self):
+    #     self.close_hdf()
 
     def read_data_from_hdf(self, idx):
         # -- read the input waveform and target residual from the HDF file for the given index, and return them as tensors
         grp = f'sample{idx}'
+        # logger.debug(f"Reading data for index {idx} from group {grp} in HDF file {self.hdf_fname}.")
         if grp not in self.data_file:
             logger.error(f"Group {grp} not found in HDF file {self.hdf_fname}. Cannot read data for index {idx}.")
             raise KeyError(f"Group {grp} not found in HDF file {self.hdf_fname}.")
         data = self.data_file[grp]
+        # logger.debug(f"Available datasets in group {grp}: {list(data.keys())}")
         input_one = data[f'input_{self.inputnames[0]}'][:]
         input_two = data[f'input_{self.inputnames[1]}'][:]
         target_one = data[f'target_{self.targetnames[0]}'][:]
@@ -238,6 +247,56 @@ class WaveformDataLoader(torch.utils.data.DataLoader):
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle)
 
 
+def set_waveform_dataloaders(batch_size=BATCH_SIZE,
+                             return_test_loader=False,
+                             target_type: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_phase',
+                             input_normalized=True, target_normalized=False):
+    """
+    Sets up the dataloaders for training and validation datasets for preprocessed input
+    and target data. We will autoconstruct the filenames from the passed arguements.
+
+    Arguments
+    ---------
+    batch_size: int
+        Batch size for the dataloaders (default BATCH_SIZE)
+    return_test_loader: bool
+        Whether to return the test dataloader along with the train and validation dataloaders (default False)
+    target_type: str
+        Target type for the model, one of 'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase' (default 'amp_phase')
+    input_normalized: bool
+        Whether the input data is normalized (default True)
+    target_normalized: bool
+        Whether the target data is normalized (default False)
+    """
+    label = f'{APPROXIMANT}-{target_type}'
+    label += '-normIN' if input_normalized else '-unnormIN'
+    label += '-normOUT' if target_normalized else '-unnormOUT'
+    train_hdf_path = f'../data/{label}-train.hdf'
+    val_hdf_path = f'../data/{label}-val.hdf'
+    test_hdf_path = f'../data/{label}-test.hdf'
+    logger.info(f"Setting up dataloaders with train HDF: {train_hdf_path}, val HDF: {val_hdf_path}, test HDF: {test_hdf_path}")
+    train_set = WaveformDataset(hdf_fname=train_hdf_path, target_type=target_type,
+                                input_nomalized=input_normalized, target_normalized=target_normalized,
+                                params_mean=params_mean, params_std=params_std,
+                                train_device=DEVICE, precision=PRECISION)
+    val_set = WaveformDataset(hdf_fname=val_hdf_path, target_type=target_type,
+                              input_nomalized=input_normalized, target_normalized=target_normalized,
+                              params_mean=params_mean, params_std=params_std,
+                              train_device=DEVICE, precision=PRECISION)
+    test_set = WaveformDataset(hdf_fname=test_hdf_path, target_type=target_type,
+                               input_nomalized=input_normalized, target_normalized=target_normalized,
+                               params_mean=params_mean, params_std=params_std,
+                               train_device=DEVICE, precision=PRECISION)
+    logger.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(val_set)}, Test dataset size: {len(test_set)}")
+    train_loader = WaveformDataLoader(train_set, batch_size=batch_size, shuffle=True)
+    val_loader = WaveformDataLoader(val_set, batch_size=batch_size, shuffle=False)
+    test_loader = WaveformDataLoader(test_set, batch_size=batch_size, shuffle=False)
+    if return_test_loader:
+        return train_loader, val_loader, test_loader
+    return train_loader, val_loader
+
+
+
 def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase}, 
              train_loader=None, val_loader=None,
              epochs: int = 5, 
@@ -245,6 +304,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
              savemodel=False, savelosses=False,
              savedir='../trained-models/',
              save_interim_models=True, now=NOW,
+             using_waveform_dataloaders=False,
              loss_func_type=None):
     """
     Using a fraction of training data for quick training and
@@ -323,9 +383,14 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     for epoch in tqdm(range(epochs)):
         model.train()
         train_loss = 0.0
-        for idx, (x, target, labels, keys, strains, attr) in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
+        for idx, databatch in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
             if idx >= num_train_batches:
                 break
+            if using_waveform_dataloaders:
+                x, target = databatch
+                labels, keys, strains, attr = None, None, None, None
+            else:
+                x, target, labels, keys, strains = databatch
             x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
@@ -650,8 +715,9 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
         model.load_state_dict(torch.load(model_path, map_location=device))
         logger.info(f"Loaded model from {model_path}")
     # Send model to device and convert to desired precision
-    model.to(device)
-    model = model.to(getattr(torch, precision))
+    # logger.info(f"Moving model to device: {device} and converting to precision: {precision}")
+    # model.to(device)
+    # model = model.to(getattr(torch, precision))
     if device.type == 'cuda':
         model = torch.compile(model, mode='max-autotune')  # Compile the model for faster training (PyTorch 2.0+)
         logger.info("Model compiled with torch.compile for faster training.")
@@ -665,7 +731,11 @@ def run_training(configpath=None, model_path=None, fname=None,
     """
     model = load_flex_model(configpath=configpath, model_path=model_path)
     logger.debug(model)
-    train_loader, val_loader = set_dataloaders(batch_size=batch_size)
+    # train_loader, val_loader = set_dataloaders(batch_size=batch_size)
+    train_loader, val_loader = set_waveform_dataloaders(batch_size=batch_size, 
+                                                        target_type='amp_phase',
+                                                        input_normalized=True,
+                                                        target_normalized=False)
     training(model, epochs=epochs, datafrac=datafrac, 
              train_loader=train_loader, val_loader=val_loader,
              savemodel=True, savelosses=True,
@@ -762,8 +832,7 @@ def run_optuna():
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Optuna optimization for TwoC2E1D model")
-    parser.add_argument('--optuna', action='store_true', 
-                        help="Run Optuna optimization")
+
     parser.add_argument('--model_type', type=str, default='flexcvae', 
                         help="Model type for Optuna or Training study naming")
     parser.add_argument('--trials', type=int, default=20, 
@@ -777,6 +846,8 @@ if __name__ == "__main__":
     parser.add_argument('--label', type=str, default=None,
                         help="Additional label to add to saved model and log filenames for better identification")
     
+    parser.add_argument('--optuna', action='store_true', 
+                        help="Run Optuna optimization")
     parser.add_argument('--train', action='store_true', 
                         help="Run training with specified hyperparameters")
     parser.add_argument('--save-data-from-dataset', action='store_true',
