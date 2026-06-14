@@ -385,7 +385,7 @@ def set_sampler_kwargs(args, sampler):
             # NOTE: Bilby by default removes the "vectorize" behaviour from any samplers that support it, since the waveforms that are supported by Bilby cannot generate data in batches!!! Thus, "pocomc" also basically the same amount of time as `nessai` or more!
             vectorize=True,   # THIS IS IGNORED!
             npool=args.npool,
-            n_active=args.nlive,
+            n_effective=args.nlive,  # larger the value, the better it is. `n_active = n_effective // 2` in pocomc!
             save_every=15,  # Save intermediate results every 15 iterations (default: 5)
             track_sampling_time=True,
             pytorch_threads=args.pytorch_threads,
