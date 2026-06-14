@@ -1546,7 +1546,7 @@ class CustomDataset(Dataset):
         # close the HDF file when the dataset is deleted, to free up resources
         if hasattr(self, 'data_file') and self.data_file is not None:
             self.data_file.close()
-            logger.info(f"Closed HDF file {self.data_file.filename} after reading calibrator input and target residuals.")
+            logger.info(f"Closed HDF file {self.hdf_fname} after reading calibrator input and target residuals.")
 
     def __del__(self):
         self._close_hdf()
@@ -1724,16 +1724,6 @@ class CustomDataset(Dataset):
             data['phase'] = phase
         return data
 
-    
-    def close_hdf(self):
-        # close the HDF file when the dataset is deleted, to free up resources
-        if hasattr(self, 'data_file') and self.data_file is not None:
-            self.data_file.close()
-            logger.info(f"Closed HDF file {self.data_hdf} after reading calibrator input and target residuals.")
-
-    def __del__(self):
-        self.close_hdf()
-
     def read_strain_hdf(self, idx, correct_freq_length=False):
         """
         Read the strain data from the HDF5 file.
@@ -1768,6 +1758,11 @@ class CustomDataset(Dataset):
         logger.debug(f'keys: {data.keys()}')
         logger.debug(f'Attributes: {data.attrs.keys()}')
 
+        if 'freq' not in data.keys():
+            logger.warning(f'Frequency data is not found in the present HDF file! We will only use [amp,phase] type input and targets for this file. Data contains the following keys: {data.keys()}')
+            self.input_type = self.target_type = 'amp_phase'
+            self._set_input_target_names()
+
         m1 = data.attrs.get('mass1', data.attrs.get('m1_msun', data.attrs.get('m1', None)))
         m2 = data.attrs.get('mass2', data.attrs.get('m2_msun', data.attrs.get('m2', None)))
         labels = [m1,m2]
@@ -1791,11 +1786,17 @@ class CustomDataset(Dataset):
                 data = self._regenerate_sample(data, write_access=self.write_access)
 
         hp, hc = np.array(data['hp']), np.array(data['hc'])
-        amp, freq = np.array(data['amp']), np.array(data['freq'])
+        amp = np.array(data['amp'])
         phase = np.array(data['phase'])
-        logger.debug(f'Phase shape: {phase.shape}')
 
+        logger.debug(f'Phase shape: {phase.shape}')
         assert len(amp) == len(phase), "Amplitude and Phase arrays must be of the same length."
+
+        if 'freq' in data.keys():
+            freq = np.array(data['freq'])
+        else:
+            freq = np.zeros_like(amp)
+            logger.debug(f'Frequency data is not found in the present HDF file! To make the code run we use dummy freq array!')
         assert len(freq) == len(phase) - 1, "Frequency array must be one element less than the Phase array."
 
         # -- By definition, freq array will be one element less,
@@ -1982,6 +1983,7 @@ class CustomDataset(Dataset):
         """
         Save the Dataset items to a file using the `read_strain_hdf` method.
         """
+        logger.info(f"Saving dataset items to {savename} using the `read_strain_hdf` method, with input_type={self.input_type}, target_type={self.target_type}, input_normalized={self.input_normalized} and target_normalized={self.target_normalized}.")
         if self.input_normalized:
             inputnames = ['normed_'+name for name in self.inputnames]
         else:
@@ -1994,18 +1996,19 @@ class CustomDataset(Dataset):
         # Save the data to a new HDF5 file with the same name but with `_input` suffix
         input_fname = savename if savename.endswith('.hdf') else savename + '_input.hdf'
         with h5py.File(input_fname, 'a') as hf:
-            for grp in self.data_file.keys():
+            for grp in tqdm(self.data_file.keys(), desc='Saved', unit=' wfs', ncols=100):
                 data = self.read_strain_hdf(grp)
-                hf.create_group(grp)
                 inputdata, targetdata = data[0], data[1]
-                hf.create_dataset(f'input_{inputnames[0]}', data=inputdata[0].cpu().numpy())
-                hf.create_dataset(f'input_{inputnames[1]}', data=inputdata[1].cpu().numpy())
-                hf.create_dataset(f'target_{targetnames[0]}', data=targetdata[0].cpu().numpy())
-                hf.create_dataset(f'target_{targetnames[1]}', data=targetdata[1].cpu().numpy())
+                hf.create_group(grp)
+                hf[grp].create_dataset(f'input_{inputnames[0]}', data=inputdata[0])
+                hf[grp].create_dataset(f'input_{inputnames[1]}', data=inputdata[1])
+                hf[grp].create_dataset(f'target_{targetnames[0]}', data=targetdata[0])
+                hf[grp].create_dataset(f'target_{targetnames[1]}', data=targetdata[1])
                 if self.return_attributes:
                     attributes = data[-1]
                     for key, value in attributes.items():
                         hf[grp].attrs[key] = value
+                logger.debug(f"Saved group {grp} with inputnames {inputnames} and targetnames {targetnames}.")
 
         logger.info(f"Saved dataset items to {input_fname} successfully.")
         self.close_hdf()  # Close the main data HDF file after saving the data
