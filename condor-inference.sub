@@ -16,7 +16,7 @@ executable = condor-run-inference.sh
 # npool = 8
 # pytorch_threads = 1
 
-arguments = condor-run-inference.sh ml2ml-paper-1 $(Process) pocomc ml2ml 600 0.2 8 1
+arguments = ml2ml-paper-1 $(Process) pocomc ml2ml 600 0.2 8 1
 
 # Match this to nessai_npool * pytorch_threads.
 # For arguments ending in "8 1", request_cpus = 8.
