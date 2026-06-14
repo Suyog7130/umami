@@ -1477,6 +1477,8 @@ class CustomDataset(Dataset):
         self.input_normalized = input_normalized
         self.input_normalization_keys = input_normalization_keys
         self.regenerate_data = regenerate_data
+        self.write_access = kwargs.get('write_access', False)
+        self._set_input_target_names()
 
         self.forwhat = forwhat
         if hdf_fname is None:
@@ -1509,7 +1511,47 @@ class CustomDataset(Dataset):
         # # Automatically initialize kwargs as attributes
         # for key, value in kwargs.items():
         #     setattr(self, key, value)
+        self._init_hdf(write_access=self.write_access)
+
+    def _set_input_target_names(self):
+        # -- labels for input and target data for different kinds of targets.
+        name_dict = {'amp_freq': ['amp', 'freq'],
+                    'logamp_freq': ['logamp', 'freq'],
+                    'amp_phase': ['amp', 'phase'],
+                    'logamp_phase': ['logamp', 'phase']}
+        self.inputnames, self.targetnames = name_dict[self.input_type], name_dict[self.target_type]
+    
+    def _init_hdf(self, write_access=False):
+        if write_access:
+            open_mode = 'r+'
+        else:
+            open_mode = 'r'
+        self.hdf_fname = self.hdf_fname if self.hdf_fname.endswith('.hdf') else self.hdf_fname+'.hdf'
+        data_path = self.hdf_fname
+        try:
+            os.isfile(self.hdf_fname)
+        except Exception as e:
+            logger.warning(f"Error checking if HDF file exists: {e}")
+            data_path = f'../data/{self.hdf_fname}'
         
+        if not os.path.exists(data_path):
+            logger.error(f"HDF file {data_path} does not exist.")
+            exit(1)
+        else:
+            logger.info(f"HDF file {data_path} already exists. Will read from it or append to it when generating calibrator input and target residuals.")
+
+        # open the HDF file for reading in the dataset initialization, so that we can read from it in the `__getitem__` method without having to open and close the file every time, which is inefficient. We will keep this file open for the lifetime of the dataset, and close it when the dataset is deleted.
+        self.data_file = h5py.File(data_path, open_mode)
+        logger.info(f"Opened HDF file {data_path} for reading calibrator input and target residuals in the CalibratorDataset.")
+
+    def _close_hdf(self):
+        # close the HDF file when the dataset is deleted, to free up resources
+        if hasattr(self, 'data_file') and self.data_file is not None:
+            self.data_file.close()
+            logger.info(f"Closed HDF file {self.hdf_fname} after reading calibrator input and target residuals.")
+
+    def __del__(self):
+        self._close_hdf()
         
     def __len__(self):
         return self.nsamples
@@ -1694,7 +1736,7 @@ class CustomDataset(Dataset):
     def __del__(self):
         self.close_hdf()
 
-    def read_strain_hdf(self, idx, write_access=False):
+    def read_strain_hdf(self, idx, correct_freq_length=False):
         """
         Read the strain data from the HDF5 file.
 
@@ -1702,155 +1744,164 @@ class CustomDataset(Dataset):
         ----------
         idx : int
             The index of the sample to read.
+        correct_freq_length : bool, optional
+            Whether to correct the length of the frequency array to match the amplitude array. Default is False!
+            This is irrelevant if the target data type is `amp_phase`!
 
         Returns
         -------
-        tuple
-            A tuple containing:
-            - strain: np.ndarray
-                The strain data as a 2D numpy array with shape (2, N).
-            - labels: np.ndarray
-                The labels as a 1D numpy array with shape (2,).
-            - keys: np.ndarray
-                The keys as a 2D numpy array with shape (2, 2).
+        input : torch.Tensor
+            The input data (amplitude and frequency) for the sample.
+        label : torch.Tensor
+            The label data (mass1, mass2, etc.) for the sample.
+        keys : torch.Tensor
+            The normalization keys (mass1, mass2, etc.) for the sample.
         """
         logger.debug(f'Reading strain data from HDF5 file {self.hdf_fname}.hdf for sample {idx}')
-        if write_access:
-            open_mode = 'r+'
-        else:
-            open_mode = 'r'
-        self.hdf_fname = self.hdf_fname if self.hdf_fname.endswith('.hdf') else self.hdf_fname+'.hdf'
-        with h5py.File(self.hdf_fname, open_mode) as hf:
-            data = hf[f'sample{idx}']
-            logger.debug(f'keys: {data.keys()}')
 
-            m1, m2 = data.attrs['mass1'], data.attrs['mass2']
-            labels = [m1,m2]
-            spin1z = data.attrs.get('spin1z', None)
-            spin2z = data.attrs.get('spin2z', None)
-            if spin1z is not None and spin2z is not None:
-                labels.append(spin1z)
-                labels.append(spin2z)
-            # logger.debug(f'Labels: {labels}')
+        if self.data_file is None:
+            logger.error(f"HDF file {self.hdf_fname} is not open. Cannot read data.")
+            return None, None, None
+        
+        hf = self.data_file
 
-            if self.regenerate_data:
-                # Regenerate sample if it is shorter duration, but is not padded!
-                # NOTE: Once this is checked, since I also write the data into the
-                # HDF file, the next epoch onwards, this check will not be necessary, 
-                # since the data will already have been regenerated. However, if the
-                # HDF file is not closed properly after writing, the changes may not be saved, 
-                # so this check will still be necessary for the next epoch, until the file is
-                # properly closed and the changes are saved.
-                if len(data['amp']) < PRESET_ARRAY_SIZE and not data.attrs.get('padded', False):
-                    logger.info(f"\nSample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. Regenerating!")
-                    data = self._regenerate_sample(data, write_access=write_access)
+        data = hf[f'sample{idx}']
+        logger.debug(f'keys: {data.keys()}')
 
-            hp, hc = np.array(data['hp']), np.array(data['hc'])
-            amp, freq = np.array(data['amp']), np.array(data['freq'])
-            phase = np.array(data['phase'])
-            logger.debug(f'Phase shape: {phase.shape}')
+        m1, m2 = data.attrs['mass1'], data.attrs['mass2']
+        labels = [m1,m2]
+        spin1z = data.attrs.get('spin1z', None)
+        spin2z = data.attrs.get('spin2z', None)
+        if spin1z is not None and spin2z is not None:
+            labels.append(spin1z)
+            labels.append(spin2z)
+        # logger.debug(f'Labels: {labels}')
 
-            # # freq array will be one less in length than amp
-            # logger.debug(f'len(amp)={len(amp)}, len(freq)={len(freq)}')
-            # if len(freq) < len(amp):
-            #     amp = amp[1:]
-            # assert len(amp) == len(freq), "Amplitude and Frequency arrays must be of the same length."
+        if self.regenerate_data:
+            # Regenerate sample if it is shorter duration, but is not padded!
+            # NOTE: Once this is checked, since I also write the data into the
+            # HDF file, the next epoch onwards, this check will not be necessary, 
+            # since the data will already have been regenerated. However, if the
+            # HDF file is not closed properly after writing, the changes may not be saved, 
+            # so this check will still be necessary for the next epoch, until the file is
+            # properly closed and the changes are saved.
+            if len(data['amp']) < PRESET_ARRAY_SIZE and not data.attrs.get('padded', False):
+                logger.info(f"\nSample {idx} is shorter than {PRESET_ARRAY_SIZE} and not padded. Regenerating!")
+                data = self._regenerate_sample(data, write_access=self.write_access)
 
-            # # check length for the phase
-            # if len(phase) > len(freq):
-            #     phase = phase[1:]
-            # # -- so these are now of length 8191!
-            # assert len(phase) == len(freq) == len(amp)
+        hp, hc = np.array(data['hp']), np.array(data['hc'])
+        amp, freq = np.array(data['amp']), np.array(data['freq'])
+        phase = np.array(data['phase'])
+        logger.debug(f'Phase shape: {phase.shape}')
 
-            # -- By definition, freq array will be one element less,
-            # -- So, add a dummy value (repeated first element) to the 
-            # beginning of the freq array to make it of the same length 
-            # as amp and phase. Later on, this value will be removed when
-            # calculating the mismatch later on during testing.
+        assert len(amp) == len(phase), "Amplitude and Phase arrays must be of the same length."
+        assert len(freq) == len(phase) - 1, "Frequency array must be one element less than the Phase array."
+
+        # -- By definition, freq array will be one element less,
+        # -- So, add a dummy value (repeated first element) to the 
+        # beginning of the freq array to make it of the same length 
+        # as amp and phase. Later on, this value will be removed when
+        # calculating the mismatch later on during testing.
+        if correct_freq_length:
+            if self.target_type in ['amp_phase', 'logamp_phase']:
+                logger.warning(f"Correcting frequency array length for target type {self.target_type} is not required!")
             freq = np.insert(freq, 0, freq[0])
             assert len(amp) == len(freq) == len(phase), "Amplitude, Frequency, and Phase arrays must be of the same length after adjustment."
             logger.debug(f'Adjusted len(amp)={len(amp)}, len(freq)={len(freq)}, len(phase)={len(phase)}')
 
-            # Rescale the amp by 10^20
-            logger.debug(f'Original Amp: {amp}')
-            logger.debug(f'Type of Amp: {type(amp)}, Type of Amp[0]: {type(amp[0])}')
-            amp = amp * 10**20
-            logger.debug(f'Rescaled Amp: {amp}')
-            logger.debug(f'Type of Rescaled Amp: {type(amp)}, Type of Rescaled Amp[0]: {type(amp[0])}')
+        # Rescale the amp by 10^20
+        logger.debug(f'Original Amp: {amp}')
+        logger.debug(f'Type of Amp: {type(amp)}, Type of Amp[0]: {type(amp[0])}')
+        amp = amp * 10**20
+        logger.debug(f'Rescaled Amp: {amp}')
+        logger.debug(f'Type of Rescaled Amp: {type(amp)}, Type of Rescaled Amp[0]: {type(amp[0])}')
 
+        unnorm_amp, unnorm_freq, unnorm_phase = amp.copy(), freq.copy(), phase.copy()
+
+        if self.input_type in ['logamp_freq', 'logamp_phase']:
+            logging.debug(f"Input type is {self.input_type}, so applying log transformation to amplitude. \
+                          \nNormalization will be applied on top of the log-transformed amplitude, if input_normalized is True.")
+            amp = np.log(amp)
+
+        if self.input_normalized or self.target_normalized:
             amp_keys = [np.mean(amp), np.std(amp)]
             freq_keys = [np.mean(freq), np.std(freq)]
-            logger.debug(f"Amplitude Keys: {amp_keys}")
-            logger.debug(f"Frequency Keys: {freq_keys}")
-            unnorm_amp, unnorm_freq = amp.copy(), freq.copy()
-            unnorm_amp, unnorm_freq = amp.copy(), freq.copy()
-            amp = (amp - np.mean(amp)) / np.std(amp)
-            freq = (freq - np.mean(freq)) / np.std(freq)
+            phase_keys = [np.mean(phase), np.std(phase)]
+            normed_amp = (amp - amp_keys[0]) / amp_keys[1]
+            normed_freq = (freq - freq_keys[0]) / freq_keys[1]
+            normed_phase = (phase - phase_keys[0]) / phase_keys[1]
+            logger.debug(f'Normalization keys for amp: {amp_keys}, freq: {freq_keys}, phase: {phase_keys}')
+        else:
+            amp_keys = [0, 1]
+            freq_keys = [0, 1]
+            phase_keys = [0, 1]
+            normed_amp = amp
+            normed_freq = freq
+            normed_phase = phase
 
-            out_normed = np.vstack((amp, freq)).astype(getattr(np, self.precision))
-            out_unnormed = np.vstack((unnorm_amp, unnorm_freq)).astype(getattr(np, self.precision))
-            out_labels = np.array(labels).astype(getattr(np, self.precision))
-            out_keys = np.array([amp_keys, freq_keys]).astype(getattr(np, self.precision))
-            out_phases = np.array(phase).astype(getattr(np, self.precision))
-            out_strains = np.vstack((hp, hc)).astype(getattr(np, self.precision))
-            out_attr = data.attrs if type(data) is not dict else data.get('attrs', {})
-            out_attr = dict(out_attr)  # Convert HDF5 attributes to a regular dictionary for easier handling
+        assert self.input_type == self.target_type, "Input type and target type must be the same for now, since we are using the same data for both input and target. This behaviour will be updated in future releases!"
 
-            # TODO: Save keys in attr!
-                        
-            # # TODO: make this work with `self.target` argument and be back compatible with `maincvae.py` code!
-            # if self.forwhat=='test':
-            #     if self.returnattr:
-            #         return (out_normed,
-            #                 out_labels,
-            #                 out_keys,
-            #                 out_phases,
-            #                 out_strains,
-            #                 out_attr)
-            #     else:
-            #         logger.debug(f"Attributes: {out_attr}")
-            #         # also return the loc of padding or truncation
-            #         return (out_normed, 
-            #                 out_normed, # -- target are normed amp & freq.
-            #                 out_labels, 
-            #                 out_keys,
-            #                 out_strains,
-            #                 out_attr)
-                
-            # Apart from input and target, the rest of the return values are same for all cases!
-            returnables = [out_labels, out_keys, out_strains]
-            if self.return_phases:
-                returnables.append(out_phases)
-            if self.return_sample_indices:
-                # -- return only numeric sample index as a numpy array, `collate_fn` converts to tensor later on.
-                returnables.append(np.array(idx))  
-            if self.return_attributes:
-                returnables.append(out_attr)
-            logger.debug(f"Returnables is of length {len(returnables)}")
-                
-            if self.target=='unnorm_ampfreq':
-                logger.debug("Returning normalized amp and freq as input, and unnormalized amp and freq as target since `unnorm_target` is True.")
-                # -- Inputs are normalized amp and freq, targets are unnormalized amp and freq.
-                input, target = out_normed, out_unnormed
-            elif self.target=='normed_logamp_freq':
-                logger.debug("Returning normalized log-amp and freq as input, and log-amp as target since `logamp_target` is True.")
-                out_logamp_freq = np.vstack((np.log(amp), freq)).astype(getattr(np, self.precision))
-                # -- Inputs and targets are normalized log-amp and freq.
-                input, target = out_logamp_freq, out_logamp_freq
-            elif self.target=='normed_amp_phase':
-                logger.debug("Returning normalized amp and freq as input, and phase as target since `phase_target` is True.")
-                out_amp_phase = np.vstack((amp, phase)).astype(getattr(np, self.precision))
-                # -- Inputs and targets are normalized amp and phase.
-                input, target = out_amp_phase, out_amp_phase
-            elif self.target=='normed_logamp_phase':
-                logger.debug("Returning normalized log-amp and freq as input, and phase as target since `logamp_phase_target` is True.")
-                out_logamp_phase = np.vstack((np.log(amp), phase)).astype(getattr(np, self.precision))
-                # -- Inputs and targets are normalized log-amp and phase.
-                input, target = out_logamp_phase, out_logamp_phase
-                logger.debug("Returning normalized amp and freq as both input and target since `unnorm_target` is False.")
-            else:  # -- Default case: Inputs and targets are normalized amp and freq.
-                input, target = out_normed, out_normed
-            return tuple([input, target] + returnables)
+        if self.input_normalized:
+            logger.debug(f"Input type is {self.input_type}, and input_normalized is True, so input will be normalized amp and freq/phase, with log applied as required.")
+            if self.input_type in ['amp_freq', 'logamp_freq']:
+                input = np.vstack((normed_amp, normed_freq)).astype(getattr(np, self.precision))
+                out_keys = np.array([amp_keys, freq_keys]).astype(getattr(np, self.precision))
+            if self.input_type in ['amp_phase', 'logamp_phase']:
+                input = np.vstack((normed_amp, normed_phase)).astype(getattr(np, self.precision))
+                out_keys = np.array([amp_keys, phase_keys]).astype(getattr(np, self.precision))
+        else:
+            logger.debug(f"Input type is {self.input_type}, but input_normalized is False, so input will be unnormalized amp and freq/phase, with log applied as required.")
+            logger.warning(f"Unnormalized input is not recommended, because it may lead to unstable training!")
+            if self.input_type in ['amp_freq', 'logamp_freq']:
+                input = np.vstack((unnorm_amp, unnorm_freq)).astype(getattr(np, self.precision))
+            if self.input_type in ['amp_phase', 'logamp_phase']:
+                input = np.vstack((unnorm_amp, unnorm_phase)).astype(getattr(np, self.precision))
+            out_keys = None
+
+        if self.target_normalized:
+            logger.debug(f"Target type is {self.target_type}, and target_normalized is True, so target will be normalized amp and freq/phase, with log applied as required.")
+            logger.warning(f"Unnormalized target is not recommended, because we need to denormalize generated output later!")
+            if self.target_type in ['amp_freq', 'logamp_freq']:
+                target = np.vstack((normed_amp, normed_freq)).astype(getattr(np, self.precision))
+            if self.target_type in ['amp_phase', 'logamp_phase']:
+                target = np.vstack((normed_amp, normed_phase)).astype(getattr(np, self.precision))
+        else:
+            logger.debug(f"Target type is {self.target_type}, but target_normalized is False, so target will be unnormalized amp and freq/phase, with log applied as required.")
+            if self.target_type in ['amp_freq', 'logamp_freq']:
+                target = np.vstack((unnorm_amp, unnorm_freq)).astype(getattr(np, self.precision))
+            if self.target_type in ['amp_phase', 'logamp_phase']:
+                target = np.vstack((unnorm_amp, unnorm_phase)).astype(getattr(np, self.precision))
+
+        out_labels = np.array(labels).astype(getattr(np, self.precision))
+        out_phases = np.array(unnorm_phase).astype(getattr(np, self.precision))
+        out_strains = np.vstack((hp, hc)).astype(getattr(np, self.precision))
+
+        out_attr = data.attrs if type(data) is not dict else data.get('attrs', {})
+        out_attr = dict(out_attr)  # Convert HDF5 attributes to a regular dictionary for easier handling
+
+        if out_keys is None:
+            logger.warning(f"The recommended practice is to have inputs normalized, and targets unnormalized. Keys are set to `None` means this is not the case right now. Keys will be set to empty array for now!")
+            out_keys = np.array([]).astype(getattr(np, self.precision))
+
+        # -- Add extra info to attributes
+        out_attr['input_type'] = self.input_type
+        out_attr['target_type'] = self.target_type
+        out_attr['input_normalized'] = self.input_normalized
+        out_attr['target_normalized'] = self.target_normalized
+        out_attr['input_normalization_keys'] = out_keys if self.input_normalized else None
+        out_attr['target_normalization_keys'] = out_keys if self.target_normalized else None
+                    
+        # Apart from input and target, the rest of the return values are same for all cases!
+        returnables = [out_labels, out_keys, out_strains]
+        if self.return_phases:
+            returnables.append(out_phases)
+        if self.return_sample_indices:
+            # -- return only numeric sample index as a numpy array, `collate_fn` converts to tensor later on.
+            returnables.append(np.array(idx))  
+        if self.return_attributes:
+            returnables.append(out_attr)
+        logger.debug(f"Returnables is of length {len(returnables)}")
+        return tuple([input, target] + returnables)
         
     def collate_fn(self, batch):
         """ 
@@ -1930,27 +1981,14 @@ class CustomDataset(Dataset):
         """
         Save the Dataset items to a file using the `read_strain_hdf` method.
         """
-        if self.target is None:
-            keys = ['amp', 'freq']
-        elif self.target=='unnorm_ampfreq':
-            keys = ['unnorm_amp', 'unnorm_freq']
-        elif self.target=='logamp_freq':
-            keys = ['logamp', 'freq']
-        elif self.target=='amp_phase':
-            keys = ['amp', 'phase']
-        elif self.target=='logamp_phase':
-            keys = ['logamp', 'phase']
-
-        # -- labels for input and target data for different kinds of targets.
-        name_dict = {'amp_freq': ['amp', 'freq'],
-                    'logamp_freq': ['logamp', 'freq'],
-                    'amp_phase': ['amp', 'phase'],
-                    'logamp_phase': ['logamp', 'phase']}
-        inputnames, targetnames = name_dict[self.input_type], name_dict[self.target]
         if self.input_normalized:
-            inputnames = ['normed_'+name for name in inputnames]
+            inputnames = ['normed_'+name for name in self.inputnames]
+        else:
+            inputnames = ['unnormed_'+name for name in self.inputnames]
         if self.target_normalized:
-            targetnames = ['normed_'+name for name in targetnames]
+            targetnames = ['normed_'+name for name in self.targetnames]
+        else:            
+            targetnames = ['unnormed_'+name for name in self.targetnames]
 
         with h5py.File(input_fname, 'a') as hf:
             for idx in range(self.nsamples):
@@ -1959,7 +1997,6 @@ class CustomDataset(Dataset):
                 input_fname = savename if savename.endswith('.hdf') else savename + '_input.hdf'
                 hf.create_group(f'wf{idx}')
                 inputdata, targetdata, _, = data
-
 
         logger.info(f"Saved dataset items to {input_fname} successfully.")
         
