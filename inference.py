@@ -30,6 +30,8 @@ from typing import Dict, List, Tuple, Optional, Any
 from tqdm import tqdm
 from mlwavegen import MLWaveformGenerator, convert_to_ml_parameters
 
+from utils.io import save_json, save_pickle
+
 from utils.generic import init_logging, init_verbosity_args
 logger = logging.getLogger(__name__)
 
@@ -281,6 +283,10 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
     )
     logger.debug(f"Injection parameters for run {run_idx}: {injection_parameters}")
 
+    # -- Save IFOs with injected signal and noise to file
+    save_pickle(ifos, os.path.join(outdir, f"{this_label}_ifos.pkl"))
+    save_json(injection_parameters, os.path.join(outdir, f"{this_label}_injection_parameters.json"))
+
     likelihood = GravitationalWaveTransient(
         interferometers=ifos,
         waveform_generator=waveform_generator,
@@ -430,7 +436,7 @@ def main(args, label='umamipe',
     sampler_kwargs = set_sampler_kwargs(args, sampler)
 
     if args.run_one_injection:
-        logger.info(f"Running a single injection and PE, for index {args.injection_index}...")
+        logger.info(f"Running a single injection and PE with fixed seed 42, for index {args.injection_index}...")
         results = run_single_injection(args.injection_index, seed=42, 
                                         label_base=label, outdir=outdir,
                                        injection_generator=injection_generator, 
@@ -560,17 +566,14 @@ if __name__ == "__main__":
     # Force PyTorch's spawn context globally
     mp.set_start_method('spawn', force=True)
 
-
-    if args.run_one_injection:
-        logger.info("Running a single injection and PE...")
-    elif args.run_pe_campaign:
-        logger.info(f"Running a PE campaign with {args.num_injections} injections...")
+    if args.analyze_only:
+        logger.info("Running in analyze-only mode. Will analyze results from a previous run using the provided JSON file.")
+        analyze_results(fname=args.results_fname, label=args.label, outdir=f'../{PROJECT_DIR}/results/{TODAY}')
+    else:
         main(args, label=args.label, 
             pe_run_type=args.pe_run_type,
             sampler=args.sampler,)
-    elif args.analyze_only:
-        logger.info("Running in analyze-only mode. Will analyze results from a previous run using the provided JSON file.")
-        analyze_results(fname=args.results_fname, label=args.label, outdir=f'../{PROJECT_DIR}/results/{TODAY}')
+    
 
     # analyze_results(fname='ml2ml-4d_20260607-153120_inj_0001_result.json', 
     #                 label=args.label, 
