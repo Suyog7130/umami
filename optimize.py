@@ -106,23 +106,31 @@ def set_dataloaders(batch_size=BATCH_SIZE, target=BASE_MODEL_CONFIG['target']):
     return train_loader, val_loader
 
 
-def save_data_from_dataset(savedir='../data/', label='', target=BASE_MODEL_CONFIG['target']):
+def save_data_from_dataset(savedir='../data/', label='', target='amp_phase',
+                           input_normalized=True, target_normalized=False):
     """
     Save input and target waveform data the datasets
     """
     label += f'-{target}'
-    train_set = CustomDataset(forwhat='train', approximant=APPROXIMANT, returnattr=True,
-                            hdf_fname=train_hdf, train_device=DEVICE, precision=PRECISION,
-                            target=target)
-    valid_set = CustomDataset(forwhat='valid', approximant=APPROXIMANT, returnattr=True,
-                            hdf_fname=val_hdf, train_device=DEVICE, precision=PRECISION,
-                            target=target)
-    test_set = CustomDataset(forwhat='test', approximant=APPROXIMANT, returnattr=True,
-                            hdf_fname=test_hdf, train_device=DEVICE, precision=PRECISION,
-                            target=target)
-    train_set.save_to_input_file(savename=savedir+f'inputdata_train_{label}.hdf')
-    valid_set.save_to_input_file(savename=savedir+f'inputdata_val_{label}.hdf')
-    test_set.save_to_input_file(savename=savedir+f'inputdata_test_{label}.hdf')
+    data_dir = '/Users/suyoggarg/Desktop/'
+    train_hdf_path = data_dir + 'waveforms-SEOBNRv4-aligned-fcutoff-1sec-8192Hz-train-70k-seed42-params_002-20260430-225157.hdf'
+    val_hdf_path = data_dir + 'waveforms-SEOBNRv4-aligned-fcutoff-1sec-8192Hz-val-10k-seed42-params_002-20260430-225157.hdf'
+    test_hdf_path = data_dir + 'waveforms-SEOBNRv4-aligned-fcutoff-1sec-8192Hz-test-20k-seed42-params_002-20260430-225157.hdf'
+    train_set = CustomDataset(approximant=APPROXIMANT, returnattr=True,
+                            hdf_fname=train_hdf_path, 
+                            train_device=DEVICE, precision=PRECISION,
+                            target=target, input_normalized=input_normalized, target_normalized=target_normalized)
+    valid_set = CustomDataset(approximant=APPROXIMANT, returnattr=True,
+                            hdf_fname=val_hdf_path, 
+                            train_device=DEVICE, precision=PRECISION,
+                            target=target, input_normalized=input_normalized, target_normalized=target_normalized)
+    test_set = CustomDataset(approximant=APPROXIMANT, returnattr=True,
+                            hdf_fname=test_hdf_path, 
+                            train_device=DEVICE, precision=PRECISION,
+                            target=target, input_normalized=input_normalized, target_normalized=target_normalized)
+    # train_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-train-70k-seed42-params_002.hdf')
+    valid_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-val-10k-seed42-params_002.hdf')
+    test_set.save_to_input_file(savename=savedir+f'inputdata-SEOBNRv4-{label}-test-20k-seed42-params_002.hdf')
 
 
 

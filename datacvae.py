@@ -1480,7 +1480,7 @@ class CustomDataset(Dataset):
         self.write_access = kwargs.get('write_access', False)
         self._set_input_target_names()
 
-        self.forwhat = forwhat
+        self.forwhat = forwhat  # DEPRECATED argument!
         if hdf_fname is None:
             self.set_masses(forwhat=self.forwhat)
             self.nsamples = len(self.masses)
@@ -1528,15 +1528,13 @@ class CustomDataset(Dataset):
             open_mode = 'r'
         self.hdf_fname = self.hdf_fname if self.hdf_fname.endswith('.hdf') else self.hdf_fname+'.hdf'
         data_path = self.hdf_fname
-        try:
-            os.isfile(self.hdf_fname)
-        except Exception as e:
-            logger.warning(f"Error checking if HDF file exists: {e}")
-            data_path = f'../data/{self.hdf_fname}'
         
         if not os.path.exists(data_path):
-            logger.error(f"HDF file {data_path} does not exist.")
-            exit(1)
+            logger.warning(f"HDF file {data_path} does not exist. Checking if it exists in the '../data/' directory.")
+            data_path = os.path.join('../data/', self.hdf_fname)
+            if not os.path.exists(data_path):
+                logger.error(f"HDF file {data_path} does not exist.")
+                exit(1)
         else:
             logger.info(f"HDF file {data_path} already exists. Will read from it or append to it when generating calibrator input and target residuals.")
 
@@ -1548,7 +1546,7 @@ class CustomDataset(Dataset):
         # close the HDF file when the dataset is deleted, to free up resources
         if hasattr(self, 'data_file') and self.data_file is not None:
             self.data_file.close()
-            logger.info(f"Closed HDF file {self.hdf_fname} after reading calibrator input and target residuals.")
+            logger.info(f"Closed HDF file {self.data_file.filename} after reading calibrator input and target residuals.")
 
     def __del__(self):
         self._close_hdf()
@@ -1757,7 +1755,7 @@ class CustomDataset(Dataset):
         keys : torch.Tensor
             The normalization keys (mass1, mass2, etc.) for the sample.
         """
-        logger.debug(f'Reading strain data from HDF5 file {self.hdf_fname}.hdf for sample {idx}')
+        logger.debug(f'Reading strain data from HDF5 file {self.hdf_fname} for sample {idx}')
 
         if self.data_file is None:
             logger.error(f"HDF file {self.hdf_fname} is not open. Cannot read data.")
@@ -1765,10 +1763,13 @@ class CustomDataset(Dataset):
         
         hf = self.data_file
 
-        data = hf[f'sample{idx}']
+        grp = f'sample{idx}' if isinstance(idx, int) else idx
+        data = hf[grp]
         logger.debug(f'keys: {data.keys()}')
+        logger.debug(f'Attributes: {data.attrs.keys()}')
 
-        m1, m2 = data.attrs['mass1'], data.attrs['mass2']
+        m1 = data.attrs.get('mass1', data.attrs.get('m1_msun', data.attrs.get('m1', None)))
+        m2 = data.attrs.get('mass2', data.attrs.get('m2_msun', data.attrs.get('m2', None)))
         labels = [m1,m2]
         spin1z = data.attrs.get('spin1z', None)
         spin2z = data.attrs.get('spin2z', None)
@@ -1990,15 +1991,24 @@ class CustomDataset(Dataset):
         else:            
             targetnames = ['unnormed_'+name for name in self.targetnames]
 
+        # Save the data to a new HDF5 file with the same name but with `_input` suffix
+        input_fname = savename if savename.endswith('.hdf') else savename + '_input.hdf'
         with h5py.File(input_fname, 'a') as hf:
-            for idx in range(self.nsamples):
-                data = self.read_strain_hdf(idx, write_access=False)
-                # Save the data to a new HDF5 file with the same name but with `_input` suffix
-                input_fname = savename if savename.endswith('.hdf') else savename + '_input.hdf'
-                hf.create_group(f'wf{idx}')
-                inputdata, targetdata, _, = data
+            for grp in self.data_file.keys():
+                data = self.read_strain_hdf(grp)
+                hf.create_group(grp)
+                inputdata, targetdata = data[0], data[1]
+                hf.create_dataset(f'input_{inputnames[0]}', data=inputdata[0].cpu().numpy())
+                hf.create_dataset(f'input_{inputnames[1]}', data=inputdata[1].cpu().numpy())
+                hf.create_dataset(f'target_{targetnames[0]}', data=targetdata[0].cpu().numpy())
+                hf.create_dataset(f'target_{targetnames[1]}', data=targetdata[1].cpu().numpy())
+                if self.return_attributes:
+                    attributes = data[-1]
+                    for key, value in attributes.items():
+                        hf[grp].attrs[key] = value
 
         logger.info(f"Saved dataset items to {input_fname} successfully.")
+        self.close_hdf()  # Close the main data HDF file after saving the data
         
 
 class CustomDataLoader(DataLoader):
