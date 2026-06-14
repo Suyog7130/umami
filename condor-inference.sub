@@ -31,8 +31,8 @@ request_disk = 20 GB
 
 initialdir = /home/suyog.garg/phd-main/umami/
 
-output = inference_$(Cluster)_$(Process).out
-error  = inference_$(Cluster)_$(Process).err
+output = logs/inference_$(Cluster)_$(Process).out
+error  = logs/inference_$(Cluster)_$(Process).err
 log    = logs/inference_$(Cluster).log
 
 should_transfer_files = NO
