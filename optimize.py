@@ -279,15 +279,15 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
     test_hdf_path = f'../data/{label}-test.hdf'
     logger.info(f"Setting up dataloaders with train HDF: {train_hdf_path}, val HDF: {val_hdf_path}, test HDF: {test_hdf_path}")
     train_set = WaveformDataset(hdf_fname=train_hdf_path, target_type=target_type,
-                                input_nomalized=input_normalized, target_normalized=target_normalized,
+                                input_normalized=input_normalized, target_normalized=target_normalized,
                                 params_mean=params_mean, params_std=params_std,
                                 train_device=DEVICE, precision=PRECISION)
     val_set = WaveformDataset(hdf_fname=val_hdf_path, target_type=target_type,
-                              input_nomalized=input_normalized, target_normalized=target_normalized,
+                              input_normalized=input_normalized, target_normalized=target_normalized,
                               params_mean=params_mean, params_std=params_std,
                               train_device=DEVICE, precision=PRECISION)
     test_set = WaveformDataset(hdf_fname=test_hdf_path, target_type=target_type,
-                               input_nomalized=input_normalized, target_normalized=target_normalized,
+                               input_normalized=input_normalized, target_normalized=target_normalized,
                                params_mean=params_mean, params_std=params_std,
                                train_device=DEVICE, precision=PRECISION)
     logger.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(val_set)}, Test dataset size: {len(test_set)}")
