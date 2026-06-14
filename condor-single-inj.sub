@@ -1,0 +1,56 @@
+universe = vanilla
+
+executable = condor-run-inference.sh
+
+# Arguments:
+# 1 label
+# 2 injection_index, supplied by $(Process)
+# 3 sampler
+# 4 pe_run_type
+# 5 nlive
+# 6 threshold
+# 7 npool
+# 8 pytorch_threads
+#
+# Conservative first test:
+# npool = 8
+# pytorch_threads = 1
+
+arguments = ml2ml-paper-1 $(Process) pocomc ml2ml 600 0.2 8 1
+
+# Match this to nessai_npool * pytorch_threads.
+# For arguments ending in "8 1", request_cpus = 8.
+# For "8 2", use request_cpus = 16.
+# For "8 4", use request_cpus = 32.
+request_cpus = 8
+request_memory = 24 GB
+request_disk = 20 GB
+
+# Keep this CPU-only for now. Do not request GPUs for n_pool > 1.
+# request_gpus = 0
+
+initialdir = /home/suyog.garg/phd-main/umami/
+
+output = inference_$(Cluster)_$(Process).out
+error  = inference_$(Cluster)_$(Process).err
+log    = logs/inference_$(Cluster).log
+
+should_transfer_files = NO
+
+
+# Admin disabled getenv=True, so pass only what we need.
+# Keep CUDA hidden for CPU multiprocessing safety.
+# getenv = True
+environment = "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 TORCH_NUM_THREADS=1 PYTHONUNBUFFERED=1"
+
+
++JobBatchName = "umami_ml2ml_pocomc_test"
+
+# Remove or modify these if CIT requires a specific accounting group.
+accounting_group = ligo.dev.o4.cbc.explore.test
+accounting_group_user = suyog.garg
+
+# Good safety behavior.
+notification = Error
+
+queue 1
