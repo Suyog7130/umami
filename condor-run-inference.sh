@@ -75,7 +75,7 @@ echo "Checking core imports..."
 
 echo "Running inference.py..."
 
-"${PYTHON_EXE}" inference.py --run-single-injection \
+"${PYTHON_EXE}" inference.py --run-one-injection \
     --label "${LABEL}" \
     --injection-index "${INJECTION_INDEX}" \
     --sampler "${SAMPLER}" \
