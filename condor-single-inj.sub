@@ -3,28 +3,25 @@ universe = vanilla
 executable = condor-run-inference.sh
 
 # Arguments:
-# 1 label
-# 2 injection_index, supplied by $(Process)
-# 3 sampler
-# 4 pe_run_type
-# 5 nlive
-# 6 threshold
-# 7 npool
-# 8 pytorch_threads
-#
-# Conservative first test:
-# npool = 8
-# pytorch_threads = 1
+label = ml2ml-paper-1
+# injection_index, supplied by $(Process)
+sampler = pocomc
+pe_run_type = ml2ml
+nlive = 1024
+threshold = 0.2
+npool = 4
+pytorch_threads = 1
 
-arguments = ml2ml-paper-1 $(Process) pocomc ml2ml 1024 0.2 8 1
+arguments = $(label) $(Process) $(sampler) $(pe_run_type) $(nlive) $(threshold) $(npool) $(pytorch_threads)
 
 # Match this to nessai_npool * pytorch_threads.
 # For arguments ending in "8 1", request_cpus = 8.
 # For "8 2", use request_cpus = 16.
-# For "8 4", use request_cpus = 32.
 request_cpus = 8
-request_memory = 24 GB
-request_disk = 20 GB
+
+# My memory usage usually remains below 1000MB, while disk usage is almost nil!
+request_memory = 4 GB
+request_disk = 4 GB
 
 # Keep this CPU-only for now. Do not request GPUs for n_pool > 1.
 # request_gpus = 0
