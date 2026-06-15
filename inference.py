@@ -73,22 +73,12 @@ else:
 
 # bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="INFO")
 
-def signed_chi_to_bilby_spins(params):
-    p = dict(params)
 
-    chi1 = p.pop("spin_1z")
-    chi2 = p.pop("spin_2z")
+# Set up interferometers.  In this case we'll use two interferometers
+# (LIGO-Hanford (H1), LIGO-Livingston (L1). These default to their design
+# sensitivity
+ifos = bilby.gw.detector.InterferometerList(["H1", "L1"])
 
-    p["a_1"] = abs(chi1)
-    p["tilt_1"] = 0.0 if chi1 >= 0 else np.pi
-
-    p["a_2"] = abs(chi2)
-    p["tilt_2"] = 0.0 if chi2 >= 0 else np.pi
-
-    p.setdefault("phi_12", 0.0)
-    p.setdefault("phi_jl", 0.0)
-
-    return p
 
 def make_default_base_injection() -> Dict[str, float]:
     return dict(
@@ -110,46 +100,50 @@ def make_default_base_injection() -> Dict[str, float]:
     )
 
 
-def sample_injection_from_priors(
-    base_injection: Dict[str, float],
-    active_priors: bilby.core.prior.PriorDict,
-    active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "spin_1z", "spin_2z"),
-    rng_seed: Optional[int] = None,
-) -> Dict[str, float]:
-    """
-    Samples only active parameters, copies all other values from base_injection.
-    """
+base_injection = make_default_base_injection()
 
-    if rng_seed is not None:
-        np.random.seed(rng_seed)
 
-    injection = copy.deepcopy(base_injection)
 
-    sampled = active_priors.sample()
-    for key in active_keys:
-        injection[key] = sampled[key]
-    return injection
+def signed_chi_to_bilby_spins(params):
+    p = dict(params)
 
+    chi1 = p.pop("spin_1z")
+    chi2 = p.pop("spin_2z")
+
+    p["a_1"] = abs(chi1)
+    p["tilt_1"] = 0.0 if chi1 >= 0 else np.pi
+
+    p["a_2"] = abs(chi2)
+    p["tilt_2"] = 0.0 if chi2 >= 0 else np.pi
+
+    p.setdefault("phi_12", 0.0)
+    p.setdefault("phi_jl", 0.0)
+
+    return p
 
 
 def make_analysis_priors(
     injection_parameters: Dict[str, float],
     active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "spin_1z", "spin_2z"),
+    pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
 ) -> bilby.gw.prior.BBHPriorDict:
     """
     Build priors for one PE run.
-
     Fixed parameters become delta-function priors at injected values.
-    Active parameters are sampled.
-    """
+    Active parameters are sampled. We will use different 
 
+    Arguments
+    ---------
+    injection_parameters: dict
+        Dictionary of all injection parameters and their values.
+    active_keys: tuple of str
+        Tuple of parameter names to be treated as active parameters, and sampled over in PE run. All other parameters will be fixed to their injected values.
+    pe_run_type: str
+        Type of PE run, which determines the parameterization and priors to use. Must be one of 'eob2eob', 'ml2ml', or 'eob2ml'.
+    """
     priors = bilby.gw.prior.BBHPriorDict()
 
     fixed_keys = [
-        "a_1",
-        "a_2",
-        "tilt_1",
-        "tilt_2",
         "phi_12",
         "phi_jl",
         "luminosity_distance",
@@ -160,6 +154,12 @@ def make_analysis_priors(
         "geocent_time",
         "phase",
     ]
+
+    if injection_generator_type=='eob':
+        active_keys = ("mass_1", "mass_2", "a_1", "a_2", "tilt_1", "tilt_2")
+    else:
+        active_keys = ("mass_1", "mass_2", "spin_1z", "spin_2z")
+        fixed_keys += ["a_1", "a_2", "tilt_1", "tilt_2"]  # these will be converted from spin_1z and spin_2z, so they should be fixed to the corresponding values from the injection parameters.
 
     for key in fixed_keys:
         if key in injection_parameters and key not in active_keys:
@@ -198,16 +198,32 @@ def make_analysis_priors(
     return priors
 
 
-base_injection = make_default_base_injection()
+def sample_injection_from_priors(
+    base_injection: Dict[str, float],
+    active_priors: bilby.core.prior.PriorDict,
+    injection_generator_type: {'eob', 'ml'} = 'ml',
+    rng_seed: Optional[int] = None,
+) -> Dict[str, float]:
+    """
+    Samples only active parameters, copies all other values from base_injection.
+    """
+    if injection_generator_type=='eob':
+        active_keys = ("mass_1", "mass_2", "a_1", "a_2", "tilt_1", "tilt_2")
+    else:
+        active_keys = ("mass_1", "mass_2", "spin_1z", "spin_2z")
+    assert set(active_keys) == set(active_priors.keys()), f"Active keys {active_keys} do not match active priors keys {active_priors.keys()}"
 
-# Use the same active priors for drawing injections.
-active_priors = make_analysis_priors(
-    injection_parameters=base_injection,
-)
-print("Active priors for injection sampling:")
-for key, prior in active_priors.items():
-    print(f"  {key}: {prior}")
-print(f'Active priors for injection sampling: {active_priors.keys()}')
+    if rng_seed is not None:
+        np.random.seed(rng_seed)
+
+    injection = copy.deepcopy(base_injection)
+
+    sampled = active_priors.sample()
+    for key in active_keys:
+        injection[key] = sampled[key]
+
+    return injection
+
 
 
 # priors = BBHPriorDict(aligned_spin=True)
@@ -244,18 +260,10 @@ print(f'Active priors for injection sampling: {active_priors.keys()}')
 #     print(f"  {key}: {prior}")
 # print(f'Updated priors for BBH parameters: {priors.keys()}')
 
-# Perform a check that the prior does not extend to a parameter space longer than the data
-active_priors.validate_prior(DURATION, FMIN)
 
-
-
-# Set up interferometers.  In this case we'll use two interferometers
-# (LIGO-Hanford (H1), LIGO-Livingston (L1). These default to their design
-# sensitivity
-ifos = bilby.gw.detector.InterferometerList(["H1", "L1"])
-
-
-def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{PROJECT_DIR}/results/',
+def run_single_injection(run_idx, seed=None, label_base='umamipe', 
+                         outdir=f'../{PROJECT_DIR}/results/',
+                         active_priors=None,
                          injection_generator=None, waveform_generator=None, 
                          sampler=None, **sampler_kwargs):
     if seed is not None:
@@ -331,7 +339,7 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe', outdir=f'../{
 def run_injection_campaign(num_injections=50, base_seed=1234, 
                            label_base='umamipe', outdir=f'../{PROJECT_DIR}/results/',
                            injection_generator=None, waveform_generator=None, 
-                           sampler=None, **sampler_kwargs):
+                           sampler=None, active_priors=None, **sampler_kwargs):
     if injection_generator is None or waveform_generator is None:
         raise NotImplementedError("Both injection and waveform generators must be provided")
     results = []
@@ -339,7 +347,7 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
         logger.info(f"Injection {i+1}/{num_injections}")
         res = run_single_injection(i, seed=base_seed, outdir=outdir, label_base=label_base,
                                    injection_generator=injection_generator, waveform_generator=waveform_generator, 
-                                   sampler=sampler,**sampler_kwargs)
+                                   sampler=sampler, active_priors=active_priors, **sampler_kwargs)
         results.append(res)
     return results
 
@@ -430,6 +438,19 @@ def main(args, label='umamipe',
 
     # TODO: For EOB waveforms, priors should be [m_1, m_2, a_1, a_2, tilt_1, tilt_2], since otherwise the "spin1z" and "spin2z" parameters will be ignored by the EOB waveform generator, since internally Bilby requires aforementioned parameter names, and then uses its the `bilby_to_lal_bbh_...` function to convert them to LAL parameters, before calling the waveform model.
 
+    # Use the same active priors for drawing injections.
+    active_priors = make_analysis_priors(
+        injection_parameters=base_injection,
+        pe_run_type=pe_run_type,
+    )
+    print("Active priors for injection sampling:")
+    for key, prior in active_priors.items():
+        print(f"  {key}: {prior}")
+    print(f'Active priors for injection sampling: {active_priors.keys()}')
+
+    # Perform a check that the prior does not extend to a parameter space longer than the data
+    active_priors.validate_prior(DURATION, FMIN)
+
     if pe_run_type == 'eob2eob':
         injection_generator = make_wf_generator('eob')
         waveform_generator = make_wf_generator('eob')
@@ -462,15 +483,17 @@ def main(args, label='umamipe',
         logger.info(f"Running a single injection and PE with fixed seed 42, for index {injection_index}...")
         results = run_single_injection(injection_index, seed=42, 
                                         label_base=label, outdir=outdir,
-                                       injection_generator=injection_generator, 
-                                       waveform_generator=waveform_generator, 
-                                       sampler=sampler, **sampler_kwargs)
+                                        active_priors=active_priors,
+                                        injection_generator=injection_generator, 
+                                        waveform_generator=waveform_generator, 
+                                        sampler=sampler, **sampler_kwargs)
         
     elif args.run_pe_campaign:
         logger.info(f"Running a PE campaign with {args.num_injections} injections...")
 
         results = run_injection_campaign(num_injections=args.num_injections, 
                                         base_seed=42,
+                                        active_priors=active_priors,
                                         injection_generator=injection_generator, 
                                         waveform_generator=waveform_generator,
                                         label_base=label+f'_{NOW}', 
