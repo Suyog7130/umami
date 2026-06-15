@@ -97,6 +97,8 @@ def make_default_base_injection() -> Dict[str, float]:
         geocent_time=1126259642.413,
         ra=1.375,
         dec=-1.2108,
+        chi_1=0.4,   # for ML waveform generator, equivalent to spin1z
+        chi_2=0.3,   # for ML waveform generator, equivalent to spin2z
     )
 
 
@@ -104,46 +106,58 @@ base_injection = make_default_base_injection()
 
 
 
-def signed_chi_to_bilby_spins(params):
-    p = dict(params)
+# def signed_chi_to_bilby_spins(params):
+#     p = dict(params)
 
-    chi1 = p.pop("spin_1z")
-    chi2 = p.pop("spin_2z")
+#     chi1 = p.pop("spin_1z")
+#     chi2 = p.pop("spin_2z")
 
-    p["a_1"] = abs(chi1)
-    p["tilt_1"] = 0.0 if chi1 >= 0 else np.pi
+#     p["a_1"] = abs(chi1)
+#     p["tilt_1"] = 0.0 if chi1 >= 0 else np.pi
 
-    p["a_2"] = abs(chi2)
-    p["tilt_2"] = 0.0 if chi2 >= 0 else np.pi
+#     p["a_2"] = abs(chi2)
+#     p["tilt_2"] = 0.0 if chi2 >= 0 else np.pi
 
-    p.setdefault("phi_12", 0.0)
-    p.setdefault("phi_jl", 0.0)
+#     p.setdefault("phi_12", 0.0)
+#     p.setdefault("phi_jl", 0.0)
 
-    return p
+#     return p
 
 
 def make_analysis_priors(
     injection_parameters: Dict[str, float],
-    active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "spin_1z", "spin_2z"),
-    pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
+    active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "chi_1", "chi_2")
 ) -> bilby.gw.prior.BBHPriorDict:
     """
     Build priors for one PE run.
     Fixed parameters become delta-function priors at injected values.
-    Active parameters are sampled. We will use different 
+    Active parameters are sampled.
+
+    `bilby.gw.priors.BBHPriorDict` provides the option for `aligned_spin` priors,
+    [mass_1, mass_2, chi_1, chi_2], which we can directly use. My ML waveform requires 
+    `spin_1z` and `spin_2z` instead of `chi_1` and `chi_2`, and these are converted using 
+    the supplied convertion factor in the MLWaveformGenerator.
 
     Arguments
     ---------
     injection_parameters: dict
         Dictionary of all injection parameters and their values.
     active_keys: tuple of str
-        Tuple of parameter names to be treated as active parameters, and sampled over in PE run. All other parameters will be fixed to their injected values.
-    pe_run_type: str
-        Type of PE run, which determines the parameterization and priors to use. Must be one of 'eob2eob', 'ml2ml', or 'eob2ml'.
+        Tuple of parameter names to be treated as active parameters, and sampled over 
+        in PE run. All other parameters will be fixed to their injected values.
     """
-    priors = bilby.gw.prior.BBHPriorDict()
+    priors = bilby.gw.prior.BBHPriorDict(
+        aligned_spin=True,
+    )
+    print(f"Default priors for BBH parameters:\n{priors.keys()}")
+    print(f"Full priors for BBH parameters:\n{priors}")
 
+    # NOTE: The following parameters are fixed, and therefore consitute delta-function priors at the injection value. These parameters are ignored during sampling, and only the active parameters are considered.
     fixed_keys = [
+        "a_1",
+        "a_2",
+        "tilt_1",
+        "tilt_2",
         "phi_12",
         "phi_jl",
         "luminosity_distance",
@@ -154,12 +168,6 @@ def make_analysis_priors(
         "geocent_time",
         "phase",
     ]
-
-    if injection_generator_type=='eob':
-        active_keys = ("mass_1", "mass_2", "a_1", "a_2", "tilt_1", "tilt_2")
-    else:
-        active_keys = ("mass_1", "mass_2", "spin_1z", "spin_2z")
-        fixed_keys += ["a_1", "a_2", "tilt_1", "tilt_2"]  # these will be converted from spin_1z and spin_2z, so they should be fixed to the corresponding values from the injection parameters.
 
     for key in fixed_keys:
         if key in injection_parameters and key not in active_keys:
@@ -179,40 +187,37 @@ def make_analysis_priors(
     else:
         priors["mass_2"] = injection_parameters["mass_2"]
 
-    if "spin_1z" in active_keys:
-        priors["spin_1z"] = bilby.core.prior.Uniform(
-            -0.80, 0.80, name="spin_1z", latex_label="$\\chi_{1z}$"
+    if "chi_1" in active_keys:
+        priors["chi_1"] = bilby.core.prior.Uniform(
+            -0.80, 0.80, name="chi_1", latex_label="$\\chi_1$"
         )
     else:
-        priors["spin_1z"] = injection_parameters["spin_1z"]
+        priors["chi_1"] = injection_parameters["chi_1"]
 
-    if "spin_2z" in active_keys:
-        priors["spin_2z"] = bilby.core.prior.Uniform(
-            -0.80, 0.80, name="spin_2z", latex_label="$\\chi_{2z}$"
+    if "chi_2" in active_keys:
+        priors["chi_2"] = bilby.core.prior.Uniform(
+            -0.80, 0.80, name="chi_2", latex_label="$\\chi_2$"
         )
     else:        
-        priors["spin_2z"] = injection_parameters["spin_2z"]
+        priors["chi_2"] = injection_parameters["chi_2"]
 
     priors.pop("mass_ratio", None)
     priors.pop("chirp_mass", None)
+    print("Updated priors for BBH parameters:")
+    for key, prior in priors.items():
+        print(f"  {key}: {prior}")
     return priors
 
 
 def sample_injection_from_priors(
     base_injection: Dict[str, float],
     active_priors: bilby.core.prior.PriorDict,
-    injection_generator_type: {'eob', 'ml'} = 'ml',
+    active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "chi_1", "chi_2"),
     rng_seed: Optional[int] = None,
 ) -> Dict[str, float]:
     """
     Samples only active parameters, copies all other values from base_injection.
     """
-    if injection_generator_type=='eob':
-        active_keys = ("mass_1", "mass_2", "a_1", "a_2", "tilt_1", "tilt_2")
-    else:
-        active_keys = ("mass_1", "mass_2", "spin_1z", "spin_2z")
-    assert set(active_keys) == set(active_priors.keys()), f"Active keys {active_keys} do not match active priors keys {active_priors.keys()}"
-
     if rng_seed is not None:
         np.random.seed(rng_seed)
 
@@ -234,7 +239,7 @@ def sample_injection_from_priors(
 
 # # NOTE: Other parameters should be allowed to vary freely, for injection generation!
 # # # -- remove redundant or irrelevant parameters
-# params_to_use = ["mass_1", "mass_2", "chi_1z", "chi_2z"]
+# params_to_use = ["mass_1", "mass_2", "chi_1", "chi_2"]
 # # for param in list(priors.keys()):
 # #     if param not in params_to_use:
 # #         priors.pop(param)
@@ -441,7 +446,6 @@ def main(args, label='umamipe',
     # Use the same active priors for drawing injections.
     active_priors = make_analysis_priors(
         injection_parameters=base_injection,
-        pe_run_type=pe_run_type,
     )
     print("Active priors for injection sampling:")
     for key, prior in active_priors.items():
