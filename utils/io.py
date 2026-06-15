@@ -70,12 +70,14 @@ def check_DONE_file_exists(outdir: str,
                            label: str = '',
                            injection_index: int = None,
                            check_all_subdirs: bool = False) -> bool:
-    if injection_index is not None:
-        outdir = os.path.join(outdir, f'inj_{injection_index}_*/')
     logger.debug(f"Checking for DONE file in {outdir} with label '{label}' and check_all_subdirs={check_all_subdirs}")
     if check_all_subdirs:
-        done_file_path = os.path.join(outdir, '*', f"*{label}DONE*")
-        logger.debug(f"Looking for DONE files matching: {done_file_path}")
+        outdir = os.path.join(outdir, '*')
+    if injection_index is not None:
+        outdir = os.path.join(outdir, f'inj_{injection_index}_*/')
+    done_file_path = os.path.join(outdir, f"*{label}DONE*")
+    logger.debug(f"Looking for DONE files matching: {done_file_path}")
+    if check_all_subdirs:
         done_files = glob.glob(done_file_path, recursive=True)
         logger.info(f"Found DONE files: {done_files}")
         return len(done_files) > 0
