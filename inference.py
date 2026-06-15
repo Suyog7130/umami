@@ -84,12 +84,12 @@ def make_default_base_injection() -> Dict[str, float]:
     return dict(
         mass_1=36.0,
         mass_2=32.0,  # keep inside prior
-        a_1=0.4,
-        a_2=0.3,
-        tilt_1=0.0,
-        tilt_2=0.0,
-        phi_12=0.0,
-        phi_jl=0.0,
+        # a_1=0.4,
+        # a_2=0.3,
+        # tilt_1=0.0,
+        # tilt_2=0.0,
+        # phi_12=0.0,
+        # phi_jl=0.0,
         luminosity_distance=LUMINOSITY_DISTANCE,
         theta_jn=0.4,
         psi=2.659,
@@ -231,6 +231,45 @@ def sample_injection_from_priors(
 
 
 
+def aligned_chi_to_lal_parameters(parameters):
+    """
+    Convert aligned-spin chi_1, chi_2 parameters into LAL-style
+    spin magnitude and tilt parameters for non-precessing approximants.
+
+    Input sampled parameters:
+        chi_1, chi_2 in [-1, 1]
+
+    Output LAL-style parameters:
+        a_1, a_2 >= 0
+        tilt_1, tilt_2 in {0, pi}
+        phi_12 = 0
+        phi_jl = 0
+    """
+    converted = parameters.copy()
+
+    if "chi_1" in converted:
+        chi_1 = float(converted["chi_1"])
+        converted["a_1"] = abs(chi_1)
+        converted["tilt_1"] = 0.0 if chi_1 >= 0 else np.pi
+
+    if "chi_2" in converted:
+        chi_2 = float(converted["chi_2"])
+        converted["a_2"] = abs(chi_2)
+        converted["tilt_2"] = 0.0 if chi_2 >= 0 else np.pi
+
+    converted["phi_12"] = 0.0
+    converted["phi_jl"] = 0.0
+
+    # Also keep these for your ML model if useful.
+    if "chi_1" in converted:
+        converted["spin_1z"] = converted["chi_1"]
+    if "chi_2" in converted:
+        converted["spin_2z"] = converted["chi_2"]
+
+    return bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters(converted)
+
+
+
 # priors = BBHPriorDict(aligned_spin=True)
 # print("Default priors for BBH parameters:")
 # for key, prior in priors.items():
@@ -283,6 +322,7 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
         active_priors=active_priors,
         rng_seed=seed + run_idx if seed is not None else None
     )
+    logger.debug(f"Sampled injection parameters for run {run_idx}: {injection_parameters}")
 
     ifos.set_strain_data_from_power_spectral_densities(
         sampling_frequency=SAMPLE_RATE,
@@ -364,6 +404,7 @@ def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = None):
             sampling_frequency=SAMPLE_RATE,
             # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
             frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole,
+            parameter_conversion=aligned_chi_to_lal_parameters,
             waveform_arguments=dict(
                 waveform_approximant="SEOBNRv4",      #"IMRPhenomPv2",
                 reference_frequency=FREF,

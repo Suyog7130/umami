@@ -188,8 +188,8 @@ def convert_to_ml_parameters(parameters):
     # new_parameters.pop("mass_ratio", None)
     # new_parameters.pop("chirp_mass", None)
 
-    spin_1z = parameters.get("chi_1z", parameters.get("spin_1z", None))
-    spin_2z = parameters.get("chi_2z", parameters.get("spin_2z", None))
+    spin_1z = parameters.get("chi_1", parameters.get("spin_1z", None))
+    spin_2z = parameters.get("chi_2", parameters.get("spin_2z", None))
     if spin_1z is None and spin_2z is None:
         if "a_1" in parameters and "a_2" in parameters and "tilt_1" in parameters and "tilt_2" in parameters and "phi_12" in parameters and "phi_jl" in parameters and "theta_jn" in parameters:
             from bilby.gw.conversion import bilby_to_lalsimulation_spins
