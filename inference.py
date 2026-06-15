@@ -1,7 +1,7 @@
 
 """
 Use trained surrogate ML model and do Bayesian parameter estimation on this
-using Bilby, and obtain a Posterior Probability plot.
+using Bilby, and obtain a Probability-Probability plot.
 """
 
 import os
@@ -35,6 +35,15 @@ from utils.io import save_json, save_pickle, save_txt, write_DONE_file, ensure_d
 
 from utils.generic import init_logging, init_verbosity_args
 logger = logging.getLogger(__name__)
+
+
+# -- Block standard python warnings from clogging the stream
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# 2. Force PyTorch backend logs to only show CRITICAL errors, silencing warning logs
+os.environ["TORCH_CPP_LOG_LEVEL"] = "ERROR"
+
 
 
 PROJECT_DIR = 'v0p1'
