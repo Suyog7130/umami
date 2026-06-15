@@ -31,7 +31,7 @@ from typing import Dict, List, Tuple, Optional, Any
 from tqdm import tqdm
 from mlwavegen import MLWaveformGenerator, convert_to_ml_parameters
 
-from utils.io import save_json, save_pickle, save_txt, write_DONE_file, ensure_dir
+from utils.io import save_json, save_pickle, save_txt, write_DONE_file, ensure_dir, check_DONE_file_exists
 
 from utils.generic import init_logging, init_verbosity_args
 logger = logging.getLogger(__name__)
@@ -439,8 +439,14 @@ def main(args, label='umamipe',
     sampler_kwargs = set_sampler_kwargs(args, sampler)
 
     if args.run_one_injection:
+
+        if check_DONE_file_exists(outdir, label='', injection_index=args.injection_index, check_all_subdirs=True):
+            logger.info(f"PE results for injection index {args.injection_index} already exist. Skipping this injection.")
+            return
+        
         outdir = os.path.join(outdir, f'inj_{args.injection_index}_{NOW}/')
         ensure_dir(outdir)
+
         logger.info(f"Running a single injection and PE with fixed seed 42, for index {args.injection_index}...")
         results = run_single_injection(args.injection_index, seed=42, 
                                         label_base=label, outdir=outdir,
@@ -526,12 +532,12 @@ if __name__ == "__main__":
     
     parser.add_argument('--results-fname', type=str, default=None,
                         help="Filename of the results JSON file to analyze in analyze-only mode (default: None, required if --analyze-only is set)")
-    parser.add_argument('--results-run-index-start', type=int, default=1,
+    parser.add_argument('--results-run-index-start', type=int, default=None,
                         help="Starting index of the injection runs to analyze (default: %(default)s)")
-    parser.add_argument('--results-run-index-end', type=int, default=50,
+    parser.add_argument('--results-run-index-end', type=int, default=None,
                         help="Ending index of the injection runs to analyze (default: %(default)s)")
     
-    parser.add_argument('--num-injections', type=int, default=50,
+    parser.add_argument('--num-injections', type=int, default=None,
                         help="Number of injections to run in the campaign (default: %(default)s)")
     parser.add_argument('--injection-index', type=int, default=1,
                         help="Index of the specific injection to run (default: %(default)s)")

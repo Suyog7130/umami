@@ -7,6 +7,10 @@ from typing import Any, Dict, Optional
 import numpy as np
 
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 def ensure_dir(path: str) -> None:
     """ NOTE: All dir paths should end with a '/' to distinguish from file paths. """
     if not path.endswith('/'):
@@ -60,3 +64,24 @@ def write_DONE_file(outdir: str, label: str) -> None:
     else:
         filename = os.path.join(outdir, f"{label}_DONE")
     save_txt("", filename)
+
+
+def check_DONE_file_exists(outdir: str, 
+                           label: str = '',
+                           injection_index: int = None,
+                           check_all_subdirs: bool = False) -> bool:
+    if injection_index is not None:
+        outdir = os.path.join(outdir, f'inj_{injection_index}_*/')
+    logger.debug(f"Checking for DONE file in {outdir} with label '{label}' and check_all_subdirs={check_all_subdirs}")
+    if check_all_subdirs:
+        done_file_path = os.path.join(outdir, '*', f"*{label}DONE*")
+        logger.debug(f"Looking for DONE files matching: {done_file_path}")
+        done_files = glob.glob(done_file_path, recursive=True)
+        logger.info(f"Found DONE files: {done_files}")
+        return len(done_files) > 0
+    else:
+        if label=='':
+            filename = os.path.join(outdir, "DONE")
+        else:
+            filename = os.path.join(outdir, f"{label}_DONE")
+        return os.path.isfile(filename)
