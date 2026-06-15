@@ -95,3 +95,6 @@ echo "Date: $(date)"
 echo "============================================================"
 
 exit "${EXIT_CODE}"
+
+mkdir -p /home/suyog.garg/phd-main/umami/logs
+mv /home/suyog.garg/phd-main/umami/inference_${CONDOR_CLUSTER_ID}_${CONDOR_PROC_ID}.* /home/suyog.garg/phd-main/umami/logs/ 2>/dev/null || true
