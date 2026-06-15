@@ -20,8 +20,8 @@ arguments = $(label) $(Process) $(sampler) $(pe_run_type) $(nlive) $(threshold) 
 request_cpus = 8
 
 # My memory usage usually remains below 1000MB, while disk usage is almost nil!
-request_memory = 4 GB
-request_disk = 4 GB
+request_memory = 8 GB
+request_disk = 2 GB
 
 # Keep this CPU-only for now. Do not request GPUs for n_pool > 1.
 # request_gpus = 0
