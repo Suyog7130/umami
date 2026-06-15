@@ -235,7 +235,8 @@ class WaveformDataset(torch.utils.data.Dataset):
         labels = data['labels'][:]
         keys = data['keys'][:]
         strains = data['strains'][:]
-        return input, target, labels, keys, strains
+        attr = data['attr'][:]
+        return input, target, labels, keys, strains, attr
 
     def __getitem__(self, idx):
         return self.read_data_from_hdf(idx)
@@ -389,7 +390,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         for idx, databatch in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
             if idx >= num_train_batches:
                 break
-            x, target, labels, keys, strains = databatch
+            x, target, labels, keys, strains, attr = databatch
             x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
