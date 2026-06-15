@@ -35,6 +35,12 @@ output = $(initialdir)/logs/inference_$(Cluster)_$(Process).out
 error  = $(initialdir)/logs/inference_$(Cluster)_$(Process).err
 log    = $(initialdir)/logs/inference_$(Cluster).log
 
+# Force the remote node to create the path if it encounters an NFS sync lag
+create_stream_dir = True
+
+# Tell Condor to retry file transfers if the network filesystem hiccups
+manifest_file_checksum_mismatch_retry_count = 5
+
 should_transfer_files = NO
 
 
