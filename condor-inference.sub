@@ -34,9 +34,7 @@ log    = $(initialdir)/logs/inference_$(Cluster).log
 
 # NOTE: output and error files are written by the worker process, which may have NFS storage cache sync issues and not see the `logs` dir, so we create those files in the root dir and then transfer them manually!
 
-should_transfer_files = YES
-when_to_transfer_output = ON_EXIT
-transfer_output_files = inference_$(Cluster)_$(Process).out, inference_$(Cluster)_$(Process).err
+should_transfer_files = NO
 
 # Admin disabled getenv=True, so pass only what we need.
 # Keep CUDA hidden for CPU multiprocessing safety.
