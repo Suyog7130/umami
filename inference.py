@@ -449,19 +449,23 @@ def main(args, label='umamipe',
 
     if args.run_one_injection:
 
-        if check_DONE_file_exists(outdir, label=label, injection_index=args.injection_index, check_all_subdirs=True):
-            logger.info(f"PE results for injection index {args.injection_index} already exist. Skipping this injection.")
+        # Allow injection index start to wary, so that new runs can be performed via HTCondor.
+        injection_index = args.injection_index + args.injection_index_start
+
+        if check_DONE_file_exists(outdir, label=label, injection_index=injection_index, check_all_subdirs=True):
+            logger.info(f"PE results for injection index {injection_index} already exist. Skipping this injection.")
             return
 
-        outdir = os.path.join(outdir, f'{label}_inj_{args.injection_index}_{NOW}/')
+        outdir = os.path.join(outdir, f'{label}_inj_{injection_index}_{NOW}/')
         ensure_dir(outdir)
 
-        logger.info(f"Running a single injection and PE with fixed seed 42, for index {args.injection_index}...")
-        results = run_single_injection(args.injection_index, seed=42, 
+        logger.info(f"Running a single injection and PE with fixed seed 42, for index {injection_index}...")
+        results = run_single_injection(injection_index, seed=42, 
                                         label_base=label, outdir=outdir,
                                        injection_generator=injection_generator, 
                                        waveform_generator=waveform_generator, 
                                        sampler=sampler, **sampler_kwargs)
+        
     elif args.run_pe_campaign:
         logger.info(f"Running a PE campaign with {args.num_injections} injections...")
 
@@ -541,15 +545,15 @@ if __name__ == "__main__":
     
     parser.add_argument('--results-fname', type=str, default=None,
                         help="Filename of the results JSON file to analyze in analyze-only mode (default: None, required if --analyze-only is set)")
-    parser.add_argument('--results-run-index-start', type=int, default=None,
-                        help="Starting index of the injection runs to analyze (default: %(default)s)")
-    parser.add_argument('--results-run-index-end', type=int, default=None,
-                        help="Ending index of the injection runs to analyze (default: %(default)s)")
     
     parser.add_argument('--num-injections', type=int, default=None,
                         help="Number of injections to run in the campaign (default: %(default)s)")
-    parser.add_argument('--injection-index', type=int, default=1,
+    parser.add_argument('--injection-index', type=int, default=0,
                         help="Index of the specific injection to run (default: %(default)s)")
+    parser.add_argument('--injection-index-start', type=int, default=0,
+                        help="Starting index of the injection runs to analyze (default: %(default)s)")
+    parser.add_argument('--injection-index-end', type=int, default=None,
+                        help="Ending index of the injection runs to analyze (default: %(default)s)")
     
     parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml'], default='ml2ml',
                         help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
