@@ -70,20 +70,21 @@ def check_DONE_file_exists(outdir: str,
                            label: str = '',
                            injection_index: int = None,
                            check_all_subdirs: bool = False) -> bool:
-    logger.debug(f"Checking for DONE file in {outdir} with label '{label}' and check_all_subdirs={check_all_subdirs}")
+    logger.info(f"Checking for DONE file in {outdir} with label '{label}' and check_all_subdirs={check_all_subdirs}")
+    logger.debug(f"outdir partitioned: {outdir.partition('results/')}")
     if check_all_subdirs:
-        outdir = os.path.join(outdir, '*')
+        if outdir.partition('results/')[1] == 'results/':
+            outdir = os.path.join(outdir.partition('results/')[0], 'results/*/')
+    logger.info(f"Final outdir for checking: {outdir}")
     if injection_index is not None:
-        outdir = os.path.join(outdir, f'inj_{injection_index}_*/')
-    done_file_path = os.path.join(outdir, f"*{label}DONE*")
+        outdir = os.path.join(outdir, f'*{label}*inj_{injection_index}_*/')
+    done_file_path = os.path.join(outdir, f"*DONE*")
     logger.debug(f"Looking for DONE files matching: {done_file_path}")
     if check_all_subdirs:
         done_files = glob.glob(done_file_path, recursive=True)
-        logger.info(f"Found DONE files: {done_files}")
+        logger.debug(f"Found DONE files: {done_files}")
         return len(done_files) > 0
     else:
-        if label=='':
-            filename = os.path.join(outdir, "DONE")
-        else:
-            filename = os.path.join(outdir, f"{label}_DONE")
+        filename = os.path.join(outdir, "*DONE*")
+        logger.debug(f"Checking for file: {filename}")
         return os.path.isfile(filename)

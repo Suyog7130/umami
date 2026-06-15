@@ -440,11 +440,11 @@ def main(args, label='umamipe',
 
     if args.run_one_injection:
 
-        if check_DONE_file_exists(outdir, label='', injection_index=args.injection_index, check_all_subdirs=True):
+        if check_DONE_file_exists(outdir, label=label, injection_index=args.injection_index, check_all_subdirs=True):
             logger.info(f"PE results for injection index {args.injection_index} already exist. Skipping this injection.")
             return
-        
-        outdir = os.path.join(outdir, f'inj_{args.injection_index}_{NOW}/')
+
+        outdir = os.path.join(outdir, f'{label}_inj_{args.injection_index}_{NOW}/')
         ensure_dir(outdir)
 
         logger.info(f"Running a single injection and PE with fixed seed 42, for index {args.injection_index}...")
