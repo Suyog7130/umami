@@ -50,7 +50,7 @@ else
     arg_total_jobs = 256
 endif
 
-injection_index = $(Process) + $(arg_idx_start)
+injection_index = $$([ $(Process) + $(arg_idx_start) ])
 
 arguments = $(arg_label) $(injection_index) $(arg_sampler) $(arg_run_type) $(arg_nlive) $(arg_threshold) $(arg_npool) $(arg_pytorch_threads)
 
