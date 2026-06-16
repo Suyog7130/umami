@@ -21,6 +21,7 @@ __pycache__
 */*.log
 ./*/*.log
 ./*/*.err
+logs/
 
 # Includelist folder/a/b1/ and folder/a/b2/ trailing "/" is optional for folders, may match file though. "/" is NOT
 # optional when followed by a *
