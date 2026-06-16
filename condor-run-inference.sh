@@ -3,13 +3,12 @@ set -eo pipefail
 
 LABEL="${1:-ml2ml-paper-1}"
 INJECTION_INDEX="${2:-0}"
-INJECTION_INDEX_START="${3:-0}"
-SAMPLER="${4:-pocomc}"
-PE_RUN_TYPE="${5:-ml2ml}"
-NLIVE="${6:-300}"
-THRESHOLD="${7:-0.2}"
-NPOOL="${8:-8}"
-PYTORCH_THREADS="${9:-1}"
+SAMPLER="${3:-pocomc}"
+PE_RUN_TYPE="${4:-ml2ml}"
+NLIVE="${5:-300}"
+THRESHOLD="${6:-0.2}"
+NPOOL="${7:-8}"
+PYTORCH_THREADS="${8:-1}"
 
 echo "============================================================"
 echo "Starting inference job"
@@ -18,7 +17,6 @@ echo "Date: $(date)"
 echo "PWD: $(pwd)"
 echo "LABEL: ${LABEL}"
 echo "INJECTION_INDEX: ${INJECTION_INDEX}"
-echo "INJECTION_INDEX_START: ${INJECTION_INDEX_START}"
 echo "SAMPLER: ${SAMPLER}"
 echo "PE_RUN_TYPE: ${PE_RUN_TYPE}"
 echo "NLIVE: ${NLIVE}"
@@ -80,7 +78,6 @@ echo "Running inference.py..."
 "${PYTHON_EXE}" inference.py --run-one-injection \
     --label "${LABEL}" \
     --injection-index "${INJECTION_INDEX}" \
-    --injection-index-start "${INJECTION_INDEX_START}" \
     --sampler "${SAMPLER}" \
     --pe-run-type "${PE_RUN_TYPE}" \
     --nlive "${NLIVE}" \

@@ -2,20 +2,57 @@ universe = vanilla
 
 executable = condor-run-inference.sh
 
-# ==============================================================================
-# Fallback Default Values (Overridden automatically if passed via command line)
-# ==============================================================================
-label                  = ml2ml-paper-1
-injection_index_start  = 0
-sampler                = pocomc
-pe_run_type            = ml2ml
-nlive                  = 1024
-threshold              = 0.2
-npool                  = 4
-pytorch_threads        = 1
-total_jobs             = 256
+# Arguments:
+if defined label
+    arg_label = $(label)
+else
+    arg_label = ml2ml-paper-1
+endif
+# injection_index, supplied by $(Process)
+if defined injection_index_start
+    arg_idx_start = $(injection_index_start)
+else
+    arg_idx_start = 0
+endif
+if defined sampler
+    arg_sampler = $(sampler)
+else
+    arg_sampler = pocomc
+endif
+if defined pe_run_type
+    arg_run_type = $(pe_run_type)
+else
+    arg_run_type = ml2ml
+endif
+if defined nlive
+    arg_nlive = $(nlive)
+else
+    arg_nlive = 1024
+endif
+if defined threshold
+    arg_threshold = $(threshold)
+else
+    arg_threshold = 0.2
+endif
+if defined npool
+    arg_npool = $(npool)
+else
+    arg_npool = 4
+endif
+if defined pytorch_threads
+    arg_pytorch_threads = $(pytorch_threads)
+else
+    arg_pytorch_threads = 1
+endif
+if defined total_jobs
+    arg_total_jobs = $(total_jobs)
+else
+    arg_total_jobs = 256
+endif
 
-arguments = $(label) $(Process) $(injection_index_start) $(sampler) $(pe_run_type) $(nlive) $(threshold) $(npool) $(pytorch_threads)
+injection_index = $(Process) + $(arg_idx_start)
+
+arguments = $(arg_label) $(injection_index) $(arg_sampler) $(arg_run_type) $(arg_nlive) $(threshold) $(arg_npool) $(arg_pytorch_threads)
 
 # Match this to nessai_npool * pytorch_threads.
 # For arguments ending in "8 1", request_cpus = 8.
@@ -54,4 +91,4 @@ accounting_group_user = suyog.garg
 # Good safety behavior.
 notification = Error
 
-queue $(total_jobs)
+queue $(arg_total_jobs)
