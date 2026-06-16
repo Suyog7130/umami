@@ -52,7 +52,7 @@ endif
 
 injection_index = $(Process) + $(arg_idx_start)
 
-arguments = $(arg_label) $(injection_index) $(arg_sampler) $(arg_run_type) $(arg_nlive) $(threshold) $(arg_npool) $(arg_pytorch_threads)
+arguments = $(arg_label) $(injection_index) $(arg_sampler) $(arg_run_type) $(arg_nlive) $(arg_threshold) $(arg_npool) $(arg_pytorch_threads)
 
 # Match this to nessai_npool * pytorch_threads.
 # For arguments ending in "8 1", request_cpus = 8.
