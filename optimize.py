@@ -123,21 +123,24 @@ def save_data_from_dataset(savedir='../data/',
     train_hdf_path = train_hdf
     val_hdf_path = val_hdf
     test_hdf_path = test_hdf
-    train_set = CustomDataset(approximant=APPROXIMANT, returnattr=True,
+    train_set = CustomDataset(approximant=APPROXIMANT,
                             hdf_fname=train_hdf_path, 
                             train_device=DEVICE, precision=PRECISION,
                             input_type=input_type, target_type=target_type,
-                            input_normalized=input_normalized, target_normalized=target_normalized)
-    valid_set = CustomDataset(approximant=APPROXIMANT, returnattr=True,
+                            input_normalized=input_normalized, target_normalized=target_normalized,
+                            return_attributes=True, return_phases=True, return_sample_indices=False)
+    valid_set = CustomDataset(approximant=APPROXIMANT,
                             hdf_fname=val_hdf_path, 
                             train_device=DEVICE, precision=PRECISION,
                             input_type=input_type, target_type=target_type,
-                            input_normalized=input_normalized, target_normalized=target_normalized)
-    test_set = CustomDataset(approximant=APPROXIMANT, returnattr=True,
+                            input_normalized=input_normalized, target_normalized=target_normalized,
+                            return_attributes=True, return_phases=True, return_sample_indices=False)
+    test_set = CustomDataset(approximant=APPROXIMANT,
                             hdf_fname=test_hdf_path, 
                             train_device=DEVICE, precision=PRECISION,
                             input_type=input_type, target_type=target_type,
-                            input_normalized=input_normalized, target_normalized=target_normalized)
+                            input_normalized=input_normalized, target_normalized=target_normalized,
+                            return_attributes=True, return_phases=True, return_sample_indices=False)
     train_set.save_to_input_file(savename=savedir+f'{label}-train.hdf')
     valid_set.save_to_input_file(savename=savedir+f'{label}-val.hdf')
     test_set.save_to_input_file(savename=savedir+f'{label}-test.hdf')
@@ -215,6 +218,47 @@ class WaveformDataset(torch.utils.data.Dataset):
     # def __del__(self):
     #     self.close_hdf()
 
+
+    def collate_fn(self, batch):
+        """ 
+        Custom collate function to handle the batch data.
+        To account for some `bool` values in the `feat_dict` that are not tensors, 
+        we will separate the `feat_dict` from the rest of the batch data and handle it separately.
+
+        NOTE: It is assumed that the `feat_dict` will always the last in the batch tuple!
+        """
+        tag_batches = []
+        feat_dict_batch = {}
+        logger.debug(f'Batch size: {len(batch)}')
+
+        max_tags = max(len(sample) - 1 for sample in batch)  # Exclude the feature dict
+
+        # Initialize lists for each tag dynamically
+        for _ in range(max_tags):
+            tag_batches.append([])
+
+        for sample in batch:
+            *tags, feat_dict = sample
+            logger.debug(f'Number of tags: {len(tags)}')
+            for key, value in feat_dict.items():
+                if key not in feat_dict_batch:
+                    feat_dict_batch[key] = []
+                if isinstance(value, bool):
+                    # Convert bool to int for storage in HDF5
+                    value = int(value)
+                feat_dict_batch[key].append(value)
+
+            # Append tags to their respective lists
+            for i, tag in enumerate(tags):
+                tag = torch.tensor(tag, device=self.train_device, dtype=getattr(torch, self.precision))
+                tag_batches[i].append(tag)
+
+        # Convert lists of tags to tensors
+        for i in range(len(tag_batches)):
+            tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=getattr(torch, self.precision))
+
+        return (*tag_batches, feat_dict_batch)
+
     def read_data_from_hdf(self, idx):
         # -- read the input waveform and target residual from the HDF file for the given index, and return them as tensors
         grp = f'sample{idx}'
@@ -235,7 +279,8 @@ class WaveformDataset(torch.utils.data.Dataset):
         labels = data['labels'][:]
         keys = data['keys'][:]
         strains = data['strains'][:]
-        attr = data['attr'][:]
+        attr = data.attrs
+        logger.debug(f"Available attributes in group {grp}: {list(attr.keys())}")
         return input, target, labels, keys, strains, attr
 
     def __getitem__(self, idx):
@@ -248,7 +293,8 @@ class WaveformDataLoader(torch.utils.data.DataLoader):
     It allows for shuffling and batching of the waveform data.
     """
     def __init__(self, dataset, batch_size=32, shuffle=True):
-        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle)
+        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle,
+                         collate_fn=dataset.collate_fn)
 
 
 def set_waveform_dataloaders(batch_size=BATCH_SIZE,

@@ -1456,7 +1456,8 @@ class CustomDataset(Dataset):
                  input_normalized: bool = True,
                  input_normalization_keys=None,
                  regenerate_data: bool = False,
-                 **kwargs):
+                 **kwargs
+    ):
         super().__init__()
         self.train_device = train_device
         self.store_device = store_device
@@ -1466,7 +1467,7 @@ class CustomDataset(Dataset):
         self.convert = convert
         self.nokeys = nokeys
         self.hdf_fname = hdf_fname
-        self.return_attributes = kwargs.get('return_attributes', kwargs.get('return_attr', return_attributes))
+        self.return_attributes = return_attributes
         # TODO: Rename "sample" to "data" or "waveform", since we have a specific meaning for "sample" in the PE context!
         self.return_sample_indices = return_sample_indices
         self.return_phases = return_phases
@@ -1890,8 +1891,16 @@ class CustomDataset(Dataset):
         out_attr['target_type'] = self.target_type
         out_attr['input_normalized'] = self.input_normalized
         out_attr['target_normalized'] = self.target_normalized
-        out_attr['input_normalization_keys'] = out_keys if self.input_normalized else None
-        out_attr['target_normalization_keys'] = out_keys if self.target_normalized else None
+        if self.input_normalized:
+            out_attr['input_normalization_keys_'+self.inputnames[0]+'_mean'] = out_keys[0][0]
+            out_attr['input_normalization_keys_'+self.inputnames[0]+'_std'] = out_keys[0][1]
+            out_attr['input_normalization_keys_'+self.inputnames[1]+'_mean'] = out_keys[1][0]
+            out_attr['input_normalization_keys_'+self.inputnames[1]+'_std'] = out_keys[1][1]
+        elif self.target_normalized:
+            out_attr['target_normalization_keys_'+self.targetnames[0]+'_mean'] = out_keys[0][0]
+            out_attr['target_normalization_keys_'+self.targetnames[0]+'_std'] = out_keys[0][1]
+            out_attr['target_normalization_keys_'+self.targetnames[1]+'_mean'] = out_keys[1][0]
+            out_attr['target_normalization_keys_'+self.targetnames[1]+'_std'] = out_keys[1][1]
                     
         # Apart from input and target, the rest of the return values are same for all cases!
         returnables = [out_labels, out_keys, out_strains]
@@ -1993,12 +2002,14 @@ class CustomDataset(Dataset):
         else:            
             targetnames = ['unnormed_'+name for name in self.targetnames]
 
+        logger.info(f"Groups in the dataset are like: {list(self.data_file.keys())[:5]} ...")
+
         # Save the data to a new HDF5 file with the same name but with `_input` suffix
         input_fname = savename if savename.endswith('.hdf') else savename + '_input.hdf'
         with h5py.File(input_fname, 'a') as hf:
             for grp in tqdm(self.data_file.keys(), desc='Saved', unit=' wfs', ncols=100):
-                data = self.read_strain_hdf(grp)
-                inputdata, targetdata, labels, keys, strains, *rest = data
+                data = self.read_strain_hdf(str(grp))
+                inputdata, targetdata, labels, keys, strains, phases, attributes = data
                 hf.create_group(grp)
                 hf[grp].create_dataset(f'input_{inputnames[0]}', data=inputdata[0])
                 hf[grp].create_dataset(f'input_{inputnames[1]}', data=inputdata[1])
@@ -2008,10 +2019,12 @@ class CustomDataset(Dataset):
                 hf[grp].create_dataset('labels', data=labels)
                 hf[grp].create_dataset('keys', data=keys)
                 hf[grp].create_dataset('strains', data=strains)
-                if self.return_attributes:
-                    attributes = data[-1]
-                    for key, value in attributes.items():
-                        hf[grp].attrs[key] = value
+                hf[grp].create_dataset('phases', data=phases)
+                # -- Save all attributes, copying the original attribute name!
+                logger.debug(f"Attributes to be saved for group {grp}: {attributes}")
+                for attr_key, attr_value in attributes.items():
+                    logger.debug(f"Saving attribute {attr_key} with value {attr_value} for group {grp}")
+                    hf[grp].attrs[attr_key] = attr_value
                 logger.debug(f"Saved group {grp} with inputnames {inputnames} and targetnames {targetnames}.")
 
         logger.info(f"Saved dataset items to {input_fname} successfully.")

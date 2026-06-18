@@ -1485,17 +1485,17 @@ class FlexCAEPhase(FlexCAE):
         """
         zx_mu, zx_logvar, zy_mu, zy_logvar, \
             zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
-        logging.debug(f'zx_mu={zx_mu}, zx_logvar={zx_logvar}, zy_mu={zy_mu}, zy_logvar={zy_logvar}, \
-            zkey_mu={zkey_mu}, zkey_logvar={zkey_logvar}, zykey_mu={zykey_mu}, zykey_logvar={zykey_logvar}')
+        logging.debug(f'zx_mu={zx_mu.shape}, zx_logvar={zx_logvar.shape}, zy_mu={zy_mu.shape}, zy_logvar={zy_logvar.shape}, \
+            zkey_mu={zkey_mu.shape}, zkey_logvar={zkey_logvar.shape}, zykey_mu={zykey_mu.shape}, zykey_logvar={zykey_logvar.shape}')
 
         # NOTE: If the targets are unnormalized [amp,phase], then there is no need to have the keys as input to the model, since we can have normalized inputs, but the loss function can measure loss wrt unnormalized targets! This is the 1C1E1D kind of model then. We will define this in a new class, however, for current implementation, we keep the Key Encoder and calculate the latent loss terms for all six comparison pairs between the two encoders and two conditional encoders.
         ll_enc_x = F.mse_loss(zx_mu, zy_mu, reduction='mean')
         ll_enc_key = F.mse_loss(zkey_mu, zykey_mu, reduction='mean')
-        ll_cond_x = F.mse_loss(zx_mu, zykey_mu, reduction='mean')
-        ll_cond_key = F.mse_loss(zkey_mu, zy_mu, reduction='mean')
-        ll_cross1 = F.mse_loss(zx_mu, zkey_mu, reduction='mean')
-        ll_cross2 = F.mse_loss(zy_mu, zykey_mu, reduction='mean')
-        latent_loss = ll_enc_x + ll_enc_key + ll_cond_x + ll_cond_key + ll_cross1 + ll_cross2
+        # ll_cond_x = F.mse_loss(zx_mu, zykey_mu, reduction='mean')     # -- latent dims are different for enc and conditional.
+        # ll_cond_key = F.mse_loss(zkey_mu, zy_mu, reduction='mean')
+        # ll_cross1 = F.mse_loss(zx_mu, zkey_mu, reduction='mean')
+        # ll_cross2 = F.mse_loss(zy_mu, zykey_mu, reduction='mean')
+        latent_loss = ll_enc_x + ll_enc_key #+ ll_cond_x + ll_cond_key #+ ll_cross1 + ll_cross2
         logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
