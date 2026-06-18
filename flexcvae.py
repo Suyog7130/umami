@@ -1539,4 +1539,47 @@ class FlexCAEPhase(FlexCAE):
         logging.debug(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + mmloss + latent_loss
         return (total_loss, recon_loss, mmloss, latent_loss)
+    
+    def simple_mse_loss_func(self, target, x_recon, zvars, strains, keys, attr):
+        """
+        Computes a simple mean squared error loss between the reconstructed output and the target,
+        plus the MSE loss between the mean latent variables of the encoders and their corresponding 
+        label-conditioned encoders.
+        This is a simpler loss function that does not include mismatch loss or latent loss terms.
+
+        math:: `L = \frac{1}{N} \sum_{i=1}^{N} (x_{recon}^{(i)} - target^{(i)})^2`
+
+        Parameters:
+        -----------
+        target : torch.Tensor
+            Original target data.
+        x_recon : torch.Tensor
+            Reconstructed input data.
+        zvars : list of torch.Tensor
+            List of latent variable means and log variances.
+        keys : torch.Tensor
+            Normalization keys for the input amplitude and frequency data.
+
+        Returns:
+        --------
+        total_loss : torch.Tensor
+            Total loss combining reconstruction and latent loss.
+        recon_loss : torch.Tensor
+            Reconstruction loss component of the total loss.
+        latent_loss : torch.Tensor
+            Latent loss component of the total loss, calculated as the MSE between the mean latent variables 
+            of the encoders and their corresponding label-conditioned encoders.
+        """
+        zx_mu, zx_logvar, zy_mu, zy_logvar, \
+            zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
+        logging.debug(f'zx_mu={zx_mu.shape}, zx_logvar={zx_logvar.shape}, zy_mu={zy_mu.shape}, zy_logvar={zy_logvar.shape}, \
+            zkey_mu={zkey_mu.shape}, zkey_logvar={zkey_logvar.shape}, zykey_mu={zykey_mu.shape}, zykey_logvar={zykey_logvar.shape}')
+        ll1 = F.mse_loss(zx_mu, zy_mu, reduction='mean')
+        ll2 = F.mse_loss(zkey_mu, zykey_mu, reduction='mean')
+        latent_loss = ll1 + ll2
+        logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
+        
+        recon_loss = F.mse_loss(x_recon, target, reduction='mean')
+        total_loss = recon_loss + latent_loss
+        return (total_loss, recon_loss, latent_loss)
         

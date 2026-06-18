@@ -24,8 +24,10 @@
     "beta": 0.1,  
     "decoder_input_type": "concat",
     "embed_labels_in_decoder": false,
-    "loss_func_type": "mismatch_nokl",
+    "loss_func_type": "simple_mse",
     "modeltype": "flexcae",
     "modelname": "flexcvae_amp_phase",
-    "target": "amp_phase"
+    "target": "amp_phase",
+    "input_normalized": true,
+    "target_normalized": false
 }

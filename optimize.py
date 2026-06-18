@@ -413,12 +413,15 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     if loss_func_type is None:
         lossfunction = model.loss_function
         lcomps_names = ['recon_loss', 'kl_loss']
-    elif loss_func_type == 'mismatch_nokl':
-        lossfunction = model.mismatch_nokl_loss_func
-        lcomps_names = ['recon_loss', 'mmloss', 'latent_loss']
     elif loss_func_type == 'mmloss':
         lossfunction = model.mismatch_loss_func
         lcomps_names = ['recon_loss', 'kl_loss', 'mmloss']
+    elif loss_func_type == 'mismatch_nokl':
+        lossfunction = model.mismatch_nokl_loss_func
+        lcomps_names = ['recon_loss', 'mmloss', 'latent_loss']
+    elif loss_func_type == 'simple_mse':
+        lossfunction = model.simple_mse_loss_func
+        lcomps_names = ['recon_loss', 'latent_loss']
     else:
         logger.error(f"Invalid loss function type specified: {loss_func_type}. Using default loss function.")
         lossfunction = model.loss_function
