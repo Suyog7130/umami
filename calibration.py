@@ -935,7 +935,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                 target_residual=torch.stack([target_amp_residual, target_freq_residual], dim=1),
                 output_residual=torch.stack([pred_amp_residual, pred_freq_residual], dim=1),
                 title=f'$m_1 = {labels[0, 0].item():.2f}, m_2 = {labels[0, 1].item():.2f}, \\chi_1(z) = {labels[0, 2].item():.2f}, \\chi_2(z) = {labels[0, 3].item():.2f}$',
-                savename=f'wf{int(indices[0].item())}' + '-dummy' if dummyrun else '',
+                savename=f'wf{int(indices[0].item())}',
                 savedir=savedir,
             )
 
@@ -981,6 +981,21 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     savename = os.path.join(savedir, f'calibrator_test_mismatch_results_{timestamp}')
     savename += '-dummy' if dummyrun else ''
     dfmm.to_hdf(savename+'.h5', key='mismatch_results', mode='w')
+
+    # Save test results configuration to a JSON file for reference!
+    test_results_config = {
+        'wfmodel_modelpath': wfmodel_modelpath,
+        'wfmodel_configpath': wfmodel_configpath,
+        'calibrator_modelpath': calibrator_modelpath,
+        'dataset_path': dataset_path,
+        'batch_size': batch_size,
+        'timestamp': timestamp,
+    }
+    if dummyrun:
+        test_results_config['dummyrun'] = True
+    with open(savename+'_config.json', 'w') as f:
+        json.dump(test_results_config, f, indent=4)
+
     logger.info(f"Saved calibrator test mismatch results for all test samples to {savename}")
     return None
 
@@ -1134,6 +1149,23 @@ def plot_twopanel(xarr: np.ndarray,
 
 
 
+def plot_calibrated_mm_hist(hdf_path, results_dir=None):
+    """
+    Read the calibrated mismatch results from the HDF file and return as a pandas DataFrame.
+    """
+    from lossplots import plot_mm_hist
+
+    if not hdf_path.endswith('.h5'):
+        hdf_path += '.h5'
+    if results_dir is not None:
+        hdf_path = os.path.join(results_dir, hdf_path)
+    if not os.path.exists(hdf_path):
+        raise FileNotFoundError(f"Calibrated mismatch results HDF file not found: {hdf_path}")
+    dfmm = pd.read_hdf(hdf_path, key='mismatch_results')
+    logger.info(f"Read calibrated mismatch results from {hdf_path}, with {len(dfmm)} entries.")
+    
+    plot_mm_hist(dfmm, savedir=results_dir, fname=f'calibrated')
+    logger.info("Plotted calibrated mismatch histograms.")
 
 
 if __name__ == "__main__":
@@ -1142,7 +1174,10 @@ if __name__ == "__main__":
 
     parser.add_argument('--timestamp', type=str, default=NOW, 
                         help='Timestamp string to use for saving outputs, default is current date and time.')
-
+    
+    parser.add_argument('--results-dir', type=str, default=None,
+                        help='Directory where the results file is located. If provided, the script will look for the results file in this directory.')
+    
     trainparser = parser.add_argument_group('Training Hyperparameters')
     trainparser.add_argument('--batch-size', type=int, default=64, 
                         help='Batch size for training the calibrator model.')
@@ -1151,7 +1186,13 @@ if __name__ == "__main__":
     trainparser.add_argument('--dummy-run', action='store_true', 
                         help='If set, runs a quick dummy training loop for testing purposes.')
     
-    testparser = parser.add_argument_group('Testing Hyperparameters')
+    methodargs = parser.add_mutually_exclusive_group(required=True)
+    methodargs.add_argument('--train', action='store_true',
+                        help='Train the calibrator model using the training dataset.')
+    methodargs.add_argument('--test', action='store_true',
+                        help='Test the calibrator model using the test dataset.')
+    methodargs.add_argument('--plot-results', type=str, default=None,
+                        help='Plot the calibrated mismatch histogram from the given HDF file path.')
 
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
@@ -1159,11 +1200,15 @@ if __name__ == "__main__":
 
     logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
-    # train_calibrator(
-    #     batch_size=args.batch_size,
-    #     num_epochs=args.num_epochs,
-    #     dummyrun=args.dummy_run,
-    #     timestamp=args.timestamp,
-    # )
-
-    test_calibrator(batch_size=args.batch_size, dummyrun=args.dummy_run)
+    if args.train:
+        logger.info("Training the calibrator model...")
+        train_calibrator(
+            batch_size=args.batch_size,
+            num_epochs=args.num_epochs,
+            dummyrun=args.dummy_run,
+            timestamp=args.timestamp,
+        )
+    if args.plot_results is not None:
+        plot_calibrated_mm_hist(args.plot_results, results_dir=args.results_dir)
+    if args.test:
+        test_calibrator(batch_size=args.batch_size, dummyrun=args.dummy_run)

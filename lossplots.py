@@ -435,7 +435,8 @@ def apply_chi_cuts(dfmm, cut=0.8):
     return dfmmcut
 
 
-def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13, fname=''):
+def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13, 
+                 fname='', savedir=DIR, now=TIME):
     """
     Plot histograms of mismatch values for different types of mismatches. 
     The function takes a DataFrame containing mismatch data and creates histograms 
@@ -464,12 +465,13 @@ def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13, fname=''):
         ax[i].tick_params(which="both", direction='in', top=True, right=True)
         ax[i].tick_params(labelsize=labelsize)
     plt.tight_layout()
-    fname = DIR + f'mismatch_hist' + fname
-    fname += '-log' if log else ''
-    plt.savefig(fname+'-'+TIME+'.png', dpi=300, bbox_inches='tight', transparent=True)
-    plt.savefig(fname+'-white'+'-'+TIME+'.png', dpi=300, bbox_inches='tight')
+    savename = savedir + f'mismatch_hist'
+    savename += f'-{fname}' if fname else ''
+    savename += '-log' if log else ''
+    plt.savefig(savename+'-'+now+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(savename+'-white'+'-'+now+'.png', dpi=300, bbox_inches='tight')
     plt.close()
-    logging.info(f'Mismatch histograms saved to {DIR}')
+    logging.info(f'Mismatch histograms saved to {savedir}')
 
 
 def mismatch_anal(args, cut=0.8):
