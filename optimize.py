@@ -426,6 +426,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         logger.error(f"Invalid loss function type specified: {loss_func_type}. Using default loss function.")
         lossfunction = model.loss_function
         lcomps_names = ['recon_loss', 'kl_loss']
+        
     # -- Initialize loss component dictionaries!
     for comp_name in lcomps_names:
         lcomps_train[comp_name] = []
