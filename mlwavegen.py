@@ -128,9 +128,9 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     generated_waveform = model.generate(labels)  # has shape (1, 2=[hp,hc], sequence_length)!
     logger.info(f"Generated waveform from ML model with shape: {generated_waveform.shape}")
 
-    hplus, hcross = generated_waveform[0][0], generated_waveform[0][1]
-
+    # FIXME: We shouldn't actually be doing this augmentation by hand!
     # -- add two dummy repeated value at the start to makeup for length req by Bilby Interferometer.
+    hplus, hcross = generated_waveform[0][0], generated_waveform[0][1]
     hplus = np.concatenate([[hplus[0],hplus[1]], hplus])
     hcross = np.concatenate([[hcross[0],hcross[1]], hcross])
     logger.info(f"Waveform shapes after adding dummy element at the start: {hplus.shape}, {hcross.shape}")
