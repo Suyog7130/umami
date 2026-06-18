@@ -1434,10 +1434,10 @@ class FlexCAE(FlexTwoC2E1D):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if self.MODEL_CONFIG['loss_func_type'] not in ['mismatch_nokl', 'mmloss']:
+        if self.MODEL_CONFIG['loss_func_type'] not in ['mismatch_nokl', 'mmloss', 'simple_mse']:
             logging.warning(f"MODEL_CONFIG['loss_func_type'] is set to '{self.MODEL_CONFIG['loss_func_type']}', which is not appropriate for CAE model!")
-            self.MODEL_CONFIG['loss_func_type'] = 'mismatch_nokl'
-            logging.warning(f"MODEL_CONFIG['loss_func_type'] has been set to 'mismatch_nokl' for the CAE model.")
+            self.MODEL_CONFIG['loss_func_type'] = 'simple_mse'
+            logging.warning(f"MODEL_CONFIG['loss_func_type'] has been set to 'simple_mse' for the CAE model.")
     
 
 class FlexCAEPhase(FlexCAE):
