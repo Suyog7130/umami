@@ -1501,22 +1501,29 @@ class FlexCAEPhase(FlexCAE):
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         recon_loss = F.mse_loss(x_recon, target, reduction='mean')
 
-        # -- Calculate the total mismatch loss for the batch (vectorized)
-        # TODO: All these operations should be done on PyTorch tensors and on GPU!
-        amp_recon = x_recon[:, 0].cpu().detach().numpy()
-        phase_recon = x_recon[:, 1].cpu().detach().numpy()
-        amp_orig = target[:, 0].cpu().detach().numpy()
-        phase_orig = target[:, 1].cpu().detach().numpy()
+        # -- Calculate the total mismatch loss for the batch
+        # Keep denormalization on tensors and only move to CPU once for the final mismatch loop.
+        amp_recon = x_recon[:, 0]
+        phase_recon = x_recon[:, 1]
+        amp_orig = target[:, 0]
+        phase_orig = target[:, 1]
 
-        # -- Denormalize using keys (vectorized)
-        keys_reshaped = keys.reshape(-1, 2, 2).cpu().detach().numpy()
+        # -- Denormalize using keys
+        keys_reshaped = keys.reshape(-1, 2, 2)
         amp_mean, amp_std = keys_reshaped[:, 0, 0], keys_reshaped[:, 0, 1]
         phase_mean, phase_std = keys_reshaped[:, 1, 0], keys_reshaped[:, 1, 1]
 
-        amp_recon = (amp_recon * amp_std[:, np.newaxis]) + amp_mean[:, np.newaxis]
-        phase_recon = (phase_recon * phase_std[:, np.newaxis]) + phase_mean[:, np.newaxis]
-        amp_orig = (amp_orig * amp_std[:, np.newaxis]) + amp_mean[:, np.newaxis]
-        phase_orig = (phase_orig * phase_std[:, np.newaxis]) + phase_mean[:, np.newaxis]
+        amp_recon = amp_recon * amp_std[:, None] + amp_mean[:, None]
+        phase_recon = phase_recon * phase_std[:, None] + phase_mean[:, None]
+        amp_orig = amp_orig * amp_std[:, None] + amp_mean[:, None]
+        phase_orig = phase_orig * phase_std[:, None] + phase_mean[:, None]
+
+        amp_recon = amp_recon.detach().cpu().numpy()
+        phase_recon = phase_recon.detach().cpu().numpy()
+        amp_orig = amp_orig.detach().cpu().numpy()
+        phase_orig = phase_orig.detach().cpu().numpy()
+        delta_t = np.asarray(attr['delta_t'])
+        f_lower = np.asarray(attr['f_lower'])
 
         # -- Calculate mismatch loss (vectorized)
         mmloss = 0.0
@@ -1525,11 +1532,11 @@ class FlexCAEPhase(FlexCAE):
             hc_recon = amp_recon[i] * np.sin(phase_recon[i])
             hp_orig = amp_orig[i] * np.cos(phase_orig[i])
             hc_orig = amp_orig[i] * np.sin(phase_orig[i])
-            mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
-            mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
+            mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t=delta_t[i], f_lower=f_lower[i])
+            mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=delta_t[i], f_lower=f_lower[i])
             mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
         
-        logging.info(f'Total mismatch loss for the batch: {mmloss}')
+        logging.debug(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + mmloss + latent_loss
         return (total_loss, recon_loss, mmloss, latent_loss)
         

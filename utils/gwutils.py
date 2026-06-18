@@ -1,10 +1,32 @@
-from __init__ import *
+
+import numpy as np
+import pandas as pd
+
+import torch
+
+# import matplotlib
+# matplotlib.use('Agg')   # non GUI backend
+import matplotlib.pyplot as plt
+import matplotlib.ticker as tck
+from matplotlib.colors import LogNorm
+
+import logging
+logger = logging.getLogger(__name__)
+
+import pycbc
+
+
+SAMPLE_RATE = 8192.0  # n_samples = duration(s) / sample_rate
+DURATION = 1.00
+DELTA_T = DURATION / SAMPLE_RATE   # delta_t is just 1/sample_rate!
+
+markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
 
 def check_for_nan_inf(tensor, name):
     if torch.isnan(tensor).any():
-        logging.info(f"NaN detected in {name}")
+        logger.info(f"NaN detected in {name}")
     if torch.isinf(tensor).any():
-        logging.info(f"Inf detected in {name}")
+        logger.info(f"Inf detected in {name}")
 
 def calculate_cnn_output_size(n_layers, input_length, kernel_size,
                               dilation, padding=0, stride=1):
@@ -14,27 +36,6 @@ def calculate_cnn_output_size(n_layers, input_length, kernel_size,
         seq_len = (seq_len - dilation*(kernel_size - 1) - padding - 1) // kernel_size + 1
         seq_len = (seq_len - kernel_size) * stride // kernel_size + 1
     return seq_len
-
-
-
-import numpy as np
-import pandas as pd
-
-
-# import matplotlib
-# matplotlib.use('Agg')   # non GUI backend
-import matplotlib.pyplot as plt
-import matplotlib.ticker as tck
-from matplotlib.colors import LogNorm
-
-
-
-import pycbc
-
-from datacvae import PRESET_ARRAY_SIZE, SAMPLE_RATE, DELTA_T
-
-markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
-
 
 
 # TODO: f_lower is different for diff waveforms, and that is one
@@ -72,7 +73,7 @@ def calc_polarization_mismatch(hp_orig, hp_recon, delta_t=DELTA_T, f_lower=20.0,
     from pycbc.filter import match as matchfunc
     from pycbc.psd import aLIGOZeroDetHighPower
     from pycbc.types import TimeSeries
-    logging.debug(f"Calculating mismatch with delta_t={delta_t}, f_lower={f_lower}, resample_psd={resample_psd}")
+    logger.debug(f"Calculating mismatch with delta_t={delta_t}, f_lower={f_lower}, resample_psd={resample_psd}")
 
     if isinstance(hp_orig, torch.Tensor):
         hp_orig = hp_orig.detach().cpu().numpy()
@@ -81,19 +82,19 @@ def calc_polarization_mismatch(hp_orig, hp_recon, delta_t=DELTA_T, f_lower=20.0,
     
     psd = pycbc.psd.aLIGOZeroDetHighPower(len(hp_orig), delta_f=1/(len(hp_orig)*delta_t), low_freq_cutoff=f_lower)
     
-    logging.debug(f"PSD delta_f: {1.0/(len(hp_orig)*delta_t)}")
+    logger.debug(f"PSD delta_f: {1.0/(len(hp_orig)*delta_t)}")
     # Ensure all arrays are float64 for precision match
     hp_orig = np.asarray(hp_orig, dtype=np.float64)
     hp_recon = np.asarray(hp_recon, dtype=np.float64)
     psd = psd.astype(np.float64)
-    logging.debug(f'len(hp_orig), len(hp_recon), len(psd) = {len(hp_orig)}, {len(hp_recon)}, {len(psd)}')
+    logger.debug(f'len(hp_orig), len(hp_recon), len(psd) = {len(hp_orig)}, {len(hp_recon)}, {len(psd)}')
     assert len(hp_orig) == len(hp_recon), "Original and reconstructed waveforms must have the same length."
 
     hp_orig = TimeSeries(hp_orig, delta_t=delta_t)
     hp_recon = TimeSeries(hp_recon, delta_t=delta_t)
-    logging.debug(f"hp_orig sample rate: {hp_orig.sample_rate}, hp_recon sample rate: {hp_recon.sample_rate}")
-    logging.debug(f"hp_orig delta_f: {hp_orig.delta_f}")
-    logging.debug(f'len(hp_orig)={len(hp_orig)}, len(hp_recon)={len(hp_recon)}, \
+    logger.debug(f"hp_orig sample rate: {hp_orig.sample_rate}, hp_recon sample rate: {hp_recon.sample_rate}")
+    logger.debug(f"hp_orig delta_f: {hp_orig.delta_f}")
+    logger.debug(f'len(hp_orig)={len(hp_orig)}, len(hp_recon)={len(hp_recon)}, \
                   len(psd)={len(psd)}')
     assert hp_orig.delta_f == hp_recon.delta_f, "Delta_f of original and reconstructed waveforms must match."
     
@@ -106,11 +107,11 @@ def calc_polarization_mismatch(hp_orig, hp_recon, delta_t=DELTA_T, f_lower=20.0,
     psd_resampled = pycbc.types.FrequencySeries(psd_interp, delta_f=hp_recon.delta_f, dtype=psd.dtype)
 
     if resample_psd:
-        logging.debug(f"Resampled PSD delta_f: {psd_resampled.delta_f}")
+        logger.debug(f"Resampled PSD delta_f: {psd_resampled.delta_f}")
         match, i = matchfunc(hp_orig, hp_recon, psd=psd_resampled, low_frequency_cutoff=f_lower)
     else:
         match, i = matchfunc(hp_orig, hp_recon, psd=psd, low_frequency_cutoff=f_lower)
-    logging.debug(f"Match value: {match}, Index: {i}")
+    logger.debug(f"Match value: {match}, Index: {i}")
     mismatch = 1 - match
     return mismatch
 
@@ -145,7 +146,7 @@ def _phase_from_freq_intervals(freq, dt, theta0=0.0):
     freq: length N-1, interpreted as interval frequency between samples.
     returns theta: length N
     """
-    logging.debug(f'freq shape: {freq.shape}, dt: {dt}, theta0: {theta0}')
+    logger.debug(f'freq shape: {freq.shape}, dt: {dt}, theta0: {theta0}')
     dtheta = 2 * np.pi * freq * dt              # length N-1
     theta = np.empty(freq.size+1, dtype=np.float64)
     theta[0] = theta0
@@ -162,9 +163,9 @@ def polarizations_from_ampfreq(amp, freq, theta0=0.0):
     Well, this certainly seems to be a mess now and it would definitely be
     better that I directly work with the phase and amplitude instead of the frequency.
     """
-    logging.debug(f'amp shape: {amp.shape}, freq shape: {freq.shape}')
+    logger.debug(f'amp shape: {amp.shape}, freq shape: {freq.shape}')
     theta = _phase_from_freq_intervals(freq, dt=1.0/SAMPLE_RATE, theta0=theta0)
-    logging.debug(f'amp shape: {amp.shape}, freq shape: {freq.shape}, phase shape: {theta.shape}')
+    logger.debug(f'amp shape: {amp.shape}, freq shape: {freq.shape}, phase shape: {theta.shape}')
 
     # NOTE: Unwantedly, I removed the first element from the 'amp' array in the 
     # `CustomDataset` when I calculated the amp-freq from hp-hc, to have the same
@@ -176,7 +177,7 @@ def polarizations_from_ampfreq(amp, freq, theta0=0.0):
     # if len(amp) != len(theta):
     #     # repeat the first element of the 'amp' array to make it the same length as the 'theta' array.
     #     amp = np.insert(amp, 0, amp[0])
-    #     logging.debug(f'After inserting the first element, amp shape: {amp.shape}, theta shape: {theta.shape}')
+    #     logger.debug(f'After inserting the first element, amp shape: {amp.shape}, theta shape: {theta.shape}')
     hplus = amp * np.cos(theta)
     hcross = amp * np.sin(theta)
     return hplus, hcross

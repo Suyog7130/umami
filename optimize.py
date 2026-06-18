@@ -213,7 +213,7 @@ class WaveformDataset(torch.utils.data.Dataset):
         # close the HDF file when the dataset is deleted, to free up resources
         if hasattr(self, 'data_file') and self.data_file is not None:
             self.data_file.close()
-            logger.info(f"Closed HDF file {self.hdf_fname}.")
+            logger.info(f"Closed HDF file {self.hdf_fname}")
 
     # def __del__(self):
     #     self.close_hdf()
