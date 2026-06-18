@@ -429,7 +429,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         lcomps_eval[comp_name] = []
         lcomps_val[comp_name] = []
 
-    # Train for a few epochs
+    best_val_loss = float('inf')
     for epoch in tqdm(range(epochs)):
         model.train()
         train_loss = 0.0
@@ -465,12 +465,6 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
         # -- TODO: This should be after the validation step?
         scheduler.step()
-
-        # Save model checkpoint at every epoch as backup
-        if save_interim_models:
-            backup_model_path = savedir+f'model-backup-{now}-epoch{epoch}.pt'
-            torch.save(model.state_dict(), backup_model_path)
-            logger.info(f"Model backup saved at {backup_model_path}")
 
         # -- set model to eval mode for validation
         model.eval()
@@ -513,6 +507,14 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
                     lcomps_val[comp_name].append(comp_value.item())
         avg_val_loss = val_loss / num_val_batches
         logger.info(f"Epoch {epoch+1}, Batch Avg Validation Loss: {avg_val_loss:.4f}")
+
+        # Save model checkpoint at every epoch as backup
+        if save_interim_models and avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            logger.info(f"New best validation loss: {best_val_loss:.4f} at epoch {epoch+1}. Saving model backup.")
+            backup_model_path = savedir+f'model-backup-{now}-epoch{epoch}.pt'
+            torch.save(model.state_dict(), backup_model_path)
+            logger.info(f"Model backup saved at {backup_model_path}")
 
     if savemodel:
         model_path = savedir+f'model-flexcvae-{now}.pt'
