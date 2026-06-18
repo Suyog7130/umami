@@ -32,7 +32,7 @@ ls -l "${PYTHON_EXE}"
 "${PYTHON_EXE}" --version
 
 # Run your script with arguments
-python3 optimize.py --model-config modelconfig-running.json --epochs "${EPOCHS}" --verbose
+"${PYTHON_EXE}" optimize.py --model-config modelconfig-running.json --epochs "${EPOCHS}" --verbose
 
 
 EXIT_CODE=$?

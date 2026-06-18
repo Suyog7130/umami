@@ -23,10 +23,7 @@ request_memory          = 20G
 request_disk            = 4G
 
 # File Transfer Configurations
-should_transfer_files   = YES
-when_to_transfer_output = ON_EXIT
-# Include modelconfig-running.json if it is not already on the cluster's shared storage
-transfer_input_files    = modelconfig-running.json
+should_transfer_files   = NO
 
 
 # Remove or modify these if CIT requires a specific accounting group.
