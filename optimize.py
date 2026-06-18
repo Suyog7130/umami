@@ -408,8 +408,6 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
 
     # -- Set loss function type and components to track!
-    rloss_train, rloss_eval, rloss_val = [], [], []
-    lcomps_train, lcomps_eval, lcomps_val = {}, {}, {}
     if loss_func_type is None:
         lossfunction = model.loss_function
         lcomps_names = ['recon_loss', 'kl_loss']
@@ -426,46 +424,61 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         logger.error(f"Invalid loss function type specified: {loss_func_type}. Using default loss function.")
         lossfunction = model.loss_function
         lcomps_names = ['recon_loss', 'kl_loss']
-        
-    # -- Initialize loss component dictionaries!
-    for comp_name in lcomps_names:
-        lcomps_train[comp_name] = []
-        lcomps_eval[comp_name] = []
-        lcomps_val[comp_name] = []
+
+    # -- Initialize main loss storage
+    rloss_train, rloss_eval, rloss_valid = [], [], []
 
     best_val_loss = float('inf')
     for epoch in tqdm(range(epochs)):
         model.train()
-        train_loss = 0.0
+
+        # -- only use tensor updates for GPU efficiency!
+        train_loss_log = torch.zeros(num_train_batches, device=DEVICE)
+        eval_loss_log = torch.zeros(num_train_batches, device=DEVICE)
+        valid_loss_log = torch.zeros(num_val_batches, device=DEVICE)
+        lcomps_train_log = {name: torch.zeros(num_train_batches, device=DEVICE) 
+                            for name in lcomps_names}
+        lcomps_eval_log = {name: torch.zeros(num_train_batches, device=DEVICE)
+                            for name in lcomps_names}
+        lcomps_valid_log = {name: torch.zeros(num_val_batches, device=DEVICE)
+                            for name in lcomps_names}
+        
         for idx, databatch in enumerate(tqdm(train_loader, ncols=80, desc="Train-steps")):
             if idx >= num_train_batches:
                 break
+            
             x, target, labels, keys, strains, attr = databatch
             x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
+
             optimizer.zero_grad()
             x_recon, zvars = model(x, labels, keys)
+
             if loss_func_type is None:
                 # -- default loss function only takes 3 arguments!
                 loss, *lcomps = lossfunction(target, x_recon, zvars)
             else:
                 loss, *lcomps = lossfunction(target, x_recon, zvars, strains, keys, attr)
+
             loss.backward()
             optimizer.step()
-            train_loss += loss.item()
-            rloss_train.append(loss.item())
+
+            # -- directly update torch tensor, for GPU efficiency!
+            train_loss_log[idx] = loss.detach()
+
             # -- loss components are returned as tuples of numbers / numpy array!
             # we put the component variable name as the keys in the `lcomps_xx` dict,
             # and store the component values as it is in the corresponding value of the dict.
             # Thus, this works with different loss functions that each return different number of loss components.
             # Later, we can simply iterate over the dictionary and save the losses!
-            # NOTE: It is assumed that loss function returns components in the following order:
-            # total_loss, recon_loss, kl_loss, mismatch_loss (if applicable), but the component names are taken from 
-            # `lcomps_names` list which is set according to the loss function type.
+            # NOTE: It is assumed that loss function returns components in order.
             for comp_name, comp_value in zip(lcomps_names, lcomps):
-                lcomps_train[comp_name].append(comp_value.item())
+                lcomps_train_log[comp_name][idx] = comp_value.detach()
 
-        avg_train_loss = train_loss / num_train_batches
-        logger.info(f"Epoch {epoch+1}, Batch Avg Train Loss: {avg_train_loss:.4f}")
+        train_loss_avg = train_loss_log.mean().item()
+        rloss_train.extend(train_loss_log.cpu().numpy().tolist())
+        lcomps_train = {comp_name: lcomps_train_log[comp_name].cpu().numpy().tolist()
+                        for comp_name in lcomps_names}
+        logger.info(f"Epoch {epoch+1}, Batch Avg Train Loss: {train_loss_avg:.4f}")
 
         # -- TODO: This should be after the validation step?
         scheduler.step()
@@ -475,41 +488,53 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
         # -- Do one cycle training in eval mode with no grad after training is finished,
         # -- to compare train and validation losses at the same epoch and check for overfitting etc.
-        train_eval_loss = 0.0
         with torch.no_grad():
             for idx, (x, target, labels, keys, strains, attr) in enumerate(tqdm(train_loader, ncols=80, desc="Train-eval-steps")):
                 if idx >= num_train_batches:
                     break
                 x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
+                
                 x_recon, zvars = model(x, labels, keys)
+                
                 if loss_func_type is None:
                     # -- default loss function only takes 3 arguments!
                     loss, *lcomps = lossfunction(target, x_recon, zvars)
                 else:
                     loss, *lcomps = lossfunction(target, x_recon, zvars, strains, keys, attr)
-                train_eval_loss += loss.item()
+                
+                eval_loss_log[idx] = loss.detach()
                 for comp_name, comp_value in zip(lcomps_names, lcomps):
-                    lcomps_eval[comp_name].append(comp_value.item())
-        avg_train_eval_loss = train_eval_loss / num_train_batches
-        logger.info(f"Epoch {epoch+1}, Batch Avg Train Eval Loss: {avg_train_eval_loss:.4f}")
+                    lcomps_eval_log[comp_name][idx] = comp_value.detach()
+
+        eval_loss_avg = eval_loss_log.mean().item()
+        rloss_eval.extend(eval_loss_log.cpu().numpy().tolist())
+        lcomps_eval = {comp_name: lcomps_eval_log[comp_name].cpu().numpy().tolist()
+                        for comp_name in lcomps_names}
+        logger.info(f"Epoch {epoch+1}, Batch Avg Train Eval Loss: {eval_loss_avg:.4f}")
 
         # Evaluate on validation set
-        val_loss = 0.0
         with torch.no_grad():
             for idx, (x, target, labels, keys, strains, attr) in enumerate(tqdm(val_loader, ncols=80, desc="Val-steps")):
                 if idx >= num_val_batches:
                     break
                 x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
+                
                 x_recon, zvars = model(x, labels, keys)
+
                 if loss_func_type is None:
                     # -- default loss function only takes 3 arguments!
                     loss, *lcomps = lossfunction(target, x_recon, zvars)
                 else:
                     loss, *lcomps = lossfunction(target, x_recon, zvars, strains, keys, attr)
-                val_loss += loss.item()
+                
+                valid_loss_log[idx] = loss.detach()
                 for comp_name, comp_value in zip(lcomps_names, lcomps):
-                    lcomps_val[comp_name].append(comp_value.item())
-        avg_val_loss = val_loss / num_val_batches
+                    lcomps_valid_log[comp_name][idx] = comp_value.detach()
+
+        avg_val_loss = valid_loss_log.mean().item()
+        rloss_valid.extend(valid_loss_log.cpu().numpy().tolist())
+        lcomps_valid = {comp_name: lcomps_valid_log[comp_name].cpu().numpy().tolist()
+                         for comp_name in lcomps_names}
         logger.info(f"Epoch {epoch+1}, Batch Avg Validation Loss: {avg_val_loss:.4f}")
 
         # Save model checkpoint at every epoch as backup
@@ -526,12 +551,12 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     if savelosses:
         # Save losses to pandas dataframe and then to csv
         train_losses_df = pd.DataFrame({'train_loss': rloss_train})
-        eval_losses_df = pd.DataFrame({'train_eval_loss': lcomps_eval[lcomps_names[0]]})
-        val_losses_df = pd.DataFrame({'val_loss': rloss_val})
+        eval_losses_df = pd.DataFrame({'train_eval_loss': rloss_eval})
+        val_losses_df = pd.DataFrame({'val_loss': rloss_valid})
         for comp_name in lcomps_names:
             train_losses_df[f'train_{comp_name}'] = lcomps_train[comp_name]
             eval_losses_df[f'train_eval_{comp_name}'] = lcomps_eval[comp_name]
-            val_losses_df[f'val_{comp_name}'] = lcomps_val[comp_name]
+            val_losses_df[f'val_{comp_name}'] = lcomps_valid[comp_name]
         train_losses_df.to_csv(savedir+f'losses-flexcvae-train-{now}.csv', index=False)
         eval_losses_df.to_csv(savedir+f'losses-flexcvae-train-eval-{now}.csv', index=False)
         val_losses_df.to_csv(savedir+f'losses-flexcvae-val-{now}.csv', index=False)
