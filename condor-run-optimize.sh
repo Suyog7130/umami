@@ -7,7 +7,6 @@ EPOCHS="${1:-10}"
 export PYTHONUNBUFFERED=1
 
 export PATH="/home/suyog.garg/.conda/envs/phd/bin:/usr/local/bin:/usr/bin:/bin"
-PYTHON_EXE="/home/suyog.garg/.conda/envs/phd/bin/python"
 
 # Optional debugging. Uncomment only when diagnosing crashes.
 # export CUDA_LAUNCH_BLOCKING=1
@@ -31,9 +30,6 @@ mkdir -p logs
 echo "Checking Python executable..."
 ls -l "${PYTHON_EXE}"
 "${PYTHON_EXE}" --version
-
-# Activate your specific environment
-conda activate phd
 
 # Run your script with arguments
 python3 optimize.py --model-config modelconfig-running.json --epochs "${EPOCHS}" --verbose

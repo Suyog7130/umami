@@ -12,9 +12,9 @@ arguments = $(arg_epochs)
 
 initialdir = /home/suyog.garg/phd-main/umami
 
-output = logs/inference_$(Cluster)_$(Process).out
-error  = logs/inference_$(Cluster)_$(Process).err
-log    = $(initialdir)/logs/inference_$(Cluster).log
+output = logs/optimize_$(Cluster)_$(Process).out
+error  = logs/optimize_$(Cluster)_$(Process).err
+log    = $(initialdir)/logs/optimize_$(Cluster).log
 
 # Resource Requests - Kept low for fast queue matching
 request_gpus            = 2

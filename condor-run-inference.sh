@@ -42,7 +42,6 @@ export TORCH_NUM_THREADS="${PYTORCH_THREADS}"
 export PYTHONUNBUFFERED=1
 
 export PATH="/home/suyog.garg/.conda/envs/phd/bin:/usr/local/bin:/usr/bin:/bin"
-PYTHON_EXE="/home/suyog.garg/.conda/envs/phd/bin/python"
 
 # Optional debugging. Uncomment only when diagnosing crashes.
 # export CUDA_LAUNCH_BLOCKING=1

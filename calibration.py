@@ -1164,7 +1164,7 @@ def plot_calibrated_mm_hist(hdf_path, results_dir=None):
     dfmm = pd.read_hdf(hdf_path, key='mismatch_results')
     logger.info(f"Read calibrated mismatch results from {hdf_path}, with {len(dfmm)} entries.")
     
-    plot_mm_hist(dfmm, savedir=results_dir, fname=f'calibrated')
+    plot_mm_hist(dfmm, savedir=results_dir, fname=f'calibrated', now=NOW)
     logger.info("Plotted calibrated mismatch histograms.")
 
 
