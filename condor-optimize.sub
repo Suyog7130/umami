@@ -1,0 +1,40 @@
+# HTCondor Submit File
+
+universe                = vanilla
+executable              = condor-run-optimize.sh
+
+if defined epochs
+    arg_epochs = $(epochs)
+else
+    arg_epochs = 10
+
+arguments = $(arg_epochs)
+
+initialdir = /home/suyog.garg/phd-main/umami
+
+output = logs/inference_$(Cluster)_$(Process).out
+error  = logs/inference_$(Cluster)_$(Process).err
+log    = $(initialdir)/logs/inference_$(Cluster).log
+
+# Resource Requests - Kept low for fast queue matching
+request_gpus            = 2
+request_cpus            = 1
+request_memory          = 20G
+request_disk            = 4G
+
+# File Transfer Configurations
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+# Include modelconfig-running.json if it is not already on the cluster's shared storage
+transfer_input_files    = modelconfig-running.json
+
+
+# Remove or modify these if CIT requires a specific accounting group.
+accounting_group = ligo.dev.o4.cbc.explore.test
+accounting_group_user = suyog.garg
+
+# Good safety behavior.
+notification = Error
+
+# Queue the job
+queue 1
