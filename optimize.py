@@ -772,7 +772,8 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
     if device.type == 'cuda':
         if precision=='float32':
             torch.set_float32_matmul_precision('high')
-        model = torch.compile(model, mode='max-autotune')  # Compile the model for faster training (PyTorch 2.0+)
+        # model = torch.compile(model, mode='max-autotune')  # Compile the model for faster training
+        model.compile()  # -- precompile model in default mode for faster training.
         logger.info("Model compiled with torch.compile for faster training.")
     return model
 
