@@ -722,9 +722,6 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
             input_shape=(2, PRESET_ARRAY_SIZE),
             num_classes=4,
         )
-            # -- For amp-phase target, we need to set the loss function type to 'mismatch_nokl'
-        MODEL_CONFIG['loss_func_type'] = 'mismatch_nokl'
-        logger.warning("For 'amp_phase' target, setting loss_func_type to 'mismatch_nokl' since KL loss does not make sense for deterministic CAE.")  
     elif MODEL_CONFIG['modeltype'].lower() == 'flexcae':
         model = FlexCAE(
             MODEL_CONFIG=MODEL_CONFIG,
