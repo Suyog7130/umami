@@ -75,8 +75,8 @@ params_mean = params_df.mean().values
 params_std = params_df.std().values
 logger.info(f"Labels mean: {params_mean}")
 logger.info(f"Labels std: {params_std}")
-params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION)).to(DEVICE)
-params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION)).to(DEVICE)
+params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION))
+params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION))
 
 
 def set_dataloaders(batch_size=BATCH_SIZE, target=BASE_MODEL_CONFIG['target']):
@@ -174,7 +174,8 @@ class WaveformDataset(torch.utils.data.Dataset):
         assert self.params_mean is None or self.params_mean.shape == (4,), f"Expected params_mean to be of shape (4,), but got {self.params_mean.shape}"
         assert self.params_std is None or self.params_std.shape == (4,), f"Expected params_std to be of shape (4,), but got {self.params_std.shape}"
 
-        self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
+        # NOTE: `init_hdf` inside `__getitem__` call, to allow spawning multiple workers for dataloading.
+        # self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
 
     def _set_input_target_names(self):
         # -- labels for input and target data for different kinds of targets.
@@ -192,8 +193,10 @@ class WaveformDataset(torch.utils.data.Dataset):
         else:
             self.targetnames = ['unnormed_' + name for name in self.targetnames]
 
-    def __len__(self):
-        return len(self.data_file.keys())  # number of groups in the HDF file, which corresponds to the number of data samples
+    # def __len__(self):
+    #     if not hasattr(self, 'data_file') or self.data_file is None:
+    #         self.init_hdf()
+    #     return len(self.data_file.keys())  # number of groups in the HDF file, which corresponds to the number of data samples
     
     def init_hdf(self):
         # -- check if the HDF file exists, if not, create an empty HDF file with the same name, so that we can write to it later on in the `get_calibrator_input` function without having to worry about file not found errors.
@@ -226,6 +229,8 @@ class WaveformDataset(torch.utils.data.Dataset):
         we will separate the `feat_dict` from the rest of the batch data and handle it separately.
 
         NOTE: It is assumed that the `feat_dict` will always the last in the batch tuple!
+
+        NOTE: We move the tensors to train device inside the training function, not here!
         """
         tag_batches = []
         feat_dict_batch = {}
@@ -250,17 +255,19 @@ class WaveformDataset(torch.utils.data.Dataset):
 
             # Append tags to their respective lists
             for i, tag in enumerate(tags):
-                tag = torch.tensor(tag, device=self.train_device, dtype=getattr(torch, self.precision))
+                tag = torch.tensor(tag, dtype=getattr(torch, self.precision))
                 tag_batches[i].append(tag)
 
         # Convert lists of tags to tensors
         for i in range(len(tag_batches)):
-            tag_batches[i] = torch.stack(tag_batches[i]).to(device=self.train_device, dtype=getattr(torch, self.precision))
+            tag_batches[i] = torch.stack(tag_batches[i]).to(dtype=getattr(torch, self.precision))
 
         return (*tag_batches, feat_dict_batch)
 
     def read_data_from_hdf(self, idx):
         # -- read the input waveform and target residual from the HDF file for the given index, and return them as tensors
+        if not hasattr(self, 'data_file') or self.data_file is None:
+            self.init_hdf()
         grp = f'sample{idx}'
         # logger.debug(f"Reading data for index {idx} from group {grp} in HDF file {self.hdf_fname}.")
         if grp not in self.data_file:
@@ -273,19 +280,21 @@ class WaveformDataset(torch.utils.data.Dataset):
         target_one = data[f'target_{self.targetnames[0]}'][:]
         target_two = data[f'target_{self.targetnames[1]}'][:]
         input = torch.stack([torch.tensor(input_one, dtype=getattr(torch, self.precision)),
-                            torch.tensor(input_two, dtype=getattr(torch, self.precision))], dim=0).to(self.train_device)
+                            torch.tensor(input_two, dtype=getattr(torch, self.precision))], dim=0)
         target = torch.stack([torch.tensor(target_one, dtype=getattr(torch, self.precision)),
-                             torch.tensor(target_two, dtype=getattr(torch, self.precision))], dim=0).to(self.train_device)
-        labels = data['labels'][:]
-        keys = data['keys'][:]
-        strains = data['strains'][:]
-        attr = data.attrs
+                             torch.tensor(target_two, dtype=getattr(torch, self.precision))], dim=0)
+        labels = torch.tensor(data['labels'][:], dtype=getattr(torch, self.precision))
+        keys = torch.tensor(data['keys'][:], dtype=getattr(torch, self.precision))
+        strains = torch.tensor(data['strains'][:], dtype=getattr(torch, self.precision))
+        attr = dict(data.attrs)
         logger.debug(f"Available attributes in group {grp}: {list(attr.keys())}")
         return input, target, labels, keys, strains, attr
 
     def __getitem__(self, idx):
+        # input, target, labels, keys, strains, attr = self.read_data_from_hdf(idx)
+        # # print("DEBUG: Tensor on device:", input.device, target.device, labels.device, keys.device, strains.device)
+        # return input, target, labels, keys, strains, attr
         return self.read_data_from_hdf(idx)
-    
 
 class WaveformDataLoader(torch.utils.data.DataLoader):
     """
@@ -345,6 +354,8 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
                                       num_workers=num_workers, pin_memory=True)
     test_loader = WaveformDataLoader(test_set, batch_size=batch_size, shuffle=False,
                                        num_workers=num_workers, pin_memory=True)
+    logger.info(f"DataLoaders set up with batch size {batch_size} and {num_workers} workers.")
+    print(next(iter(train_loader)))  # Print the first batch to check if everything is working fine
     if return_test_loader:
         return train_loader, val_loader, test_loader
     return train_loader, val_loader
