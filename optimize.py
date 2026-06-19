@@ -4,6 +4,13 @@ hyper-parameters and number of layers etc.
 """
 
 import os
+
+# -- Allow OpenMP to use all available CPU cores, based on the config file.
+os.environ["KMP_AFFINITY"] = "disabled"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OMP_NUM_THREADS"] = "1"
+
+
 import gc
 import h5py
 import json
