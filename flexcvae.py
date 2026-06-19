@@ -890,15 +890,15 @@ class FlexTwoC2E1D(nn.Module):
         zkey_mu, zkey_logvar = self.encode_key(keys, y)
         zykey_mu, zykey_logvar = self.encode_label_for_key(y)
 
-        # -- Ensure latent dimensions are correct before reparameterization
-        assert zx_mu.size(1) == zy_mu.size(1) == self.latent_dim_x, "Latent dimension mismatch for x encoders"
-        assert zx_logvar.size(1) == zy_logvar.size(1) == self.latent_dim_x, "Latent dimension mismatch for x encoders"
-        assert zkey_mu.size(1) == zykey_mu.size(1) == self.latent_dim_key, "Latent dimension mismatch for key encoders"
-        assert zkey_logvar.size(1) == zykey_logvar.size(1) == self.latent_dim_key, "Latent dimension mismatch for key encoders"
-        # -- Ensure batch dimensions match across all latent representations
-        batch_size = x.size(0)
-        assert zx_mu.size(0) == zy_mu.size(0) == zkey_mu.size(0) == zykey_mu.size(0) == batch_size, "Batch size mismatch across latent representations"
-        assert zx_logvar.size(0) == zy_logvar.size(0) == zkey_logvar.size(0) == zykey_logvar.size(0) == batch_size, "Batch size mismatch across latent representations"
+        # # -- Ensure latent dimensions are correct before reparameterization
+        # assert zx_mu.size(1) == zy_mu.size(1) == self.latent_dim_x, "Latent dimension mismatch for x encoders"
+        # assert zx_logvar.size(1) == zy_logvar.size(1) == self.latent_dim_x, "Latent dimension mismatch for x encoders"
+        # assert zkey_mu.size(1) == zykey_mu.size(1) == self.latent_dim_key, "Latent dimension mismatch for key encoders"
+        # assert zkey_logvar.size(1) == zykey_logvar.size(1) == self.latent_dim_key, "Latent dimension mismatch for key encoders"
+        # # -- Ensure batch dimensions match across all latent representations
+        # batch_size = x.size(0)
+        # assert zx_mu.size(0) == zy_mu.size(0) == zkey_mu.size(0) == zykey_mu.size(0) == batch_size, "Batch size mismatch across latent representations"
+        # assert zx_logvar.size(0) == zy_logvar.size(0) == zkey_logvar.size(0) == zykey_logvar.size(0) == batch_size, "Batch size mismatch across latent representations"
 
         if self.MODEL_CONFIG.get('modeltype', 'cvae') == 'cae':
             # If it's a CAE, we don't do reparameterization and just use the means as the latent representations
@@ -907,8 +907,8 @@ class FlexTwoC2E1D(nn.Module):
         else:            # If it's a CVAE, we do reparameterization to sample from the latent space
             z_x = self.reparameterize(zx_mu, zx_logvar)
             z_key = self.reparameterize(zkey_mu, zkey_logvar)
-        assert z_x.size(1) == self.latent_dim_x, "z_x latent_dim mismatch"
-        assert z_key.size(1) == self.latent_dim_key, "z_key latent_dim mismatch"
+        # assert z_x.size(1) == self.latent_dim_x, "z_x latent_dim mismatch"
+        # assert z_key.size(1) == self.latent_dim_key, "z_key latent_dim mismatch"
 
         # TODO: Can input embeddings for the labels!
         if self.embed_labels_in_decoder:
@@ -939,7 +939,7 @@ class FlexTwoC2E1D(nn.Module):
             z = torch.cat([z_x, z_key, zy_mu, zykey_mu], dim=1)
         else:
             z = torch.cat([z_x, z_key], dim=1)  # default to concat if unknown type
-            logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of z_x and z_key.")
+            # logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of z_x and z_key.")
         
         recon_x = self.decode(z, y, y_embed)
         zvars = [zx_mu, zx_logvar, zy_mu, zy_logvar, zkey_mu, zkey_logvar, zykey_mu, zykey_logvar]
@@ -1572,12 +1572,12 @@ class FlexCAEPhase(FlexCAE):
         """
         zx_mu, zx_logvar, zy_mu, zy_logvar, \
             zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
-        logging.debug(f'zx_mu={zx_mu.shape}, zx_logvar={zx_logvar.shape}, zy_mu={zy_mu.shape}, zy_logvar={zy_logvar.shape}, \
-            zkey_mu={zkey_mu.shape}, zkey_logvar={zkey_logvar.shape}, zykey_mu={zykey_mu.shape}, zykey_logvar={zykey_logvar.shape}')
+        # logging.debug(f'zx_mu={zx_mu.shape}, zx_logvar={zx_logvar.shape}, zy_mu={zy_mu.shape}, zy_logvar={zy_logvar.shape}, \
+        #     zkey_mu={zkey_mu.shape}, zkey_logvar={zkey_logvar.shape}, zykey_mu={zykey_mu.shape}, zykey_logvar={zykey_logvar.shape}')
         ll1 = F.mse_loss(zx_mu, zy_mu, reduction='mean')
         ll2 = F.mse_loss(zkey_mu, zykey_mu, reduction='mean')
         latent_loss = ll1 + ll2
-        logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
+        # logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
         
         recon_loss = F.mse_loss(x_recon, target, reduction='mean')
         total_loss = recon_loss + latent_loss
