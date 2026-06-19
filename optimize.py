@@ -292,12 +292,13 @@ class WaveformDataLoader(torch.utils.data.DataLoader):
     A custom dataloader for the `WaveformDataset`, which inherits from `torch.utils.data.DataLoader`!
     It allows for shuffling and batching of the waveform data.
     """
-    def __init__(self, dataset, batch_size=32, shuffle=True):
+    def __init__(self, dataset, batch_size=32, shuffle=True, **kwargs):
         super().__init__(dataset, batch_size=batch_size, shuffle=shuffle,
-                         collate_fn=dataset.collate_fn)
+                         collate_fn=dataset.collate_fn, **kwargs)
 
 
 def set_waveform_dataloaders(batch_size=BATCH_SIZE,
+                             num_workers=8,
                              return_test_loader=False,
                              target_type: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_phase',
                              input_normalized=True, target_normalized=False):
@@ -338,9 +339,12 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
                                params_mean=params_mean, params_std=params_std,
                                train_device=DEVICE, precision=PRECISION)
     logger.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(val_set)}, Test dataset size: {len(test_set)}")
-    train_loader = WaveformDataLoader(train_set, batch_size=batch_size, shuffle=True)
-    val_loader = WaveformDataLoader(val_set, batch_size=batch_size, shuffle=False)
-    test_loader = WaveformDataLoader(test_set, batch_size=batch_size, shuffle=False)
+    train_loader = WaveformDataLoader(train_set, batch_size=batch_size, shuffle=True,
+                                       num_workers=num_workers, pin_memory=True)
+    val_loader = WaveformDataLoader(val_set, batch_size=batch_size, shuffle=False,
+                                      num_workers=num_workers, pin_memory=True)
+    test_loader = WaveformDataLoader(test_set, batch_size=batch_size, shuffle=False,
+                                       num_workers=num_workers, pin_memory=True)
     if return_test_loader:
         return train_loader, val_loader, test_loader
     return train_loader, val_loader
@@ -399,13 +403,13 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4) 
     # -- NOTE: ReduceLROnPlateau is not ideal for our use, since it
     # -- reduces the darn LR too quickly and then we don't get much training done.
-    # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    #             optimizer, 
-    #             mode='min', 
-    #             factor=0.5, 
-    #             patience=2, 
-    #             threshold=1e-7)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, 
+                mode='min', 
+                factor=0.1, 
+                patience=2, 
+                threshold=1e-4)
+    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
 
     # -- Set loss function type and components to track!
     if loss_func_type is None:
@@ -480,9 +484,6 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
                         for comp_name in lcomps_names}
         logger.info(f"Epoch {epoch+1}, Batch Avg Train Loss: {train_loss_avg:.4f}")
 
-        # -- TODO: This should be after the validation step?
-        scheduler.step()
-
         # -- set model to eval mode for validation
         model.eval()
 
@@ -544,6 +545,9 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             backup_model_path = savedir+f'model-backup-{now}-epoch{epoch}.pt'
             torch.save(model.state_dict(), backup_model_path)
             logger.info(f"Model backup saved at {backup_model_path}")
+
+        # -- TODO: This should be after the validation step?
+        scheduler.step()
 
     if savemodel:
         model_path = savedir+f'model-flexcvae-{now}.pt'
@@ -809,7 +813,10 @@ def run_training(configpath=None, model_path=None, fname=None,
     model = load_flex_model(configpath=configpath, model_path=model_path)
     logger.debug(model)
     # train_loader, val_loader = set_dataloaders(batch_size=batch_size)
-    train_loader, val_loader = set_waveform_dataloaders(batch_size=batch_size, 
+    batch_size = model.MODEL_CONFIG.get('batch_size', batch_size)
+    num_workers = model.MODEL_CONFIG.get('num_workers', 4)
+    train_loader, val_loader = set_waveform_dataloaders(batch_size=batch_size,
+                                                        num_workers=num_workers, 
                                                         target_type='amp_phase',
                                                         input_normalized=True,
                                                         target_normalized=False)

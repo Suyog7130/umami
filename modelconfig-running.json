@@ -1,5 +1,6 @@
 {
     "batch_size": 128,
+    "num_workers": 0,
     "latent_dim_x": 24,
     "latent_dim_key": 4,
     "activation": "gelu",
