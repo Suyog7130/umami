@@ -174,8 +174,13 @@ class WaveformDataset(torch.utils.data.Dataset):
         assert self.params_mean is None or self.params_mean.shape == (4,), f"Expected params_mean to be of shape (4,), but got {self.params_mean.shape}"
         assert self.params_std is None or self.params_std.shape == (4,), f"Expected params_std to be of shape (4,), but got {self.params_std.shape}"
 
-        # NOTE: `init_hdf` inside `__getitem__` call, to allow spawning multiple workers for dataloading.
+        # # NOTE: `init_hdf` inside `__getitem__` call, to allow spawning multiple workers for dataloading.
         # self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
+
+        # temporarily open file to get length
+        with h5py.File(self.hdf_fname, 'r') as f:
+            # Store the length as a simple integer (safe to pickle!)
+            self.length = len(f.keys()) 
 
     def _set_input_target_names(self):
         # -- labels for input and target data for different kinds of targets.
@@ -193,11 +198,9 @@ class WaveformDataset(torch.utils.data.Dataset):
         else:
             self.targetnames = ['unnormed_' + name for name in self.targetnames]
 
-    # def __len__(self):
-    #     if not hasattr(self, 'data_file') or self.data_file is None:
-    #         self.init_hdf()
-    #     return len(self.data_file.keys())  # number of groups in the HDF file, which corresponds to the number of data samples
-    
+    def __len__(self):
+        return self.length
+
     def init_hdf(self):
         # -- check if the HDF file exists, if not, create an empty HDF file with the same name, so that we can write to it later on in the `get_calibrator_input` function without having to worry about file not found errors.
         hdf_fname = self.hdf_fname + '.hdf' if not self.hdf_fname.endswith('.hdf') else self.hdf_fname
@@ -291,10 +294,9 @@ class WaveformDataset(torch.utils.data.Dataset):
         return input, target, labels, keys, strains, attr
 
     def __getitem__(self, idx):
-        # input, target, labels, keys, strains, attr = self.read_data_from_hdf(idx)
-        # # print("DEBUG: Tensor on device:", input.device, target.device, labels.device, keys.device, strains.device)
-        # return input, target, labels, keys, strains, attr
-        return self.read_data_from_hdf(idx)
+        input, target, labels, keys, strains, attr = self.read_data_from_hdf(idx)
+        # print("DEBUG: Tensor on device:", input.device, target.device, labels.device, keys.device, strains.device)
+        return input, target, labels, keys, strains, attr
 
 class WaveformDataLoader(torch.utils.data.DataLoader):
     """
@@ -347,7 +349,7 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
                                input_normalized=input_normalized, target_normalized=target_normalized,
                                params_mean=params_mean, params_std=params_std,
                                train_device=DEVICE, precision=PRECISION)
-    logger.info(f"Training dataset size: {len(train_set)}, Validation dataset size: {len(val_set)}, Test dataset size: {len(test_set)}")
+    logger.info(f"Initialized WaveformDataset for train, val, and test sets.")
     train_loader = WaveformDataLoader(train_set, batch_size=batch_size, shuffle=True,
                                        num_workers=num_workers, pin_memory=True)
     val_loader = WaveformDataLoader(val_set, batch_size=batch_size, shuffle=False,
@@ -355,7 +357,6 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
     test_loader = WaveformDataLoader(test_set, batch_size=batch_size, shuffle=False,
                                        num_workers=num_workers, pin_memory=True)
     logger.info(f"DataLoaders set up with batch size {batch_size} and {num_workers} workers.")
-    print(next(iter(train_loader)))  # Print the first batch to check if everything is working fine
     if return_test_loader:
         return train_loader, val_loader, test_loader
     return train_loader, val_loader
