@@ -413,13 +413,11 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     loss_func_type = model.MODEL_CONFIG.get('loss_func_type', None) if loss_func_type is None else loss_func_type
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4) 
-    # -- NOTE: ReduceLROnPlateau is not ideal for our use, since it
-    # -- reduces the darn LR too quickly and then we don't get much training done.
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, 
                 mode='min', 
-                factor=0.1, 
-                patience=2, 
+                factor=0.2,   # reduce LR by a factor of 5x
+                patience=4,   # wait for 4 epochs before reducing LR
                 threshold=1e-4)
     # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
 
@@ -443,6 +441,9 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
     # -- Initialize main loss storage
     rloss_train, rloss_eval, rloss_valid = [], [], []
+    lcomps_train = {comp_name: [] for comp_name in lcomps_names}
+    lcomps_eval = {comp_name: [] for comp_name in lcomps_names}
+    lcomps_valid = {comp_name: [] for comp_name in lcomps_names}
 
     best_val_loss = float('inf')
     for epoch in tqdm(range(epochs)):
@@ -492,8 +493,8 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
         train_loss_avg = train_loss_log.mean().item()
         rloss_train.extend(train_loss_log.cpu().numpy().tolist())
-        lcomps_train = {comp_name: lcomps_train_log[comp_name].cpu().numpy().tolist()
-                        for comp_name in lcomps_names}
+        for comp_name in lcomps_names:
+            lcomps_train[comp_name].extend(lcomps_train_log[comp_name].cpu().numpy().tolist())
         logger.info(f"Epoch {epoch+1}, Batch Avg Train Loss: {train_loss_avg:.4f}")
 
         # -- set model to eval mode for validation
@@ -521,8 +522,8 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
         eval_loss_avg = eval_loss_log.mean().item()
         rloss_eval.extend(eval_loss_log.cpu().numpy().tolist())
-        lcomps_eval = {comp_name: lcomps_eval_log[comp_name].cpu().numpy().tolist()
-                        for comp_name in lcomps_names}
+        for comp_name in lcomps_names:
+            lcomps_eval[comp_name].extend(lcomps_eval_log[comp_name].cpu().numpy().tolist())
         logger.info(f"Epoch {epoch+1}, Batch Avg Train Eval Loss: {eval_loss_avg:.4f}")
 
         # Evaluate on validation set
@@ -546,8 +547,8 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
         avg_val_loss = valid_loss_log.mean().item()
         rloss_valid.extend(valid_loss_log.cpu().numpy().tolist())
-        lcomps_valid = {comp_name: lcomps_valid_log[comp_name].cpu().numpy().tolist()
-                         for comp_name in lcomps_names}
+        for comp_name in lcomps_names:
+            lcomps_valid[comp_name].extend(lcomps_valid_log[comp_name].cpu().numpy().tolist())
         logger.info(f"Epoch {epoch+1}, Batch Avg Validation Loss: {avg_val_loss:.4f}")
 
         # Save model checkpoint at every epoch as backup
@@ -1012,5 +1013,5 @@ if __name__ == "__main__":
         logger.info("Running dummy training with 10 batches for training loop testing and debugging!")
         run_training(configpath=args.model_config,
                      model_path=args.model_path,
-                     batch_size=1024,
+                     batch_size=128,
                      epochs=2, datafrac=0.01, fname='dummyrun-')
