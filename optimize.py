@@ -357,12 +357,16 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
                                params_mean=params_mean, params_std=params_std,
                                train_device=DEVICE, precision=PRECISION)
     logger.info(f"Initialized WaveformDataset for train, val, and test sets.")
+    # NOTE: `drop_last=True` in train_loader, ensures that all batches have equal size, and thus makes `torch.compile` make the training faster, once the model has been precompiled. For validation and test loaders, we can keep `drop_last=False`, since we want to evaluate on all samples.
     train_loader = WaveformDataLoader(train_set, batch_size=batch_size, shuffle=True,
-                                       num_workers=num_workers, pin_memory=True)
+                                       num_workers=num_workers, pin_memory=True,
+                                       drop_last=True)
     val_loader = WaveformDataLoader(val_set, batch_size=batch_size, shuffle=False,
-                                      num_workers=num_workers, pin_memory=True)
+                                      num_workers=num_workers, pin_memory=True,
+                                      drop_last=False)
     test_loader = WaveformDataLoader(test_set, batch_size=batch_size, shuffle=False,
-                                       num_workers=num_workers, pin_memory=True)
+                                       num_workers=num_workers, pin_memory=True,
+                                       drop_last=False)
     logger.info(f"DataLoaders set up with batch size {batch_size} and {num_workers} workers.")
     if return_test_loader:
         return train_loader, val_loader, test_loader
