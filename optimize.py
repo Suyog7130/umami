@@ -257,8 +257,8 @@ class WaveformDataset(torch.utils.data.Dataset):
                 feat_dict_batch[key].append(value)
 
             # Append tags to their respective lists
+            # NOTE: tags are already tensors!
             for i, tag in enumerate(tags):
-                tag = torch.tensor(tag, dtype=getattr(torch, self.precision))
                 tag_batches[i].append(tag)
 
         # Convert lists of tags to tensors
@@ -559,7 +559,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             logger.info(f"Model backup saved at {backup_model_path}")
 
         # -- TODO: This should be after the validation step?
-        scheduler.step()
+        scheduler.step(avg_val_loss)
 
     if savemodel:
         model_path = savedir+f'model-flexcvae-{now}.pt'
@@ -818,14 +818,18 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
 
 
 def run_training(configpath=None, model_path=None, fname=None,
-                 batch_size=BATCH_SIZE, epochs=EPOCHS, datafrac=DATAFRAC):
+                 batch_size=None, epochs=EPOCHS, datafrac=DATAFRAC):
     """
     Runs training with specified hyperparameters for a single model configuration!
     """
     model = load_flex_model(configpath=configpath, model_path=model_path)
     logger.debug(model)
     # train_loader, val_loader = set_dataloaders(batch_size=batch_size)
-    batch_size = model.MODEL_CONFIG.get('batch_size', batch_size)
+    if batch_size is not None:
+        logger.info(f"Using specified batch size: {batch_size}")
+    else:
+        batch_size = model.MODEL_CONFIG.get('batch_size', BATCH_SIZE)
+        logger.info(f"No batch size specified. Using batch size from MODEL_CONFIG: {batch_size}")
     num_workers = model.MODEL_CONFIG.get('num_workers', 4)
     train_loader, val_loader = set_waveform_dataloaders(batch_size=batch_size,
                                                         num_workers=num_workers, 
@@ -998,7 +1002,8 @@ if __name__ == "__main__":
         logger.info("Running training with specified hyperparameters!")
         run_training(configpath=args.model_config,
                      model_path=args.model_path,
-                     epochs=args.epochs, datafrac=1.0)
+                     epochs=args.epochs, datafrac=1.0, 
+                     fname=args.model_type+'-'+args.label if args.label is not None else args.model_type+'-')
     elif args.save_data_from_dataset:
         logger.info("Saving input and target data from main datasets for easier loading during training!")
         save_data_from_dataset()
