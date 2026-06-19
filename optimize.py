@@ -366,6 +366,7 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
 def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase}, 
              train_loader=None, val_loader=None,
              epochs: int = 5, 
+             init_lr: float = 1e-4,
              datafrac: float = DATAFRAC,
              savemodel=False, savelosses=False,
              savedir='../trained-models/',
@@ -412,7 +413,8 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
     loss_func_type = model.MODEL_CONFIG.get('loss_func_type', None) if loss_func_type is None else loss_func_type
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4) 
+    optimizer = torch.optim.Adam(model.parameters(), 
+                                 lr=init_lr) 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, 
                 mode='min', 
@@ -837,7 +839,10 @@ def run_training(configpath=None, model_path=None, fname=None,
                                                         target_type='amp_phase',
                                                         input_normalized=True,
                                                         target_normalized=False)
-    training(model, epochs=epochs, datafrac=datafrac, 
+    training(model, 
+             epochs=epochs, 
+             init_lr=model.MODEL_CONFIG.get('init_lr', 1e-4),
+             datafrac=datafrac, 
              train_loader=train_loader, val_loader=val_loader,
              savemodel=True, savelosses=True,
              savedir='../trained-models/'+fname if fname is not None else '../trained-models/')
@@ -903,6 +908,7 @@ def optuna_objective(trial):
     train_loader, val_loader = set_dataloaders(batch_size=MODEL_CONFIG['batch_size'])
     final_val_loss = training(model, epochs=MODEL_CONFIG['epochs'], 
                               datafrac=MODEL_CONFIG['datafrac'], 
+                              init_lr=MODEL_CONFIG['init_lr'],
                             train_loader=train_loader, val_loader=val_loader,
                             savemodel=True, savelosses=True, savedir=savedir,
                             save_interim_models=False, now=now)
