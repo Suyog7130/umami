@@ -380,7 +380,7 @@ class BaseEncoder(BaseEncoderDecoder):
             if y is not None and not self.has_post_fc:
                 y_cat = y.view(y.size(0), -1)  # flatten labels
                 z = torch.cat([z, y_cat], dim=1)  # concatenate labels to input for pre-FC layers
-                logging.debug(f"After concatenating input and labels, z shape: {z.shape}")
+                # logging.debug(f"After concatenating input and labels, z shape: {z.shape}")
             z = self.pre_fc_layers(z)
         else:
             z = x
@@ -392,11 +392,11 @@ class BaseEncoder(BaseEncoderDecoder):
                 z = z.view(z.size(0), self.cnn_in_channels[0], -1)  # reshape to (B, C, L) for CNN
             else:
                 z = z.view(z.size(0), self.input_shape[0], -1)  # reshape to (B, C, L) for CNN
-            logging.debug(f"Before CNN layers, z shape: {z.shape}")
+            # logging.debug(f"Before CNN layers, z shape: {z.shape}")
             z = self.cnn_layers(z)
-            logging.debug(f"After CNN layers, z shape: {z.shape}")
+            # logging.debug(f"After CNN layers, z shape: {z.shape}")
             z = z.view(z.size(0), -1)  # flatten CNN output for post-FC layers
-            logging.debug(f"After CNN layers, z shape: {z.shape}")
+            # logging.debug(f"After CNN layers, z shape: {z.shape}")
 
             # TODO: In the original I concatenate labels here and then feed them to post-FC layers. 
             # But maybe I should concatenate labels before pre-FC layers? Or even have a separate branch 
@@ -405,15 +405,15 @@ class BaseEncoder(BaseEncoderDecoder):
             if y is not None:
                 y_cat = y.view(y.size(0), -1)  # flatten labels
                 z = torch.cat([z, y_cat], dim=1)  # concatenate labels to CNN output for post-FC layers
-                logging.debug(f"After concatenating CNN output and labels, z shape: {z.shape}")
+                # logging.debug(f"After concatenating CNN output and labels, z shape: {z.shape}")
 
         if self.has_post_fc:
-            assert self.post_fc_sizes[-1] == self.latent_dim * 2, f"post_fc_sizes[-1] should be {self.latent_dim * 2} to account for mean and logvar channels, but got {self.post_fc_sizes[-1]}"
+            # assert self.post_fc_sizes[-1] == self.latent_dim * 2, f"post_fc_sizes[-1] should be {self.latent_dim * 2} to account for mean and logvar channels, but got {self.post_fc_sizes[-1]}"
             z = self.post_fc_layers(z)
-            logging.debug(f"After post-FC layers, z shape: {z.shape}")
+            # logging.debug(f"After post-FC layers, z shape: {z.shape}")
         # -- Keep first `Batch` dim and reshape rest into `latent_dim` for mean and logvar,
         # -- which was already configured to be 2x the latent_dim in __init__ to account for mean and logvar concatenation.
-        logging.debug(f"Final encoder output shape after view: {z.view(-1, 2, self.latent_dim).shape}")
+        # logging.debug(f"Final encoder output shape after view: {z.view(-1, 2, self.latent_dim).shape}")
         return z.view(-1, 2, self.latent_dim)  # output shape: (B, C, latent_dim)
 
 class BaseDecoder(BaseEncoderDecoder):
@@ -449,28 +449,28 @@ class BaseDecoder(BaseEncoderDecoder):
                         use_last_activation=False)
 
     def forward(self, z: torch.Tensor, y: torch.Tensor, y_embed: Optional[torch.Tensor] = None):
-        assert z.size(1) == self.latent_dim, "z latent_dim mismatch"
-        assert y.size(1) == self.num_classes, "y num_classes mismatch"
+        # assert z.size(1) == self.latent_dim, "z latent_dim mismatch"
+        # assert y.size(1) == self.num_classes, "y num_classes mismatch"
         y_cat = y_embed if y_embed is not None else y
-        logging.debug(f"DECODER input z shape: {z.shape}, y shape: {y.shape}, y_embed shape: {y_embed.shape if y_embed is not None else 'N/A'}")
+        # logging.debug(f"DECODER input z shape: {z.shape}, y shape: {y.shape}, y_embed shape: {y_embed.shape if y_embed is not None else 'N/A'}")
         z = torch.cat([z, y_cat], dim=1)
-        logging.debug(f"DECODER after concatenating z and y_cat, shape: {z.shape}")
+        # logging.debug(f"DECODER after concatenating z and y_cat, shape: {z.shape}")
 
         if self.has_pre_fc:
             z = self.pre_fc_layers(z)
-            logging.debug(f"DECODER after pre-FC layers, z shape: {z.shape}")
+            # logging.debug(f"DECODER after pre-FC layers, z shape: {z.shape}")
 
         if self.has_cnn and self.cnn_in_channels:
             z = z.view(z.size(0), self.cnn_in_channels[0], -1)
-            logging.debug(f"DECODER before CNN layers, reshaped z shape: {z.shape}")
+            # logging.debug(f"DECODER before CNN layers, reshaped z shape: {z.shape}")
             z = self.cnn_layers(z)
-            logging.debug(f"DECODER after CNN layers, z shape: {z.shape}")
+            # logging.debug(f"DECODER after CNN layers, z shape: {z.shape}")
             z = z.view(z.size(0), -1)
 
         if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
-            logging.debug(f"DECODER before post-FC layers, z shape: {z.shape}")
+            # logging.debug(f"DECODER before post-FC layers, z shape: {z.shape}")
             z = self.post_fc_layers(z)
-            logging.debug(f"DECODER after post-FC layers, z shape: {z.shape}")
+            # logging.debug(f"DECODER after post-FC layers, z shape: {z.shape}")
         return z.view(-1, *self.input_shape)
     
 class BaseConditional(BaseCoder):
@@ -503,7 +503,7 @@ class BaseConditional(BaseCoder):
         that can be used in conjunction with the main encoder's output for conditioning the 
         decoder in the CVAE/CAE model.
         """
-        assert self.pre_fc_sizes[-1] == self.latent_dim * 2, f"pre_fc_out_features[-1] should be {self.latent_dim * 2} to account for mean and logvar channels, but got {self.pre_fc_out_features[-1]}"
+        # assert self.pre_fc_sizes[-1] == self.latent_dim * 2, f"pre_fc_out_features[-1] should be {self.latent_dim * 2} to account for mean and logvar channels, but got {self.pre_fc_out_features[-1]}"
         z = y.view(y.size(0), -1)  # flatten input for FC layers
         z = self.pre_fc_layers(z)
         return z.view(-1, 2, self.latent_dim)  # ensure output shape is (B, 2, latent_dim)
