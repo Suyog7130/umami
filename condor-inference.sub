@@ -82,10 +82,10 @@ should_transfer_files = NO
 environment = "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 TORCH_NUM_THREADS=1 PYTHONUNBUFFERED=1"
 
 
-+JobBatchName = "umami_ml2ml_pocomc_test"
++JobBatchName = "umamipe_test"
 
 # Remove or modify these if CIT requires a specific accounting group.
-accounting_group = ligo.dev.o4.cbc.explore.test
+accounting_group = ligo.sim.o4.cbc.waveforms.bilby
 accounting_group_user = suyog.garg
 
 # Good safety behavior.
