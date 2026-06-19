@@ -418,7 +418,7 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 optimizer, 
                 mode='min', 
-                factor=0.2,   # reduce LR by a factor of 5x
+                factor=0.5,   # reduce LR by a factor of 1/2
                 patience=4,   # wait for 4 epochs before reducing LR
                 threshold=1e-4)
     # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=3, gamma=0.1)
