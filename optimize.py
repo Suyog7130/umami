@@ -36,6 +36,10 @@ from flexcvae import FlexTwoC2E1D, FlexCAE, FlexCAEPhase
 from cvae import CVAE
 
 
+from utils.gwutils import calculate_cosine_distance, \
+    polarizations_from_amp_phase, polarizations_from_amp_phase
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -594,51 +598,54 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
 
 def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
-            test_loader=None,
-            results_dir='../v0p1/results/',
-            now=NOW,):
+            testloader=None):
     """
     Test the model on the test dataset and save the results.
     """
-    os.makedirs(results_dir, exist_ok=True)
-    if test_loader is None:
+    if testloader is None:
         logger.info("Setting up test dataloader since it was not provided.")
-        test_loader = set_waveform_dataloaders(return_test_loader=True)
+        testloader = set_waveform_dataloaders(return_test_loader=True)
     
     # Initialize dataframe to store mismatch results of whole test set!
     dfmm = pd.DataFrame(columns=[
-        'dataindex', 'm1', 'm2', 'chi1z', 'chi2z',
+        'm1', 'm2', 'chi1z', 'chi2z',
         'chirp_mass', 'total_mass', 'mass_ratio',
         'mismatch_amp', 'mismatch_freq', 
         'mismatch_hplus', 'mismatch_hcross',],
         dtype=float)
     
-    for idx, databatch in enumerate(tqdm(test_loader, ncols=80, desc="Test-steps")):
-        x, target, labels, keys, strains, attr = databatch
-        x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
+    for idx, databatch in enumerate(tqdm(testloader, ncols=80, desc="Test-steps")):
+        input, target, labels, keys, strains, attr = databatch
+        input, target, labels, keys, strains = input.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
         
         with torch.no_grad():
-            x_recon, zvars = model.generate(x, labels, keys)
-        
-        # -- compute mismatch for each sample in the batch and store in dataframe
-        for i in range(x.size(0)):
-            dataindex = attr['dataindex'][i].item()
-            m1 = labels[i][0].item()
-            m2 = labels[i][1].item()
-            chi1z = labels[i][2].item()
-            chi2z = labels[i][3].item()
-            chirp_mass = attr['chirp_mass'][i].item()
-            total_mass = attr['total_mass'][i].item()
-            mass_ratio = attr['mass_ratio'][i].item()
+            x_recon, zvars = model.generate(input, labels, keys, convert_to_hphc=False)
 
-            # Compute mismatches (placeholder functions)
-            mismatch_amp = compute_mismatch(x[i], x_recon[i], metric='amp')
-            mismatch_freq = compute_mismatch(x[i], x_recon[i], metric='freq')
-            mismatch_hplus = compute_mismatch(x[i], x_recon[i], metric='hplus')
-            mismatch_hcross = compute_mismatch(x[i], x_recon[i], metric='hcross')
+        for i in range(input.shape[0]):
+            recon_amp, recon_phase = x_recon[i, 0, :], x_recon[i, 1, :]
+            orig_amp, orig_phase = target[i, 0, :], target[i, 1, :]
+            
 
-            dfmm.loc[len(dfmm)] = [dataindex, m1, m2, chi1z, chi2z,
-                                    chirp_mass, total_mass
+
+        dfmm = pd.concat([dfmm, pd.DataFrame({
+            'm1': labels[:, 0].cpu().numpy(),
+            'm2': labels[:, 1].cpu().numpy(),
+            'chi1z': labels[:, 2].cpu().numpy(),
+            'chi2z': labels[:, 3].cpu().numpy(),
+            'chirp_mass': chirpmasses.flatten(),
+            'total_mass': totalmasses.flatten(),
+            'mass_ratio': massratios.flatten(),
+            'chieff': chieffs.flatten(),
+            'mismatch_amp': mismatch_amp.flatten(),
+            'mismatch_freq': mismatch_freq.flatten(),
+            'mismatch_hplus': mismatch_hplus.flatten(),
+            'mismatch_hcross': mismatch_hcross.flatten(),
+        })], ignore_index=True)
+        logger.info(f"Processed test batch {i+1}/{len(testloader)}, with data indices {indices.cpu().numpy()}, and average amplitude mismatch {mismatch_amp.mean().item():.4e}, frequency mismatch {mismatch_freq.mean().item():.4e}, hplus mismatch {mismatch_hplus.mean().item():.4e}, and hcross mismatch {mismatch_hcross.mean().item():.4e}")
+
+    logger.info(f"Completed testing on {len(test_loader.dataset)} samples.")
+    return dfmm
+
 
 
 # def objective(trial):
@@ -916,7 +923,7 @@ def run_training(configpath=None, model_path=None, fname=None,
 
 
 def run_testing(configpath=None, model_path=None, fname=None,
-                batch_size=None, datafrac=DATAFRAC):
+                batch_size=None, results_dir='../v0p1/results/'):
     """
     Runs testing with specified hyperparameters for a trained model!
     """
@@ -935,6 +942,8 @@ def run_testing(configpath=None, model_path=None, fname=None,
                                            input_normalized=True,
                                            target_normalized=False,
                                            return_test_loader=True)
+    dfmm = testing(model, test_loader=test_loader)
+    logger.info("Testing completed and results saved.")
 
 
     

@@ -181,3 +181,25 @@ def polarizations_from_ampfreq(amp, freq, theta0=0.0):
     hplus = amp * np.cos(theta)
     hcross = amp * np.sin(theta)
     return hplus, hcross
+
+
+def calculate_cosine_similarity(target, reconstructed):
+    target_flat = target.view(target.size(0), -1)
+    reconstructed_flat = reconstructed.view(reconstructed.size(0), -1)
+    dot_product = (target_flat * reconstructed_flat).sum(dim=1)
+    norm_target = target_flat.norm(p=2, dim=1)
+    norm_reconstructed = reconstructed_flat.norm(p=2, dim=1)
+    cosine_similarity = dot_product / (norm_target * norm_reconstructed)
+    return cosine_similarity
+
+
+def polarizations_from_amp_phase(amp, phase):
+    """
+    Convert amplitude and phase to hplus and hcross polarizations.
+    amp: length N
+    phase: length N
+    returns hplus, hcross: length N
+    """
+    hp = amp * torch.cos(phase)
+    hc = amp * torch.sin(phase)
+    return (hp, hc)

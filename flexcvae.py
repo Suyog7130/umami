@@ -1583,7 +1583,7 @@ class FlexCAEPhase(FlexCAE):
         total_loss = recon_loss + latent_loss
         return (total_loss, recon_loss, latent_loss)
     
-    def generate(self, labels=None):
+    def generate(self, labels=None, convert_to_hphc=True):
         """
         From a trained model, generate new output waveforms using only the
         conditional labels information, by sampling from the latent space and 
@@ -1633,9 +1633,11 @@ class FlexCAEPhase(FlexCAE):
                 logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of zy_mu and zykey_mu.")
 
             generated_output = self.decode(z, labels, y_embed)
-        hphc = self.convert_output(generated_output)
-        return hphc
-    
+        if convert_to_hphc:
+            hphc = self.convert_output(generated_output)
+            return hphc
+        return generated_output
+
     def convert_output(self, output):
         """
         Converts the output of the decoder [amp, phase] to the polarizations [hp,hc]].
