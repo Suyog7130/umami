@@ -369,7 +369,7 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
                                        drop_last=False)
     logger.info(f"DataLoaders set up with batch size {batch_size} and {num_workers} workers.")
     if return_test_loader:
-        return train_loader, val_loader, test_loader
+        return test_loader
     return train_loader, val_loader
 
 
@@ -382,7 +382,6 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
              savemodel=False, savelosses=False,
              savedir='../trained-models/',
              save_interim_models=True, now=NOW,
-             using_waveform_dataloaders=False,
              loss_func_type=None):
     """
     Using a fraction of training data for quick training and
@@ -591,6 +590,55 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         eval_losses_df.to_csv(savedir+f'losses-flexcvae-train-eval-{now}.csv', index=False)
         val_losses_df.to_csv(savedir+f'losses-flexcvae-val-{now}.csv', index=False)
     return avg_val_loss
+
+
+
+def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
+            test_loader=None,
+            results_dir='../v0p1/results/',
+            now=NOW,):
+    """
+    Test the model on the test dataset and save the results.
+    """
+    os.makedirs(results_dir, exist_ok=True)
+    if test_loader is None:
+        logger.info("Setting up test dataloader since it was not provided.")
+        test_loader = set_waveform_dataloaders(return_test_loader=True)
+    
+    # Initialize dataframe to store mismatch results of whole test set!
+    dfmm = pd.DataFrame(columns=[
+        'dataindex', 'm1', 'm2', 'chi1z', 'chi2z',
+        'chirp_mass', 'total_mass', 'mass_ratio',
+        'mismatch_amp', 'mismatch_freq', 
+        'mismatch_hplus', 'mismatch_hcross',],
+        dtype=float)
+    
+    for idx, databatch in enumerate(tqdm(test_loader, ncols=80, desc="Test-steps")):
+        x, target, labels, keys, strains, attr = databatch
+        x, target, labels, keys, strains = x.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
+        
+        with torch.no_grad():
+            x_recon, zvars = model.generate(x, labels, keys)
+        
+        # -- compute mismatch for each sample in the batch and store in dataframe
+        for i in range(x.size(0)):
+            dataindex = attr['dataindex'][i].item()
+            m1 = labels[i][0].item()
+            m2 = labels[i][1].item()
+            chi1z = labels[i][2].item()
+            chi2z = labels[i][3].item()
+            chirp_mass = attr['chirp_mass'][i].item()
+            total_mass = attr['total_mass'][i].item()
+            mass_ratio = attr['mass_ratio'][i].item()
+
+            # Compute mismatches (placeholder functions)
+            mismatch_amp = compute_mismatch(x[i], x_recon[i], metric='amp')
+            mismatch_freq = compute_mismatch(x[i], x_recon[i], metric='freq')
+            mismatch_hplus = compute_mismatch(x[i], x_recon[i], metric='hplus')
+            mismatch_hcross = compute_mismatch(x[i], x_recon[i], metric='hcross')
+
+            dfmm.loc[len(dfmm)] = [dataindex, m1, m2, chi1z, chi2z,
+                                    chirp_mass, total_mass
 
 
 # def objective(trial):
@@ -864,6 +912,31 @@ def run_training(configpath=None, model_path=None, fname=None,
     train_loader.dataset.close_hdf()  # Close the HDF files after training
     val_loader.dataset.close_hdf()
     print("Training completed and model saved.")
+
+
+
+def run_testing(configpath=None, model_path=None, fname=None,
+                batch_size=None, datafrac=DATAFRAC):
+    """
+    Runs testing with specified hyperparameters for a trained model!
+    """
+    logger.info("Starting testing with specified hyperparameters")
+    model = load_flex_model(configpath=configpath, model_path=model_path)
+    logger.debug(model)
+    if batch_size is not None:
+        logger.info(f"Using specified batch size: {batch_size}")
+    else:
+        batch_size = model.MODEL_CONFIG.get('batch_size', BATCH_SIZE)
+        logger.info(f"No batch size specified. Using batch size from MODEL_CONFIG: {batch_size}")
+    num_workers = model.MODEL_CONFIG.get('num_workers', 4)
+    test_loader = set_waveform_dataloaders(batch_size=batch_size,
+                                           num_workers=num_workers,
+                                           target_type='amp_phase',
+                                           input_normalized=True,
+                                           target_normalized=False,
+                                           return_test_loader=True)
+
+
     
 
 def optuna_objective(trial):

@@ -1582,4 +1582,68 @@ class FlexCAEPhase(FlexCAE):
         recon_loss = F.mse_loss(x_recon, target, reduction='mean')
         total_loss = recon_loss + latent_loss
         return (total_loss, recon_loss, latent_loss)
+    
+    def generate(self, labels=None):
+        """
+        From a trained model, generate new output waveforms using only the
+        conditional labels information, by sampling from the latent space and 
+        passing through the decoder.
+        """
+        if labels is not None:
+            # -- check dimensions of labels with MODEL_CONFIG['num_classes']
+            assert labels.size(1) == self.num_classes, f"Labels dimension {labels.size(1)} does not match MODEL_CONFIG['num_classes'] {self.num_classes}!"
+        else:
+            raise ValueError("Labels must be provided for generation, since the model is conditional on the labels!")
+
+        self.eval()  # Set model to evaluation mode
+        logging.info("Model set to evaluation mode for generation.")
+
+        with torch.no_grad():
+            # Encode labels to get the mean of the latent space (no reparameterization for CAE)
+            zy_mu, _ = self.encode_label_for_x(labels)
+            zykey_mu, _ = self.encode_label_for_key(labels)
+
+            # Generate output by passing the mean latent variable and labels through the decoder
+            if self.embed_labels_in_decoder:
+                y_embed = self.conditional_x(labels)  # Use the label-conditioned encoder for x as the label embedding
+            else:
+                y_embed = None  # Use raw labels as input to the decoder
+
+            # Select decoder input based on the specified type
+            if self.decoder_input_type == 'sum':
+                z = zy_mu + zykey_mu
+            elif self.decoder_input_type == 'concat':
+                z = torch.cat([zy_mu, zykey_mu], dim=1)
+            elif self.decoder_input_type == 'onlyzx':
+                z = zy_mu
+            elif self.decoder_input_type == 'onlyzkey':
+                z = zykey_mu
+            elif self.decoder_input_type == 'weighted_sum':
+                alpha = 0.5  # This can be a hyperparameter to tune
+                if zykey_mu.size(1) != zy_mu.size(1):
+                    projection = nn.Linear(zykey_mu.size(1), zy_mu.size(1)).to(zykey_mu.device)
+                    zykey_proj = projection(zykey_mu)
+                    z = alpha * zy_mu + (1 - alpha) * zykey_proj
+                else:
+                    z = alpha * zy_mu + (1 - alpha) * zykey_mu
+            elif self.decoder_input_type == 'concat_all':
+                z = torch.cat([zy_mu, zykey_mu, zy_mu, zykey_mu], dim=1)
+            else:
+                z = torch.cat([zy_mu, zykey_mu], dim=1)  # default to concat if unknown type
+                logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of zy_mu and zykey_mu.")
+
+            generated_output = self.decode(z, labels, y_embed)
+        hphc = self.convert_output(generated_output)
+        return hphc
+    
+    def convert_output(self, output):
+        """
+        Converts the output of the decoder [amp, phase] to the polarizations [hp,hc]].
+        """
+        output = output.detach()
+        amp = output[:, 0]
+        phase = output[:, 1]
+        hp = amp * torch.cos(phase)
+        hc = amp * torch.sin(phase)
+        return torch.stack((hp, hc), dim=1)
         
