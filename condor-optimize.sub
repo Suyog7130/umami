@@ -25,6 +25,9 @@ request_disk            = 4G
 # File Transfer Configurations
 should_transfer_files   = NO
 
+# FORCE HTCondor to find an A100-80GB node
+Requirements = (Target.GPUs_DeviceName == "NVIDIA A100-SXM4-80GB") && (Target.HasGraphicsDriver == True)
+
 
 # Remove or modify these if CIT requires a specific accounting group.
 accounting_group = ligo.dev.o4.cbc.explore.test
