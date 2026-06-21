@@ -76,6 +76,25 @@ def convert_to_serializable(obj):
         return {k: convert_to_serializable(v) for k, v in obj.items()}
     else:
         return obj
+    
+def convert_to_int_or_float(x):
+    try:
+        return int(x)
+    except ValueError:
+        try:
+            return float(x)
+        except ValueError:
+            return x  # Return original value if it cannot be converted
+        
+def check_json_all_numeric(json_dict):
+    """
+    Recursively checks if all values in a JSON-like dictionary are numeric (int or float).
+    Returns True if all values are numeric, False otherwise.
+    """
+    for key, value in json_dict.items():
+        if value.__class__ not in [dict, list] and value is not None:
+            json_dict[key] = convert_to_int_or_float(value)
+    return json_dict
 
 
 # -------------------------
@@ -159,6 +178,7 @@ class BaseCoder(nn.Module):
                    is_last: bool = False) -> nn.Sequential:
         if pool_size is None:
             pool_size = kernel_size
+        logging.debug(f"Building conv layer with in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}, dilation={dilation}, pool_size={pool_size}, is_last={is_last}")
         seq = [nn.Conv1d(in_channels, out_channels, kernel_size, dilation=dilation)]
         if self.use_batchnorm:
             seq.append(nn.BatchNorm1d(out_channels))
@@ -186,7 +206,7 @@ class BaseCoder(nn.Module):
             in_f, out_f = list(in_features), list(out_features)
         if n_layers is None:
             n_layers = len(in_f)
-        # logging.debug(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
+        logging.debug(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
         assert n_layers == len(in_f) == len(out_f), f"FC spec length mismatch: n_layers={n_layers}, in_f={len(in_f)}, out_f={len(out_f)}"
         # Robust compatibility check: ensure each in_f[i] matches previous output shape
         for i in range(n_layers):
@@ -326,20 +346,7 @@ class BaseEncoderDecoder(BaseCoder):
             self.cnn_layers = self.cnn(self.cnn_in_channels, self.cnn_out_channels, self.cnn_kernel_size, self.cnn_dilation,
                          pool_kernel_size=self.cnn_pool_ks,
                          n_layers=self.n_layers_cnn)
-
-        # -- Moved this to children classes --#
-        # if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
-        #     # -- post_fc_in_features[0] should match post_fc_sizes[0], if both are provided!
-        #     # -- Plus we need to make sure that the CNN output size matches the post_fc_in_features[0] if CNN is present. 
-        #     # -- So we have to calculate the CNN output size and use that as post_fc_in_features[0] if CNN is present.
-        #     if self.has_cnn:
-        #         cnn_output_size = self._calculate_cnn_output_size(self.input_shape[0]*self.input_shape[1]) # assuming input_shape is (C, L)
-        #         post_fc_in_features = self.cnn_out_channels[-1] * cnn_output_size
-        #     post_fc_out_features = self.post_fc_out_features[-1] if self.post_fc_out_features else self.post_fc_sizes[-1]
-        #     self.post_fc_layers = self.fc(post_fc_in_features, post_fc_out_features,
-        #                 n_layers=self.n_layers_post_fc,
-        #                 sizes=self.post_fc_sizes,
-        #                 use_last_activation=False)
+            
 
 class BaseEncoder(BaseEncoderDecoder):
     """
@@ -647,6 +654,7 @@ class FlexTwoC2E1D(nn.Module):
         # This allows for flexible model configuration while maintaining default values.
         if MODEL_CONFIG is not None:
             logging.info(f"MODEL_CONFIG provided. Using hyperparameters from MODEL_CONFIG: {MODEL_CONFIG}")
+            MODEL_CONFIG = check_json_all_numeric(MODEL_CONFIG)
             self.MODEL_CONFIG = MODEL_CONFIG
             input_shape = MODEL_CONFIG.get('input_shape', input_shape)
             num_classes = MODEL_CONFIG.get('num_classes', num_classes)
@@ -1065,7 +1073,7 @@ class FlexTwoC2E1D(nn.Module):
                 configfile[key] = convert_to_serializable(value)
             elif isinstance(value, tuple):
                 configfile[key] = list(value)  # Convert tuples to lists for JSON serialization
-            else:
+            elif not isinstance(value, (str, int, float, bool, type(None))):
                 configfile[key] = str(value)
 
         # -- remove `_modules` from configfile, bcuz it is non-serializable in JSON

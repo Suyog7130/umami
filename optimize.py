@@ -611,6 +611,7 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     """
     Test the model on the test dataset and save the results.
     """
+    logger.info("Starting testing of the model on the test dataset.")
     if testloader is None:
         logger.info("Setting up test dataloader since it was not provided.")
         testloader = set_waveform_dataloaders(return_test_loader=True)
@@ -624,6 +625,7 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         dtype=float)
     
     for idx, databatch in enumerate(tqdm(testloader, ncols=80, desc="Test-steps")):
+        logger.debug(f"Processing test batch {idx+1}/{len(testloader)}")
         input, target, labels, keys, strains, attr = databatch
         input, target, labels, keys, strains = input.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
         
@@ -653,6 +655,7 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             mismatch_freq[i] = calculate_cosine_similarity(recon_phase, orig_phase)
             mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
             mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
+        logger.debug(f"Batch {idx+1}: Average amplitude mismatch: {mismatch_amp.mean():.4e}, frequency mismatch: {mismatch_freq.mean():.4e}, hplus mismatch: {mismatch_hplus.mean():.4e}, hcross mismatch: {mismatch_hcross.mean():.4e}")
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
             'm1': labels[:, 0].cpu().numpy(),
@@ -668,7 +671,7 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             'mismatch_hplus': mismatch_hplus.flatten(),
             'mismatch_hcross': mismatch_hcross.flatten(),
         })], ignore_index=True)
-        logger.info(f"Processed test batch {i+1}/{len(testloader)}, with data indices {indices.cpu().numpy()}, and average amplitude mismatch {mismatch_amp.mean().item():.4e}, frequency mismatch {mismatch_freq.mean().item():.4e}, hplus mismatch {mismatch_hplus.mean().item():.4e}, and hcross mismatch {mismatch_hcross.mean().item():.4e}")
+        logger.info(f"Processed test batch {idx+1}/{len(testloader)}, with data indices {keys.cpu().numpy()}, and average amplitude mismatch {mismatch_amp.mean().item():.4e}, frequency mismatch {mismatch_freq.mean().item():.4e}, hplus mismatch {mismatch_hplus.mean().item():.4e}, and hcross mismatch {mismatch_hcross.mean().item():.4e}")
 
     logger.info(f"Completed testing on {len(test_loader.dataset)} samples.")
     return dfmm
@@ -976,7 +979,8 @@ def run_testing(configpath=None, model_path=None, fname=None,
                                            input_normalized=True,
                                            target_normalized=False,
                                            return_test_loader=True)
-    
+    logger.info(f"Test dataloader set up with {len(test_loader.dataset)} samples and batch size {batch_size}.")
+
     dfmm = testing(model, test_loader=test_loader)
 
     # save test results and configuration
