@@ -36,7 +36,7 @@ from cvae import CVAE
 
 
 from utils.gwutils import (
-    calculate_cosine_similarity,
+    calculate_cosine_distance,
     polarizations_from_amp_phase,
     calc_polarization_mismatch,
     calc_chirp_mass,
@@ -606,16 +606,15 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     return avg_val_loss
 
 
-
 def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
-            testloader=None):
+            test_loader=None):
     """
     Test the model on the test dataset and save the results.
     """
     logger.info("Starting testing of the model on the test dataset.")
-    if testloader is None:
+    if test_loader is None:
         logger.info("Setting up test dataloader since it was not provided.")
-        testloader = set_waveform_dataloaders(return_test_loader=True)
+        test_loader = set_waveform_dataloaders(return_test_loader=True)
     
     # Initialize dataframe to store mismatch results of whole test set!
     dfmm = pd.DataFrame(columns=[
@@ -625,18 +624,19 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         'mismatch_hplus', 'mismatch_hcross',],
         dtype=float)
     
-    for idx, databatch in enumerate(tqdm(testloader, ncols=80, desc="Test-steps")):
-        logger.debug(f"Processing test batch {idx+1}/{len(testloader)}")
+    for idx, databatch in enumerate(tqdm(test_loader, ncols=80, desc="Test-steps")):
+        logger.debug(f"Processing test batch {idx+1}/{len(test_loader)}")
         input, target, labels, keys, strains, attr = databatch
         input, target, labels, keys, strains = input.to(DEVICE), target.to(DEVICE), labels.to(DEVICE), keys.to(DEVICE), strains.to(DEVICE)
         
         with torch.no_grad():
-            x_recon, zvars = model.generate(input, labels, keys, convert_to_hphc=False)
+            x_recon = model.generate(labels, convert_to_hphc=False)
 
         mismatch_amp = np.zeros(input.shape[0])
         mismatch_freq = np.zeros(input.shape[0])
         mismatch_hplus = np.zeros(input.shape[0])
         mismatch_hcross = np.zeros(input.shape[0])
+        logger.debug(f"Test batch {idx+1}: input shape: {input.shape}, target shape: {target.shape}, labels shape: {labels.shape}, keys shape: {keys.shape}, strains shape: {strains.shape}, x_recon shape: {x_recon.shape}")
 
         m1s, m2s, chi1zs, chi2zs = labels[:, 0], labels[:, 1], labels[:, 2], labels[:, 3]
         chirpmasses = calc_chirp_mass(m1s, m2s)
@@ -649,14 +649,20 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             orig_amp, orig_phase = target[i, 0, :], target[i, 1, :]
             orig_hp, orig_hc = strains[i, 0, :], strains[i, 1, :]
             recon_hp, recon_hc = polarizations_from_amp_phase(recon_amp, recon_phase)
+            logger.debug(f"Sample {i+1} in batch {idx+1}: recon_amp shape: {recon_amp.shape}, recon_phase shape: {recon_phase.shape}, orig_amp shape: {orig_amp.shape}, orig_phase shape: {orig_phase.shape}, orig_hp shape: {orig_hp.shape}, orig_hc shape: {orig_hc.shape}, recon_hp shape: {recon_hp.shape}, recon_hc shape: {recon_hc.shape}")
 
             delta_t = attr['delta_t'][i]
             f_lower = attr['f_lower'][i]
-            mismatch_amp[i] = calculate_cosine_similarity(recon_amp, orig_amp)
-            mismatch_freq[i] = calculate_cosine_similarity(recon_phase, orig_phase)
+
+            mismatch_amp[i] = calculate_cosine_distance(recon_amp, orig_amp)
+            mismatch_freq[i] = calculate_cosine_distance(recon_phase, orig_phase)
+            logger.debug(f"Sample {i+1} in batch {idx+1}: delta_t: {delta_t}, f_lower: {f_lower}, mismatch_amp: {mismatch_amp[i]:.4e}, mismatch_freq: {mismatch_freq[i]:.4e}")
+
             mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
             mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
-        logger.debug(f"Batch {idx+1}: Average amplitude mismatch: {mismatch_amp.mean():.4e}, frequency mismatch: {mismatch_freq.mean():.4e}, hplus mismatch: {mismatch_hplus.mean():.4e}, hcross mismatch: {mismatch_hcross.mean():.4e}")
+            logger.debug(f"Sample {i+1} in batch {idx+1}: mismatch_hplus: {mismatch_hplus[i]:.4e}, mismatch_hcross: {mismatch_hcross[i]:.4e}")
+
+        logger.info(f"Batch {idx+1}: Average amplitude mismatch: {mismatch_amp.mean():.4e}, frequency mismatch: {mismatch_freq.mean():.4e}, hplus mismatch: {mismatch_hplus.mean():.4e}, hcross mismatch: {mismatch_hcross.mean():.4e}")
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
             'm1': labels[:, 0].cpu().numpy(),
@@ -672,7 +678,7 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             'mismatch_hplus': mismatch_hplus.flatten(),
             'mismatch_hcross': mismatch_hcross.flatten(),
         })], ignore_index=True)
-        logger.info(f"Processed test batch {idx+1}/{len(testloader)}, with data indices {keys.cpu().numpy()}, and average amplitude mismatch {mismatch_amp.mean().item():.4e}, frequency mismatch {mismatch_freq.mean().item():.4e}, hplus mismatch {mismatch_hplus.mean().item():.4e}, and hcross mismatch {mismatch_hcross.mean().item():.4e}")
+        logger.info(f"Processed test batch {idx+1}/{len(test_loader)}, with data indices {keys.cpu().numpy()}, and average amplitude mismatch {mismatch_amp.mean().item():.4e}, frequency mismatch {mismatch_freq.mean().item():.4e}, hplus mismatch {mismatch_hplus.mean().item():.4e}, and hcross mismatch {mismatch_hcross.mean().item():.4e}")
 
     logger.info(f"Completed testing on {len(test_loader.dataset)} samples.")
     return dfmm

@@ -141,8 +141,8 @@ def init_verbosity_args(parser: argparse.ArgumentParser = None) -> argparse.Argu
     The allowed flags are:
     --trace   : DEBUG everywhere (Current file + Imports + Transitive deps)
     --debug   : DEBUG current file + Direct Imports. INFO for Transitive.
-    --describe: DEBUG current file + INFO on imports. WARNING for others.
     --verbose : INFO current file + Direct Imports. WARNING for others.
+    --describe: DEBUG current file + INFO on imports. WARNING for others.
     Default   : INFO current file. WARNING for imports.
     --quiet   : WARNING/ERROR only everywhere.
     """

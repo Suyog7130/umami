@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 import pycbc
 
+PRESET_ARRAY_SIZE = 8191
 
 SAMPLE_RATE = 8192.0  # n_samples = duration(s) / sample_rate
 DURATION = 1.00
@@ -190,15 +191,38 @@ def polarizations_from_ampfreq(amp, freq, theta0=0.0):
     return hplus, hcross
 
 
-def calculate_cosine_similarity(target, reconstructed):
-    target_flat = target.view(target.size(0), -1)
-    reconstructed_flat = reconstructed.view(reconstructed.size(0), -1)
-    dot_product = (target_flat * reconstructed_flat).sum(dim=1)
-    norm_target = target_flat.norm(p=2, dim=1)
-    norm_reconstructed = reconstructed_flat.norm(p=2, dim=1)
-    cosine_similarity = dot_product / (norm_target * norm_reconstructed)
-    return cosine_similarity
+def calculate_cosine_distance(target, reconstructed):
+    """
+    Calculate the normalized mismatch between the target and reconstructed waveforms.
+    Mismatch = 1 - ( <a|b> / sqrt(<a|a> * <b|b>) )
+    where <a|b> is the inner product (dot product).
 
+    NOTE: We assume last axis is the waveform axis!
+
+    Parameters
+    -----------
+    target : np.ndarray or torch.Tensor
+        The correct/original waveform, shape (..., N)
+    reconstructed : np.ndarray or torch.Tensor
+        The reconstructed waveform, shape (..., N)
+
+    Returns
+    --------
+    cos_dist : float or np.ndarray
+        The cosine distance value(s), 0 means perfect match, 1 means orthogonal.
+    """
+    if isinstance(target, torch.Tensor):
+        target = target.detach().cpu().numpy()
+    if isinstance(reconstructed, torch.Tensor):
+        reconstructed = reconstructed.detach().cpu().numpy()
+    assert target.shape[-1] == PRESET_ARRAY_SIZE, "Target waveform length must match the preset array size."
+    assert reconstructed.shape[-1] == PRESET_ARRAY_SIZE, "Reconstructed waveform length must match the preset array size."
+    inner_product = np.sum(target * reconstructed, axis=-1)
+    target_norm = np.sqrt(np.sum(target * target, axis=-1))
+    reconstructed_norm = np.sqrt(np.sum(reconstructed * reconstructed, axis=-1))
+    cos_sim = inner_product / (target_norm * reconstructed_norm)
+    cos_dist = 1 - cos_sim
+    return cos_dist
 
 def polarizations_from_amp_phase(amp, phase):
     """
