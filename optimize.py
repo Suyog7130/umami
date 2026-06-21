@@ -357,6 +357,16 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
     val_hdf_path = f'../data/{label}-val.hdf'
     test_hdf_path = f'../data/{label}-test.hdf'
     logger.info(f"Setting up dataloaders with train HDF: {train_hdf_path}, val HDF: {val_hdf_path}, test HDF: {test_hdf_path}")
+    if return_test_loader:
+        test_set = WaveformDataset(hdf_fname=test_hdf_path, target_type=target_type,
+                                input_normalized=input_normalized, target_normalized=target_normalized,
+                                params_mean=params_mean, params_std=params_std,
+                                train_device=DEVICE, precision=PRECISION)
+        test_loader = WaveformDataLoader(test_set, batch_size=batch_size, shuffle=False,
+                                        num_workers=num_workers, pin_memory=True,
+                                        drop_last=False)
+        logger.info(f"Test DataLoader set up with batch size {batch_size} and {num_workers} workers.")
+        return test_loader
     train_set = WaveformDataset(hdf_fname=train_hdf_path, target_type=target_type,
                                 input_normalized=input_normalized, target_normalized=target_normalized,
                                 params_mean=params_mean, params_std=params_std,
@@ -365,11 +375,7 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
                               input_normalized=input_normalized, target_normalized=target_normalized,
                               params_mean=params_mean, params_std=params_std,
                               train_device=DEVICE, precision=PRECISION)
-    test_set = WaveformDataset(hdf_fname=test_hdf_path, target_type=target_type,
-                               input_normalized=input_normalized, target_normalized=target_normalized,
-                               params_mean=params_mean, params_std=params_std,
-                               train_device=DEVICE, precision=PRECISION)
-    logger.info(f"Initialized WaveformDataset for train, val, and test sets.")
+    logger.info(f"Initialized WaveformDataset for train and val sets.")
     # NOTE: `drop_last=True` in train_loader, ensures that all batches have equal size, and thus makes `torch.compile` make the training faster, once the model has been precompiled. For validation and test loaders, we can keep `drop_last=False`, since we want to evaluate on all samples.
     train_loader = WaveformDataLoader(train_set, batch_size=batch_size, shuffle=True,
                                        num_workers=num_workers, pin_memory=True,
@@ -377,12 +383,7 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
     val_loader = WaveformDataLoader(val_set, batch_size=batch_size, shuffle=False,
                                       num_workers=num_workers, pin_memory=True,
                                       drop_last=False)
-    test_loader = WaveformDataLoader(test_set, batch_size=batch_size, shuffle=False,
-                                       num_workers=num_workers, pin_memory=True,
-                                       drop_last=False)
     logger.info(f"DataLoaders set up with batch size {batch_size} and {num_workers} workers.")
-    if return_test_loader:
-        return test_loader
     return train_loader, val_loader
 
 
