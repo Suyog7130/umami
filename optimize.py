@@ -37,11 +37,13 @@ from cvae import CVAE
 
 
 from utils.gwutils import (
-    calculate_cosine_distance,
+    calculate_cosine_similarity,
     polarizations_from_amp_phase,
+    calc_polarization_mismatch,
     calc_chirp_mass,
     calc_chieff,
 )
+from utils.io import ensure_dir
 
 
 logger = logging.getLogger(__name__)
@@ -913,6 +915,10 @@ def run_training(configpath=None, model_path=None, fname=None,
     """
     Runs training with specified hyperparameters for a single model configuration!
     """
+    savedir = '../trained-models/{NOW}/'
+    ensure_dir(savedir)
+    if fname is not None:
+        savedir += fname+'-'  # add fname to every file name
     model = load_flex_model(configpath=configpath, model_path=model_path)
     logger.debug(model)
     # train_loader, val_loader = set_dataloaders(batch_size=batch_size)
@@ -933,11 +939,11 @@ def run_training(configpath=None, model_path=None, fname=None,
              datafrac=datafrac, 
              train_loader=train_loader, val_loader=val_loader,
              savemodel=True, savelosses=True,
-             savedir='../trained-models/'+fname if fname is not None else '../trained-models/')
+             savedir=savedir)
     logger.info("Training completed and model saved.")
-    model._save_model_config(filepath=f'../trained-models/modelconfig-flexcvae-{NOW}.json',
+    model.save_model_config(filepath=savedir+f'modelconfig-flexcvae-{NOW}.json',
                              epochs=epochs, datafrac=datafrac)
-    logger.info(f"Model configuration saved to ../trained-models/modelconfig-flexcvae-{NOW}.json")
+    logger.info(f"Model configuration saved to {savedir}modelconfig-flexcvae-{NOW}.json")
     train_loader.dataset.close_hdf()  # Close the HDF files after training
     val_loader.dataset.close_hdf()
     print("Training completed and model saved.")
@@ -949,7 +955,10 @@ def run_testing(configpath=None, model_path=None, fname=None,
     """
     Runs testing with specified hyperparameters for a trained model!
     """
-    logger.info("Starting testing with specified hyperparameters")
+    savedir = os.path.join(results_dir, f"test-results-{NOW}/")
+    ensure_dir(savedir)
+
+    logger.info(f"Running testing with model config: {configpath}, model weights: {model_path}, and results will be saved to: {savedir}")
     model = load_flex_model(configpath=configpath, model_path=model_path)
     logger.debug(model)
     if batch_size is not None:
@@ -964,7 +973,13 @@ def run_testing(configpath=None, model_path=None, fname=None,
                                            input_normalized=True,
                                            target_normalized=False,
                                            return_test_loader=True)
+    
     dfmm = testing(model, test_loader=test_loader)
+
+    # save test results and configuration
+    dfmm.to_csv(os.path.join(savedir, f'mismatch-results-{NOW}.csv'), index=False)
+    model.save_model_config(filepath=os.path.join(savedir, f'test-config-{NOW}.json'))
+    logger.info(f"Model configuration saved to {results_dir}modelconfig-flexcvae-{NOW}.json")
     logger.info("Testing completed and results saved.")
 
 

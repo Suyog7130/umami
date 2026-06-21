@@ -1077,6 +1077,13 @@ class FlexTwoC2E1D(nn.Module):
             json.dump(configfile, f, indent=4)
         logging.info(f"Model configuration saved to {filepath}")
 
+
+    def save_model_config(self, filepath=None, **kwargs):
+        """
+        Public method to save the model configuration to a JSON file.
+        """
+        self._save_model_config(filepath, **kwargs)
+
     def mismatch_loss_func(self, x, x_recon, zvars, strains, keys, attr):
         """
         Computes the mismatch loss between the reconstructed output and the keys.
