@@ -36,8 +36,12 @@ from flexcvae import FlexTwoC2E1D, FlexCAE, FlexCAEPhase
 from cvae import CVAE
 
 
-from utils.gwutils import calculate_cosine_distance, \
-    polarizations_from_amp_phase, polarizations_from_amp_phase
+from utils.gwutils import (
+    calculate_cosine_distance,
+    polarizations_from_amp_phase,
+    calc_chirp_mass,
+    calc_chieff,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -621,11 +625,29 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         with torch.no_grad():
             x_recon, zvars = model.generate(input, labels, keys, convert_to_hphc=False)
 
+        mismatch_amp = np.zeros(input.shape[0])
+        mismatch_freq = np.zeros(input.shape[0])
+        mismatch_hplus = np.zeros(input.shape[0])
+        mismatch_hcross = np.zeros(input.shape[0])
+
+        m1s, m2s, chi1zs, chi2zs = labels[:, 0], labels[:, 1], labels[:, 2], labels[:, 3]
+        chirpmasses = calc_chirp_mass(m1s, m2s)
+        totalmasses = m1s + m2s
+        massratios = m1s / m2s
+        chieffs = calc_chieff(m1s, m2s, chi1zs, chi2zs)
+
         for i in range(input.shape[0]):
             recon_amp, recon_phase = x_recon[i, 0, :], x_recon[i, 1, :]
             orig_amp, orig_phase = target[i, 0, :], target[i, 1, :]
-            
+            orig_hp, orig_hc = strains[i, 0, :], strains[i, 1, :]
+            recon_hp, recon_hc = polarizations_from_amp_phase(recon_amp, recon_phase)
 
+            delta_t = attr['delta_t'][i]
+            f_lower = attr['f_lower'][i]
+            mismatch_amp[i] = calculate_cosine_similarity(recon_amp, orig_amp)
+            mismatch_freq[i] = calculate_cosine_similarity(recon_phase, orig_phase)
+            mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
+            mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
             'm1': labels[:, 0].cpu().numpy(),

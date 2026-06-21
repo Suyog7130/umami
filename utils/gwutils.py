@@ -38,6 +38,13 @@ def calculate_cnn_output_size(n_layers, input_length, kernel_size,
     return seq_len
 
 
+def calc_chirp_mass(m1, m2):
+    return (m1 * m2)**(3/5) / (m1 + m2)**(1/5)
+
+def calc_chieff(m1, m2, chi1z, chi2z):
+    return (m1 * chi1z + m2 * chi2z) / (m1 + m2)
+
+
 # TODO: f_lower is different for diff waveforms, and that is one
 # of the main features of my code. So, I need to make sure that the f_lower 
 # used in the mismatch calculation is consistent with the one used 
