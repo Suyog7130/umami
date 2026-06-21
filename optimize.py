@@ -17,7 +17,6 @@ import json
 import argparse
 import pandas as pd
 import datetime
-import logging
 import joblib
 
 from tqdm import tqdm
@@ -45,8 +44,12 @@ from utils.gwutils import (
 )
 from utils.io import ensure_dir
 
-
+import logging
+from utils.generic import init_logging, init_verbosity_args
 logger = logging.getLogger(__name__)
+
+
+PROJECT_DIR = 'v0p1'
 
 
 TODAY = datetime.date.today().strftime("%Y%m%d")
@@ -1085,49 +1088,22 @@ if __name__ == "__main__":
     parser.add_argument('--label', type=str, default=None,
                         help="Additional label to add to saved model and log filenames for better identification")
     
-    parser.add_argument('--optuna', action='store_true', 
+    methodargs = parser.add_mutually_exclusive_group(required=True)
+
+    methodargs.add_argument('--optuna', action='store_true', 
                         help="Run Optuna optimization")
-    parser.add_argument('--train', action='store_true', 
+    methodargs.add_argument('--train', action='store_true', 
                         help="Run training with specified hyperparameters")
-    parser.add_argument('--save-data-from-dataset', action='store_true',
+    methodargs.add_argument('--test', action='store_true',
+                        help="Run testing with specified hyperparameters")
+    methodargs.add_argument('--save-data-from-dataset', action='store_true',
                         help="Save input and target data from main datasets for easier loading during training.")
-    
-    parser.add_argument('--dummyrun', action='store_true',
+    methodargs.add_argument('--dummyrun', action='store_true',
                         help="Run a dummy training with 10 batches for training loop testing and debugging! 'dummy' also works for this flag, so you can use --dummy or --dummyrun (dunno why?)")
-
-    parser.add_argument('-v', '--verbose', action='store_true',
-                        help="Enable verbose logger")
-    parser.add_argument('-d', '--debug', action='store_true',
-                        help="Enable debug logger")
+    
+    parser = init_verbosity_args(parser)
     args = parser.parse_args()
-
-    if args.debug:
-        log_level = logging.DEBUG
-    elif args.verbose:
-        log_level = logging.INFO
-    else:
-        log_level = logging.WARNING
-
-    logfname = f"optimize-{args.model_type}-{NOW}.log"
-    log_dir = f'../logs/{TODAY}/'
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, logfname)
-    logging.basicConfig(
-        format='%(asctime)s: %(levelname)s: %(message)s',
-        level=log_level,
-        datefmt='%y-%m-%d %H:%M:%S',
-        force=True,
-        handlers=[
-            logging.StreamHandler(),  # Log to console
-            logging.FileHandler(log_file)  # Log to file
-        ]
-    )
-    logger = logging.getLogger()
-
-    # Set FileHandler to always be at least INFO level
-    for handler in logger.root.handlers:
-        if isinstance(handler, logging.FileHandler):
-            handler.setLevel(max(handler.level, logging.INFO))
+    init_logging(args, log_dir=f'../{PROJECT_DIR}/logs/{TODAY}')
 
     print(f'Working on device: {DEVICE}, with precision: {PRECISION}')
 
@@ -1145,6 +1121,11 @@ if __name__ == "__main__":
         logger.info("Saving input and target data from main datasets for easier loading during training!")
         save_data_from_dataset()
         
+    elif args.test:
+        logger.info("Running testing with specified hyperparameters!")
+        run_testing(configpath=args.model_config,
+                    model_path=args.model_path,
+                    fname=args.model_type+'-'+args.label if args.label is not None else args.model_type+'-')
     elif args.dummyrun:
         logger.info("Running dummy training with 10 batches for training loop testing and debugging!")
         run_training(configpath=args.model_config,

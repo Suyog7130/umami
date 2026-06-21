@@ -178,7 +178,7 @@ class BaseCoder(nn.Module):
         2) a single sizes list, from which we will infer the in/out features for each layer.
         The number of layers is determined by the length of the sizes list or the in/out features lists, and should be consistent. The use_last_activation flag allows for optionally applying an activation function to the last layer, which can be useful for certain configurations (e.g., if the last layer is not meant to be linear).
         """
-        # logging.debug(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
+        logging.debug(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
         layers: List[nn.Module] = []
         if sizes is not None and len(sizes) > 0:
             in_f, out_f = _pair_from_sizes(sizes)
