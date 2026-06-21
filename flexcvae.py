@@ -5,13 +5,14 @@ Works for both CVAE and CAE configurations, with 2 encoders or 1 encoder.
 
 import os
 import json
-import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 import numpy as np
-from datetime import datetime
+
+import logging
+logger = logging.getLogger(__name__)
 
 from utils.gwutils import polarizations_from_ampfreq, calc_polarization_mismatch
 
@@ -1611,7 +1612,7 @@ class FlexCAEPhase(FlexCAE):
             raise ValueError("Labels must be provided for generation, since the model is conditional on the labels!")
 
         self.eval()  # Set model to evaluation mode
-        logging.info("Model set to evaluation mode for generation.")
+        logger.info("Model set to evaluation mode for generation.")
 
         with torch.no_grad():
             # Encode labels to get the mean of the latent space (no reparameterization for CAE)
@@ -1645,7 +1646,7 @@ class FlexCAEPhase(FlexCAE):
                 z = torch.cat([zy_mu, zykey_mu, zy_mu, zykey_mu], dim=1)
             else:
                 z = torch.cat([zy_mu, zykey_mu], dim=1)  # default to concat if unknown type
-                logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of zy_mu and zykey_mu.")
+                logger.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of zy_mu and zykey_mu.")
 
             generated_output = self.decode(z, labels, y_embed)
         if convert_to_hphc:

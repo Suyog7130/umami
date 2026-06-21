@@ -606,8 +606,38 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     return avg_val_loss
 
 
+def plot_reconstructions(orig_amp, recon_amp, orig_phase, recon_phase, orig_hp, recon_hp, orig_hc, recon_hc,
+                         savename=None):
+    """
+    Plot the original and reconstructed waveforms for debugging.
+    """
+    import matplotlib.pyplot as plt
+    fig, axs = plt.subplots(2, 2, figsize=(15, 8))
+    axs[0, 0].plot(orig_amp, label='Original Amplitude')
+    axs[0, 0].plot(recon_amp, label='Reconstructed Amplitude')
+    axs[0, 0].set_title('Amplitude')
+    axs[0, 0].legend()
+    axs[0, 1].plot(orig_phase, label='Original Phase')
+    axs[0, 1].plot(recon_phase, label='Reconstructed Phase')
+    axs[0, 1].set_title('Phase')
+    axs[0, 1].legend()
+    axs[1, 0].plot(orig_hp, label='Original h+')
+    axs[1, 0].plot(recon_hp, label='Reconstructed h+')
+    axs[1, 0].set_title('h+ Polarization')
+    axs[1, 0].legend()
+    axs[1, 1].plot(orig_hc, label='Original hx')
+    axs[1, 1].plot(recon_hc, label='Reconstructed hx')
+    axs[1, 1].set_title('hx Polarization')
+    axs[1, 1].legend()
+    plt.tight_layout()
+    if savename:
+        plt.savefig(savename, dpi=300, bbox_inches='tight')
+    # plt.show()
+    plt.close('all')
+
+
 def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
-            test_loader=None):
+            test_loader=None, savedir=None):
     """
     Test the model on the test dataset and save the results.
     """
@@ -620,7 +650,7 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     dfmm = pd.DataFrame(columns=[
         'm1', 'm2', 'chi1z', 'chi2z',
         'chirp_mass', 'total_mass', 'mass_ratio',
-        'mismatch_amp', 'mismatch_freq', 
+        'mismatch_amp', 'mismatch_phase', 
         'mismatch_hplus', 'mismatch_hcross',],
         dtype=float)
     
@@ -633,7 +663,7 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             x_recon = model.generate(labels, convert_to_hphc=False)
 
         mismatch_amp = np.zeros(input.shape[0])
-        mismatch_freq = np.zeros(input.shape[0])
+        mismatch_phase = np.zeros(input.shape[0])
         mismatch_hplus = np.zeros(input.shape[0])
         mismatch_hcross = np.zeros(input.shape[0])
         logger.debug(f"Test batch {idx+1}: input shape: {input.shape}, target shape: {target.shape}, labels shape: {labels.shape}, keys shape: {keys.shape}, strains shape: {strains.shape}, x_recon shape: {x_recon.shape}")
@@ -649,20 +679,22 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             orig_amp, orig_phase = target[i, 0, :], target[i, 1, :]
             orig_hp, orig_hc = strains[i, 0, :], strains[i, 1, :]
             recon_hp, recon_hc = polarizations_from_amp_phase(recon_amp, recon_phase)
-            logger.debug(f"Sample {i+1} in batch {idx+1}: recon_amp shape: {recon_amp.shape}, recon_phase shape: {recon_phase.shape}, orig_amp shape: {orig_amp.shape}, orig_phase shape: {orig_phase.shape}, orig_hp shape: {orig_hp.shape}, orig_hc shape: {orig_hc.shape}, recon_hp shape: {recon_hp.shape}, recon_hc shape: {recon_hc.shape}")
+
+            # -- plot one example of the original and reconstructed waveforms, for debugging!
+            if idx == 0 and i == 0:
+                plot_reconstructions(orig_amp.cpu().numpy(), recon_amp.cpu().numpy(), 
+                                     orig_phase.cpu().numpy(), recon_phase.cpu().numpy(), 
+                                     orig_hp.cpu().numpy(), recon_hp.cpu().numpy(), 
+                                     orig_hc.cpu().numpy(), recon_hc.cpu().numpy(),
+                                     savename=os.path.join(savedir, f"test-overplots-{NOW}.png"))
 
             delta_t = attr['delta_t'][i]
             f_lower = attr['f_lower'][i]
 
             mismatch_amp[i] = calculate_cosine_distance(recon_amp, orig_amp)
-            mismatch_freq[i] = calculate_cosine_distance(recon_phase, orig_phase)
-            logger.debug(f"Sample {i+1} in batch {idx+1}: delta_t: {delta_t}, f_lower: {f_lower}, mismatch_amp: {mismatch_amp[i]:.4e}, mismatch_freq: {mismatch_freq[i]:.4e}")
-
+            mismatch_phase[i] = calculate_cosine_distance(recon_phase, orig_phase)
             mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
-            mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
-            logger.debug(f"Sample {i+1} in batch {idx+1}: mismatch_hplus: {mismatch_hplus[i]:.4e}, mismatch_hcross: {mismatch_hcross[i]:.4e}")
-
-        logger.info(f"Batch {idx+1}: Average amplitude mismatch: {mismatch_amp.mean():.4e}, frequency mismatch: {mismatch_freq.mean():.4e}, hplus mismatch: {mismatch_hplus.mean():.4e}, hcross mismatch: {mismatch_hcross.mean():.4e}")
+            mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower) 
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
             'm1': labels[:, 0].cpu().numpy(),
@@ -674,11 +706,11 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             'mass_ratio': massratios.flatten(),
             'chieff': chieffs.flatten(),
             'mismatch_amp': mismatch_amp.flatten(),
-            'mismatch_freq': mismatch_freq.flatten(),
+            'mismatch_phase': mismatch_phase.flatten(),
             'mismatch_hplus': mismatch_hplus.flatten(),
             'mismatch_hcross': mismatch_hcross.flatten(),
         })], ignore_index=True)
-        logger.info(f"Processed test batch {idx+1}/{len(test_loader)}, with data indices {keys.cpu().numpy()}, and average amplitude mismatch {mismatch_amp.mean().item():.4e}, frequency mismatch {mismatch_freq.mean().item():.4e}, hplus mismatch {mismatch_hplus.mean().item():.4e}, and hcross mismatch {mismatch_hcross.mean().item():.4e}")
+        logger.info(f"Processed test batch {idx+1}/{len(test_loader)}, with average amplitude mismatch {mismatch_amp.mean().item():.4e}, phase mismatch {mismatch_phase.mean().item():.4e}, hplus mismatch {mismatch_hplus.mean().item():.4e}, and hcross mismatch {mismatch_hcross.mean().item():.4e}")
 
     logger.info(f"Completed testing on {len(test_loader.dataset)} samples.")
     return dfmm
@@ -968,7 +1000,7 @@ def run_testing(configpath=None, model_path=None, fname=None,
     """
     Runs testing with specified hyperparameters for a trained model!
     """
-    savedir = os.path.join(results_dir, f"test-results-{NOW}/")
+    savedir = os.path.join(results_dir, f"{TODAY}/", f"test-results-{NOW}/")
     ensure_dir(savedir)
 
     logger.info(f"Running testing with model config: {configpath}, model weights: {model_path}, and results will be saved to: {savedir}")
@@ -988,10 +1020,10 @@ def run_testing(configpath=None, model_path=None, fname=None,
                                            return_test_loader=True)
     logger.info(f"Test dataloader set up with {len(test_loader.dataset)} samples and batch size {batch_size}.")
 
-    dfmm = testing(model, test_loader=test_loader)
+    dfmm = testing(model, test_loader=test_loader, savedir=savedir)
 
     # save test results and configuration
-    dfmm.to_csv(os.path.join(savedir, f'mismatch-results-{NOW}.csv'), index=False)
+    dfmm.to_hdf(os.path.join(savedir, f'mismatch-results-{NOW}.h5'), key='dfmm', mode='w')
     model.save_model_config(filepath=os.path.join(savedir, f'test-config-{NOW}.json'))
     logger.info(f"Model configuration saved to {results_dir}modelconfig-flexcvae-{NOW}.json")
     logger.info("Testing completed and results saved.")
