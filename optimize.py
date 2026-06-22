@@ -1022,6 +1022,12 @@ def run_testing(configpath=None, model_path=None, fname=None,
 
     dfmm = testing(model, test_loader=test_loader, savedir=savedir)
 
+    # -- plot mismatch histograms for amplitude, phase, hplus, and hcross
+    from lossplots import plot_mm_hist
+    mismatch_types = ['mismatch_amp', 'mismatch_phase', 'mismatch_hplus', 'mismatch_hcross']
+    titles = ['Amplitude', 'Phase', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
+    plot_mm_hist(dfmm, types=mismatch_types, titles=titles, savedir=savedir)
+
     # save test results and configuration
     dfmm.to_hdf(os.path.join(savedir, f'mismatch-results-{NOW}.h5'), key='dfmm', mode='w')
     model.save_model_config(filepath=os.path.join(savedir, f'test-config-{NOW}.json'))

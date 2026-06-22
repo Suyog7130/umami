@@ -436,7 +436,7 @@ def apply_chi_cuts(dfmm, cut=0.8):
 
 
 def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13, 
-                 fname='', savedir=DIR, now=TIME):
+                 fname='', savedir=DIR, now=TIME, types=None, titles=None):
     """
     Plot histograms of mismatch values for different types of mismatches. 
     The function takes a DataFrame containing mismatch data and creates histograms 
@@ -445,8 +445,10 @@ def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13,
     the 'log' parameter. Each subplot includes the mode, mean, and median of the 
     mismatch values for that type.
     """
-    types = ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']
-    titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
+    if types is None:
+        types = ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']
+    if titles is None:
+        titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
     fig, ax = plt.subplots(2, 2, figsize=(10, 10))
     ax = ax.flatten()
     for i, t in enumerate(types):
