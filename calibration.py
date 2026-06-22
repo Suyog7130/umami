@@ -493,12 +493,15 @@ class CalibratorDataset(torch.utils.data.Dataset):
         self.wftype = wftype
         assert self.labels_mean is None or self.labels_mean.shape == (4,), f"Expected labels_mean to be of shape (4,), but got {self.labels_mean.shape}"
         assert self.labels_std is None or self.labels_std.shape == (4,), f"Expected labels_std to be of shape (4,), but got {self.labels_std.shape}"
-        self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
+        # self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
         self._set_input_target_names()
+        # -- open HDF file once to read number of groups
+        with h5py.File(self.filepath, 'r') as f:
+            self.num_samples = len(f.keys())
 
     def __len__(self):
-        return len(self.data_file.keys())  # number of groups in the HDF file, which corresponds to the number of data samples
-    
+        return self.num_samples  # number of groups in the HDF file, which corresponds to the number of data samples
+
     def _set_input_target_names(self):
         if self.wftype=='amp_freq':
             self.inputnames = ['ml_amp', 'ml_freq']
@@ -530,10 +533,13 @@ class CalibratorDataset(torch.utils.data.Dataset):
             self.data_file.close()
             logger.info(f"Closed HDF file {self.filepath} after reading calibrator input and target residuals.")
 
-    def __del__(self):
-        self.close_hdf()
+    # def __del__(self):
+    #     self.close_hdf()
 
     def read_input_data(self, index):
+        if not hasattr(self, 'data_file') or self.data_file is None:
+            self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
+
         # -- read the calibrator input and target residuals from the HDF file for the given indices
         group_name = f'sample{int(index)}'
         ml_out_one = torch.tensor(self.data_file[group_name][self.inputnames[0]][:], dtype=getattr(torch, PRECISION), device=DEVICE)

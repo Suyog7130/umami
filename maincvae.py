@@ -81,13 +81,13 @@ markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
 
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
-    PRECISION = 'float64'  # Use double precision for CUDA if available
+    PRECISION = 'float32'  # Use double precision for CUDA if available
 elif torch.backends.mps.is_available():
     DEVICE = torch.device("mps")
     PRECISION = 'float32'  # Use float32 for MPS since it does not support float64 well
 else:
     DEVICE = torch.device("cpu")
-    PRECISION = 'float64'  # Use double precision for CPU
+    PRECISION = 'float32'
 print(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
 BASE_MODEL_CONFIG = {
