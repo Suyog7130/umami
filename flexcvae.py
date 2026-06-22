@@ -686,13 +686,15 @@ class FlexTwoC2E1D(nn.Module):
             logging.info("Input parameter normalization is ENABLED. \
                 The model will normalize the input parameters.")
             if labels_mean is None or labels_std is None:
-                raise ValueError("labels_mean and labels_std must be provided when 'normalize_labels' is True.")
-            if not isinstance(labels_mean, torch.Tensor):
-                labels_mean = torch.tensor(labels_mean, dtype=torch.float64)
-            if not isinstance(labels_std, torch.Tensor):
-                labels_std = torch.tensor(labels_std, dtype=torch.float64)
-            self.register_buffer('labels_mean', labels_mean)
-            self.register_buffer('labels_std', labels_std)
+                logger.warning("normalize_labels is True but labels_mean or labels_std is not provided. \
+                    This means that labels_mean and labels_std were not provided in MODEL_CONFIG during model training, or the option 'normalize_labels' was not set to True during model training. We will thus not use labels normalization for waveform generation. It is assumed that the calibration model will use labels normalization regardless of this!")
+            else:
+                if not isinstance(labels_mean, torch.Tensor):
+                    labels_mean = torch.tensor(labels_mean, dtype=torch.float64)
+                if not isinstance(labels_std, torch.Tensor):
+                    labels_std = torch.tensor(labels_std, dtype=torch.float64)
+                self.register_buffer('labels_mean', labels_mean)
+                self.register_buffer('labels_std', labels_std)
         elif labels_mean is not None or labels_std is not None:
             self.register_buffer('labels_mean', labels_mean)
             self.register_buffer('labels_std', labels_std)
@@ -823,6 +825,8 @@ class FlexTwoC2E1D(nn.Module):
                 logging.warning("Labels mean or std is None, skipping normalization.")
             else:
                 labels = self.normalize_labels(labels)
+        else:
+            logging.warning("No labels_mean or labels_std found, skipping normalization.")
         return self.forward(input, labels, keys)
 
     def encode_x(self, x, labels):

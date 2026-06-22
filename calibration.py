@@ -31,6 +31,7 @@ from utils.generic import init_logging, init_verbosity_args
 from utils.gwutils import calc_time_array
 from utils.plotting import plot_twopanel
 
+import logging
 global logger
 
 
@@ -60,12 +61,12 @@ else:
 
 
 # -- get mean and std of labels for normalization
-params_fname = '../data/params-' + APPROXIMANT + '-train-100000-fcutoff-uniform-aligned-regen-4vals.csv'
+params_fname = '../data/params-SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen-4vals.csv'
 params_df = pd.read_csv(params_fname, index_col=0, sep=',')
 params_mean = params_df.mean().values
 params_std = params_df.std().values
-logger.info(f"Labels mean: {params_mean}")
-logger.info(f"Labels std: {params_std}")
+logging.info(f"Labels mean: {params_mean}")
+logging.info(f"Labels std: {params_std}")
 params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION))
 params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION))
 
@@ -243,9 +244,10 @@ def get_calibrator_input(wfmodel, originals, labels,
     plt.savefig(f'calibrator_input_example_{NOW}.png')
     plt.close()
 
-    if params_mean is None or params_std is None:
+    if labels_mean is None or labels_std is None:
         labels_mean = wfmodel.MODEL_CONFIG['labels_mean']
         labels_std = wfmodel.MODEL_CONFIG['labels_std']
+        logger.debug(f"Obtained labels_mean and labels_std from the model config: {labels_mean}, {labels_std}")
         if labels_mean is None or labels_std is None:
             logger.warning("labels_mean and labels_std are not provided and not found in the model config. So, we will use the global labels_mean and labels_std calculated from the training data CSV file.")
             labels_mean = params_mean
@@ -312,8 +314,8 @@ def save_calibrator_data(wfmodel_modelpath=f'../trained-models/model-20251004_07
                                   model_path=wfmodel_modelpath,
                                   device=DEVICE)
         wfmodel.eval()
-        wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type=wftype)
-        wftestloader = set_waveform_dataloaders(target_type=wftype, return_test_loader=True)
+        wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type=wftype, num_workers=0)
+        wftestloader = set_waveform_dataloaders(target_type=wftype, return_test_loader=True, num_workers=0)
         dataloaders = [wftrainloader, wfvalidloader, wftestloader]
         savenames = ['train', 'valid', 'test']
         for i in range(len(dataloaders)):
