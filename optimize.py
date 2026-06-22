@@ -41,8 +41,10 @@ from utils.gwutils import (
     calc_polarization_mismatch,
     calc_chirp_mass,
     calc_chieff,
+    calc_time_array
 )
 from utils.io import ensure_dir
+from utils.plotting import plot_twopanel
 
 import logging
 from utils.generic import init_logging, init_verbosity_args
@@ -606,34 +608,43 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
     return avg_val_loss
 
 
-def plot_reconstructions(orig_amp, recon_amp, orig_phase, recon_phase, orig_hp, recon_hp, orig_hc, recon_hc,
-                         savename=None):
+def plot_reconstructions(orig_amp, recon_amp, orig_phase, recon_phase, 
+                         orig_hp, recon_hp, orig_hc, recon_hc,
+                         title='', savedir='', savename=''):
     """
     Plot the original and reconstructed waveforms for debugging.
     """
-    import matplotlib.pyplot as plt
-    fig, axs = plt.subplots(2, 2, figsize=(15, 8))
-    axs[0, 0].plot(orig_amp, label='Original Amplitude')
-    axs[0, 0].plot(recon_amp, label='Reconstructed Amplitude')
-    axs[0, 0].set_title('Amplitude')
-    axs[0, 0].legend()
-    axs[0, 1].plot(orig_phase, label='Original Phase')
-    axs[0, 1].plot(recon_phase, label='Reconstructed Phase')
-    axs[0, 1].set_title('Phase')
-    axs[0, 1].legend()
-    axs[1, 0].plot(orig_hp, label='Original h+')
-    axs[1, 0].plot(recon_hp, label='Reconstructed h+')
-    axs[1, 0].set_title('h+ Polarization')
-    axs[1, 0].legend()
-    axs[1, 1].plot(orig_hc, label='Original hx')
-    axs[1, 1].plot(recon_hc, label='Reconstructed hx')
-    axs[1, 1].set_title('hx Polarization')
-    axs[1, 1].legend()
-    plt.tight_layout()
-    if savename:
-        plt.savefig(savename, dpi=300, bbox_inches='tight')
-    # plt.show()
-    plt.close('all')
+    time_arr = calc_time_array(orig_amp.shape[-1])
+
+    plot_twopanel(
+        xarr = time_arr.cpu().numpy(),
+        yarr = [
+            {'Original': orig_amp, 
+             'Reconstructed': recon_amp},
+            {'Original': orig_phase, 
+             'Reconstructed': recon_phase}
+        ],
+        with_zoom_windows=True,
+        title = title,
+        axes_labels = ['Time (s)', 'Amplitude', 'Phase (rad)'],
+        savename = savedir + savename + f'overplot-ampphase-{NOW}.png',
+    )
+    logger.info(f"Saved amplitude and phase reconstruction plot at {savedir + savename + f'overplot-ampphase-{NOW}.png'}")
+
+    plot_twopanel(
+        xarr = time_arr.cpu().numpy(),
+        yarr = [
+            {'Original': orig_hp, 
+             'Reconstructed': recon_hp},
+            {'Original': orig_hc, 
+             'Reconstructed': recon_hc}
+        ],
+        with_zoom_windows=True,
+        title = title,
+        axes_labels = ['Time (s)', '$h_{+}$', '$h_{\\times}$'],
+        savename = savedir + savename + f'overplot-hphc-{NOW}.png',
+    )
+    logger.info(f"Saved hplus and hcross reconstruction plot at {savedir + savename + f'overplot-hphc-{NOW}.png'}")
 
 
 def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
@@ -682,11 +693,15 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
             # -- plot one example of the original and reconstructed waveforms, for debugging!
             if idx == 0 and i == 0:
-                plot_reconstructions(orig_amp.cpu().numpy(), recon_amp.cpu().numpy(), 
-                                     orig_phase.cpu().numpy(), recon_phase.cpu().numpy(), 
-                                     orig_hp.cpu().numpy(), recon_hp.cpu().numpy(), 
-                                     orig_hc.cpu().numpy(), recon_hc.cpu().numpy(),
-                                     savename=os.path.join(savedir, f"test-overplots-{NOW}.png"))
+                plot_reconstructions(
+                    orig_amp.cpu().numpy(), recon_amp.cpu().numpy(), 
+                    orig_phase.cpu().numpy(), recon_phase.cpu().numpy(), 
+                    orig_hp.cpu().numpy(), recon_hp.cpu().numpy(), 
+                    orig_hc.cpu().numpy(), recon_hc.cpu().numpy(),
+                    title=f'$m_1 = {labels[i, 0].item():.2f}, m_2 = {labels[i, 1].item():.2f}, \\chi_1(z) = {labels[i, 2].item():.2f}, \\chi_2(z) = {labels[i, 3].item():.2f}$',
+                    savedir=savedir, savename='test-results-'
+                    )
+                exit(0)
 
             delta_t = attr['delta_t'][i]
             f_lower = attr['f_lower'][i]

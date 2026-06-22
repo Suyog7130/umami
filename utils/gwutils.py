@@ -1,14 +1,7 @@
 
 import numpy as np
-import pandas as pd
 
 import torch
-
-# import matplotlib
-# matplotlib.use('Agg')   # non GUI backend
-import matplotlib.pyplot as plt
-import matplotlib.ticker as tck
-from matplotlib.colors import LogNorm
 
 import logging
 logger = logging.getLogger(__name__)
@@ -21,7 +14,6 @@ SAMPLE_RATE = 8192.0  # n_samples = duration(s) / sample_rate
 DURATION = 1.00
 DELTA_T = DURATION / SAMPLE_RATE   # delta_t is just 1/sample_rate!
 
-markers = ['o', 's', '^', 'v', 'D', 'p', '*', 'X', 'h', '1', '2', '3', '4', '8']
 
 def check_for_nan_inf(tensor, name):
     if torch.isnan(tensor).any():
@@ -44,6 +36,14 @@ def calc_chirp_mass(m1, m2):
 
 def calc_chieff(m1, m2, chi1z, chi2z):
     return (m1 * chi1z + m2 * chi2z) / (m1 + m2)
+
+
+
+def calc_time_array(n, sample_rate=SAMPLE_RATE):
+    """
+    Calculate the time array for a given number of samples and sample rate.
+    """
+    return torch.linspace(0, n / sample_rate, steps=n)
 
 
 # TODO: f_lower is different for diff waveforms, and that is one

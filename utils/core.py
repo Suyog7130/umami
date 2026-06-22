@@ -7,6 +7,8 @@ import torch.nn.functional as F
 
 from generic import init_logger
 
+
+# DEPRECATED! Use `optimize.py` instead!
 class BaseTrainer:
     """
     A base trainer class for training the any generic model, which includes the training loop and validation loop, as well as logging and checkpointing.
