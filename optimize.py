@@ -695,7 +695,7 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             mismatch_phase[i] = calculate_cosine_distance(recon_phase, orig_phase)
             mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
             mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
-            
+
             logger.debug(f"Test batch {idx+1}, sample {i+1}/{input.shape[0]}: m1={m1s[i].item():.2f}, m2={m2s[i].item():.2f}, chi1z={chi1zs[i].item():.2f}, chi2z={chi2zs[i].item():.2f}, chirp_mass={chirpmasses[i].item():.2f}, total_mass={totalmasses[i].item():.2f}, mass_ratio={massratios[i].item():.2f}, chieff={chieffs[i].item():.2f}, mismatch_amp={mismatch_amp[i]:.4e}, mismatch_phase={mismatch_phase[i]:.4e}, mismatch_hplus={mismatch_hplus[i]:.4e}, mismatch_hcross={mismatch_hcross[i]:.4e}")
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
@@ -960,7 +960,8 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
 
 
 def run_training(configpath=None, model_path=None, fname=None,
-                 batch_size=None, epochs=EPOCHS, datafrac=DATAFRAC):
+                 batch_size=None, num_workers=None,
+                 epochs=EPOCHS, datafrac=DATAFRAC):
     """
     Runs training with specified hyperparameters for a single model configuration!
     """
@@ -976,7 +977,11 @@ def run_training(configpath=None, model_path=None, fname=None,
     else:
         batch_size = model.MODEL_CONFIG.get('batch_size', BATCH_SIZE)
         logger.info(f"No batch size specified. Using batch size from MODEL_CONFIG: {batch_size}")
-    num_workers = model.MODEL_CONFIG.get('num_workers', 4)
+    if num_workers is not None:
+        logger.info(f"Using specified number of workers: {num_workers}")
+    else:
+        num_workers = model.MODEL_CONFIG.get('num_workers', 4)
+        logger.info(f"No number of workers specified. Using from MODEL_CONFIG: {num_workers}")
     train_loader, val_loader = set_waveform_dataloaders(batch_size=batch_size,
                                                         num_workers=num_workers, 
                                                         target_type='amp_phase',
@@ -1000,7 +1005,8 @@ def run_training(configpath=None, model_path=None, fname=None,
 
 
 def run_testing(configpath=None, model_path=None, fname=None,
-                batch_size=None, results_dir='../v0p1/results/'):
+                batch_size=None, num_workers=None,
+                results_dir='../v0p1/results/'):
     """
     Runs testing with specified hyperparameters for a trained model!
     """
@@ -1015,7 +1021,11 @@ def run_testing(configpath=None, model_path=None, fname=None,
     else:
         batch_size = model.MODEL_CONFIG.get('batch_size', BATCH_SIZE)
         logger.info(f"No batch size specified. Using batch size from MODEL_CONFIG: {batch_size}")
-    num_workers = model.MODEL_CONFIG.get('num_workers', 4)
+    if num_workers is not None:
+        logger.info(f"Using specified number of workers: {num_workers}")
+    else:
+        num_workers = model.MODEL_CONFIG.get('num_workers', 4)
+        logger.info(f"No number of workers specified. Using from MODEL_CONFIG: {num_workers}")
     test_loader = set_waveform_dataloaders(batch_size=batch_size,
                                            num_workers=num_workers,
                                            target_type='amp_phase',
@@ -1035,7 +1045,7 @@ def run_testing(configpath=None, model_path=None, fname=None,
     # save test results and configuration
     dfmm.to_hdf(os.path.join(savedir, f'mismatch-results-{NOW}.h5'), key='dfmm', mode='w')
     model.save_model_config(filepath=os.path.join(savedir, f'test-config-{NOW}.json'))
-    logger.info(f"Model configuration saved to {results_dir}modelconfig-flexcvae-{NOW}.json")
+    logger.info(f"Test results and configuration saved to {savedir}")
     logger.info("Testing completed and results saved.")
 
 
@@ -1141,6 +1151,11 @@ if __name__ == "__main__":
     parser.add_argument('--label', type=str, default=None,
                         help="Additional label to add to saved model and log filenames for better identification")
     
+    parser.add_argument('--batch-size', type=int, default=None,
+                        help="Batch size for training (default: from MODEL_CONFIG)")
+    parser.add_argument('--num-workers', type=int, default=None,
+                        help="Number of workers for data loading (default: from MODEL_CONFIG)")
+
     methodargs = parser.add_mutually_exclusive_group(required=True)
 
     methodargs.add_argument('--optuna', action='store_true', 
@@ -1160,7 +1175,7 @@ if __name__ == "__main__":
 
     print(f'Working on device: {DEVICE}, with precision: {PRECISION}')
 
-    mp.set_start_method('spawn')
+    # mp.set_start_method('spawn')
 
     if args.optuna:
         run_optuna()
@@ -1169,6 +1184,7 @@ if __name__ == "__main__":
         run_training(configpath=args.model_config,
                      model_path=args.model_path,
                      epochs=args.epochs, datafrac=1.0, 
+                     batch_size=args.batch_size, num_workers=args.num_workers,
                      fname=args.model_type+'-'+args.label if args.label is not None else args.model_type+'-')
     elif args.save_data_from_dataset:
         logger.info("Saving input and target data from main datasets for easier loading during training!")
@@ -1178,7 +1194,8 @@ if __name__ == "__main__":
         logger.info("Running testing with specified hyperparameters!")
         run_testing(configpath=args.model_config,
                     model_path=args.model_path,
-                    fname=args.model_type+'-'+args.label if args.label is not None else args.model_type+'-')
+                    batch_size=args.batch_size,
+                    num_workers=args.num_workers,)
     elif args.dummyrun:
         logger.info("Running dummy training with 10 batches for training loop testing and debugging!")
         run_training(configpath=args.model_config,
