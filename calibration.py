@@ -155,7 +155,8 @@ def get_calibrator_input(wfmodel, originals, labels,
                          data_hdf=None, indices=None,
                          labels_mean=None, labels_std=None,
                          inputnames=None, targetnames=None,
-                         correct_length=True):
+                         correct_length=True,
+                         savedir='../data/'):
     """
     Function to obtain the input and target for the calibrator model, 
     given the originals waveforms, the parameters, and the trained waveform model.
@@ -241,7 +242,7 @@ def get_calibrator_input(wfmodel, originals, labels,
     ax[3].set_title('Target Frequency Residual')
     ax[3].legend()
     plt.tight_layout()
-    plt.savefig(f'calibrator_input_example_{NOW}.png')
+    plt.savefig(savedir + f'calibrator_input_example_{NOW}.png')
     plt.close()
 
     if labels_mean is None or labels_std is None:
@@ -249,7 +250,7 @@ def get_calibrator_input(wfmodel, originals, labels,
         labels_std = wfmodel.MODEL_CONFIG['labels_std']
         logger.debug(f"Obtained labels_mean and labels_std from the model config: {labels_mean}, {labels_std}")
         if labels_mean is None or labels_std is None:
-            logger.warning("labels_mean and labels_std are not provided and not found in the model config. So, we will use the global labels_mean and labels_std calculated from the training data CSV file.")
+            logger.debug("labels_mean and labels_std are not provided and not found in the model config. So, we will use the global labels_mean and labels_std calculated from the training data CSV file.")
             labels_mean = params_mean
             labels_std = params_std
         else:
@@ -274,7 +275,7 @@ def get_calibrator_input(wfmodel, originals, labels,
         # Save this data to a HDF file repeatedly appending to it every time we call this function, 
         # and then we can load this data directly in the calibrator training loop, instead of having to 
         # generate it on the fly every time, which is computationally expensive since it requires running the ML model inference every time.
-        with h5py.File('../data/' + data_hdf, 'a') as f:
+        with h5py.File(savedir + data_hdf, 'a') as f:
             # -- create a new group for each data waveform in the batch, with datasets for:
             # -- [ml_amp, ml_freq, target_amp_residual, target_freq_residual, param_m1, param_m2, param_s1z, param_s2z]
             for i in range(len(indices)):
@@ -294,47 +295,64 @@ def get_calibrator_input(wfmodel, originals, labels,
     return calibrator_input, (target_amp_residual, target_freq_residual)
 
 
-def save_calibrator_data(wfmodel_modelpath=f'../trained-models/model-20251004_072338-10',
-                         wfmodel_configpath='modelconfig-cvae-paper-I.json',
-                         wftype: {'amp_freq', 'amp_phase'} = 'amp_phase',
-                         timestamp=NOW):
-        """
-        Generate and save the calibrator input and target data to HDF files, without training the model. This is useful for pre-generating the data for faster training later.
-        """
-        logger.info(f"Generating and saving calibrator input and target data to HDF files, without training the model. This is useful for pre-generating the data for faster training later.")
+def save_calibrator_data(
+    wfmodel_modelpath=f'../trained-models/model-20251004_072338-10',
+    wfmodel_configpath='modelconfig-cvae-paper-I.json',
+    wftype: {'amp_freq', 'amp_phase'} = 'amp_phase',
+    timestamp=NOW
+    ):
+    """
+    Generate and save the calibrator input and target data to HDF files, without training the model. This is useful for pre-generating the data for faster training later.
+    """
+    logger.info(f"Generating and saving calibrator input and target data to HDF files, without training the model. This is useful for pre-generating the data for faster training later.")
+    savedir = '../data/'
 
-        if wftype=='amp_freq':
-            inputnames = ['ml_amp', 'ml_freq']
-            targetnames = ['target_amp_residual', 'target_freq_residual']
-        elif wftype=='amp_phase':
-            inputnames = ['ml_amp', 'ml_phase']
-            targetnames = ['target_amp_residual', 'target_phase_residual']
+    if wftype=='amp_freq':
+        inputnames = ['ml_amp', 'ml_freq']
+        targetnames = ['target_amp_residual', 'target_freq_residual']
+    elif wftype=='amp_phase':
+        inputnames = ['ml_amp', 'ml_phase']
+        targetnames = ['target_amp_residual', 'target_phase_residual']
 
-        wfmodel = load_flex_model(configpath=wfmodel_configpath, 
-                                  model_path=wfmodel_modelpath,
-                                  device=DEVICE)
-        wfmodel.eval()
-        wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type=wftype, num_workers=0)
-        wftestloader = set_waveform_dataloaders(target_type=wftype, return_test_loader=True, num_workers=0)
-        dataloaders = [wftrainloader, wfvalidloader, wftestloader]
-        savenames = ['train', 'valid', 'test']
-        for i in range(len(dataloaders)):
-            savename = f'calibrator_data_{savenames[i]}_with{timestamp}model.hdf'
-            for batch in tqdm(dataloaders[i], desc="batches"):
-                originals, target, labels, keys, strains, attr = batch
-                indices = range(len(dataloaders[i].dataset))  # use the original sample indices from the dataset for this batch
-                get_calibrator_input(
-                    wfmodel=wfmodel,
-                    originals=originals,
-                    labels=labels,
-                    data_hdf=savename,
-                    indices=indices,
-                    inputnames=inputnames,
-                    targetnames=targetnames,
-                    correct_length=False,
-                )
-            logger.info(f"Finished generating and saving calibrator input and target data for {savenames[i]} set to HDF file: {savename}")
-        logger.info(f"Finished generating and saving calibrator input and target data to HDF files for all sets (train, valid, test).")
+    wfmodel = load_flex_model(configpath=wfmodel_configpath, 
+                                model_path=wfmodel_modelpath,
+                                device=DEVICE)
+    wfmodel.eval()
+    wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type=wftype, 
+                                                            num_workers=0, return_indices=True)
+    wftestloader = set_waveform_dataloaders(target_type=wftype, return_test_loader=True, 
+                                            num_workers=0, return_indices=True)
+    dataloaders = [wftrainloader, wfvalidloader, wftestloader]
+    savenames = ['train', 'valid', 'test']
+    for i in range(len(dataloaders)):
+        savename = f'calibrator_data_{savenames[i]}_with{timestamp}model.hdf'
+        for batch in tqdm(dataloaders[i], desc="batches"):
+            originals, target, labels, keys, strains, indices, attr = batch
+            get_calibrator_input(
+                wfmodel=wfmodel,
+                originals=originals,
+                labels=labels,
+                data_hdf=savename,
+                indices=indices,
+                inputnames=inputnames,
+                targetnames=targetnames,
+                correct_length=False,
+                savedir=savedir
+            )
+        logger.info(f"Finished generating and saving calibrator input and target data for {savenames[i]} set to HDF file: {savename}")
+    # -- Save calibration data config to JSON file
+    config = {
+        'wfmodel_modelpath': wfmodel_modelpath,
+        'wfmodel_configpath': wfmodel_configpath,
+        'wftype': wftype,
+        'timestamp': timestamp,
+        'inputnames': inputnames,
+        'targetnames': targetnames,
+    }
+    config_fname = f'calibrator_data_config_{timestamp}.json'
+    with open(savedir + config_fname, 'w') as f:
+        json.dump(config, f, indent=4)
+    logger.info(f"Finished generating and saving calibrator input and target data to HDF files for all sets (train, valid, test).")
 
 
 

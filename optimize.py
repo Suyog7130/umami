@@ -179,11 +179,13 @@ class WaveformDataset(torch.utils.data.Dataset):
                  target_type: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_phase',
                  input_normalized=True, target_normalized=False,
                  params_mean=None, params_std=None,
-                 train_device=DEVICE, precision=PRECISION):
+                 train_device=DEVICE, precision=PRECISION,
+                 return_indices=False):
         super(WaveformDataset, self).__init__()
         self.hdf_fname = hdf_fname
         self.train_device = train_device
         self.precision = precision
+        self.return_indices = return_indices
 
         self.target_type = self.input_type = target_type
         self.input_normalized = input_normalized
@@ -281,6 +283,8 @@ class WaveformDataset(torch.utils.data.Dataset):
             # Append tags to their respective lists
             # NOTE: tags are already tensors!
             for i, tag in enumerate(tags):
+                if not isinstance(tag, torch.Tensor):
+                    tag = torch.tensor(tag, dtype=getattr(torch, self.precision))
                 tag_batches[i].append(tag)
 
         # Convert lists of tags to tensors
@@ -313,12 +317,12 @@ class WaveformDataset(torch.utils.data.Dataset):
         strains = torch.tensor(data['strains'][:], dtype=getattr(torch, self.precision))
         attr = dict(data.attrs)
         logger.debug(f"Available attributes in group {grp}: {list(attr.keys())}")
+        if self.return_indices:
+            return input, target, labels, keys, strains, np.array(idx), attr
         return input, target, labels, keys, strains, attr
 
     def __getitem__(self, idx):
-        input, target, labels, keys, strains, attr = self.read_data_from_hdf(idx)
-        # print("DEBUG: Tensor on device:", input.device, target.device, labels.device, keys.device, strains.device)
-        return input, target, labels, keys, strains, attr
+        return self.read_data_from_hdf(idx)
 
 class WaveformDataLoader(torch.utils.data.DataLoader):
     """
@@ -334,7 +338,8 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
                              num_workers=8,
                              return_test_loader=False,
                              target_type: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_phase',
-                             input_normalized=True, target_normalized=False):
+                             input_normalized=True, target_normalized=False,
+                             return_indices=False):
     """
     Sets up the dataloaders for training and validation datasets for preprocessed input
     and target data. We will autoconstruct the filenames from the passed arguements.
@@ -363,7 +368,7 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
         test_set = WaveformDataset(hdf_fname=test_hdf_path, target_type=target_type,
                                 input_normalized=input_normalized, target_normalized=target_normalized,
                                 params_mean=params_mean, params_std=params_std,
-                                train_device=DEVICE, precision=PRECISION)
+                                train_device=DEVICE, precision=PRECISION, return_indices=return_indices)
         test_loader = WaveformDataLoader(test_set, batch_size=batch_size, shuffle=False,
                                         num_workers=num_workers, pin_memory=True,
                                         drop_last=False)
@@ -372,11 +377,11 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
     train_set = WaveformDataset(hdf_fname=train_hdf_path, target_type=target_type,
                                 input_normalized=input_normalized, target_normalized=target_normalized,
                                 params_mean=params_mean, params_std=params_std,
-                                train_device=DEVICE, precision=PRECISION)
+                                train_device=DEVICE, precision=PRECISION, return_indices=return_indices)
     val_set = WaveformDataset(hdf_fname=val_hdf_path, target_type=target_type,
                               input_normalized=input_normalized, target_normalized=target_normalized,
                               params_mean=params_mean, params_std=params_std,
-                              train_device=DEVICE, precision=PRECISION)
+                              train_device=DEVICE, precision=PRECISION, return_indices=return_indices)
     logger.info(f"Initialized WaveformDataset for train and val sets.")
     # NOTE: `drop_last=True` in train_loader, ensures that all batches have equal size, and thus makes `torch.compile` make the training faster, once the model has been precompiled. For validation and test loaders, we can keep `drop_last=False`, since we want to evaluate on all samples.
     train_loader = WaveformDataLoader(train_set, batch_size=batch_size, shuffle=True,
