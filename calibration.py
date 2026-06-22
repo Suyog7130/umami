@@ -290,27 +290,30 @@ def save_calibrator_data(wfmodel_modelpath=f'../trained-models/model-20251004_07
             inputnames = ['ml_amp', 'ml_phase']
             targetnames = ['target_amp_residual', 'target_phase_residual']
 
-        wfmodel = load_flex_model(wfmodel_modelpath, device=DEVICE)
+        wfmodel = load_flex_model(configpath=wfmodel_configpath, 
+                                  model_path=wfmodel_modelpath, device=DEVICE)
         wfmodel.eval()
-        wftrainloader, wfvalidloader = set_waveform_dataloaders(target=wftype)
-        wftestloader = set_waveform_dataloaders(target=wftype, return_test_loader=True)
+        wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type=wftype)
+        wftestloader = set_waveform_dataloaders(target_type=wftype, return_test_loader=True)
         dataloaders = [wftrainloader, wfvalidloader, wftestloader]
         savenames = ['train', 'valid', 'test']
         for i in range(len(dataloaders)):
+            savename = f'calibrator_data_{savenames[i]}_with{timestamp}model.hdf'
             for batch in tqdm(dataloaders[i], desc="Generating calibrator data for batches"):
                 originals, target, labels, keys, strains, attr = batch
+                indices = range(len(dataloaders[i].dataset))  # use the original sample indices from the dataset for this batch
                 get_calibrator_input(
                     wfmodel=wfmodel,
                     originals=originals,
                     labels=labels,
-                    data_hdf=f'calibrator_data_{savenames[i]}_{timestamp}.hdf',
+                    data_hdf=savename,
                     indices=indices,
                     params_mean=None,
                     params_std=None,
                     inputnames=inputnames,
                     targetnames=targetnames
                 )
-            logger.info(f"Finished generating and saving calibrator input and target data for {savenames[i]} set to HDF file: calibrator_data_{savenames[i]}_{timestamp}.hdf")
+            logger.info(f"Finished generating and saving calibrator input and target data for {savenames[i]} set to HDF file: {savename}")
         logger.info(f"Finished generating and saving calibrator input and target data to HDF files for all sets (train, valid, test).")
 
 
@@ -1163,6 +1166,12 @@ if __name__ == "__main__":
     trainparser.add_argument('--dummy-run', action='store_true', 
                         help='If set, runs a quick dummy training loop for testing purposes.')
     
+    savedataparser = parser.add_argument_group('Calibrator Data Generation')
+    savedataparser.add_argument('--wfmodel-modelpath', type=str, default=None, 
+                        help='Path to the trained waveform model checkpoint for generating calibrator input data.')
+    savedataparser.add_argument('--wfmodel-configpath', type=str, default=None, 
+                        help='Path to the waveform model config file for generating calibrator input data.')
+    
     methodargs = parser.add_mutually_exclusive_group(required=True)
     methodargs.add_argument('--save-calibrator-data', action='store_true',
                         help='Generate and save the calibrator input and target data to HDF files, without training the model. This is useful for pre-generating the data for faster training later.')
@@ -1179,6 +1188,13 @@ if __name__ == "__main__":
 
     logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
+    if args.save_calibrator_data:
+        logger.info("Generating and saving calibrator input and target data to HDF files...")
+        save_calibrator_data(
+            wfmodel_modelpath=args.wfmodel_modelpath,
+            wfmodel_configpath=args.wfmodel_configpath,
+            timestamp=args.timestamp,
+        )
     if args.train:
         logger.info("Training the calibrator model...")
         train_calibrator(
