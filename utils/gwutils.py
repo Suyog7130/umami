@@ -224,13 +224,29 @@ def calculate_cosine_distance(target, reconstructed):
     cos_dist = 1 - cos_sim
     return cos_dist
 
-def polarizations_from_amp_phase(amp, phase):
+def polarizations_from_amp_phase(amp, phase, scale_factor=None):
     """
     Convert amplitude and phase to hplus and hcross polarizations.
-    amp: length N
-    phase: length N
-    returns hplus, hcross: length N
+
+    Arguments
+    ---------
+    amp: array_like
+        The amplitude time series.
+    phase: array_like
+        The phase time series (radians).
+    scale_factor: float, optional
+        A factor to scale down the amplitude, if the target amplitude was scaled up!
+
+    Returns
+    -------
+    hp: ndarray
+        The hplus polarization time series.
+    hc: ndarray
+        The hcross polarization time series.
     """
+    if scale_factor is not None:
+        logger.info(f"Scaling down amplitude by factor {scale_factor}, current max amp: {amp.max().item()}")
+        amp = amp / float(scale_factor)
     hp = amp * torch.cos(phase)
     hc = amp * torch.sin(phase)
     return (hp, hc)

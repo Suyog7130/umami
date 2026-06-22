@@ -689,7 +689,8 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             recon_amp, recon_phase = x_recon[i, 0, :], x_recon[i, 1, :]
             orig_amp, orig_phase = target[i, 0, :], target[i, 1, :]
             orig_hp, orig_hc = strains[i, 0, :], strains[i, 1, :]
-            recon_hp, recon_hc = polarizations_from_amp_phase(recon_amp, recon_phase)
+            recon_hp, recon_hc = polarizations_from_amp_phase(recon_amp, recon_phase,
+                                                              scale_factor=10**20)
 
             # -- plot one example of the original and reconstructed waveforms, for debugging!
             if idx == 0 and i == 0:
@@ -701,7 +702,6 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
                     title=f'$m_1 = {labels[i, 0].item():.2f}, m_2 = {labels[i, 1].item():.2f}, \\chi_1(z) = {labels[i, 2].item():.2f}, \\chi_2(z) = {labels[i, 3].item():.2f}$',
                     savedir=savedir, savename='test-results-'
                     )
-                exit(0)
 
             delta_t = attr['delta_t'][i]
             f_lower = attr['f_lower'][i]
