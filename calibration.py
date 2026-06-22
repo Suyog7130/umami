@@ -144,7 +144,8 @@ class ResidualCalibrationCNN(nn.Module):
 def get_calibrator_input(wfmodel, originals, labels, 
                          data_hdf=None, indices=None,
                          params_mean=None, params_std=None,
-                         inputnames=None, targetnames=None):
+                         inputnames=None, targetnames=None,
+                         correct_length=True):
     """
     Function to obtain the input and target for the calibrator model, 
     given the originals waveforms, the parameters, and the trained waveform model.
@@ -182,17 +183,20 @@ def get_calibrator_input(wfmodel, originals, labels,
     if targetnames is None:
         targetnames = ['target_amp_residual', 'target_freq_residual']
 
+    # TODO: Naming here between `Freq` and `Phase` could be made disambiguous!
     orig_amp, orig_freq = originals[:, 0, :], originals[:, 1, :]
 
     # -- get the ml predictions for this batch
     with torch.no_grad():
         ml_outputs = wfmodel.generate(labels, convert_to_hphc=False)  # shape: (batch, 2, n)
+        ml_outputs = ml_outputs.to("cpu")  # move to CPU for saving to HDF file, since HDF file does not support GPU tensors
     ml_amp, ml_freq = ml_outputs[:, 0, :], ml_outputs[:, 1, :]
 
     # -- repeat first element in ML generated outputs which have shape (batch, 2, 8190),
     # -- while original [amp,freq] are of shape (batch, 2, 8191)!
-    ml_amp = torch.cat([ml_amp[:, 0:1], ml_amp], dim=1)  # shape: (batch, n+1)
-    ml_freq = torch.cat([ml_freq[:, 0:1], ml_freq], dim=1)  # shape: (batch, n+1)
+    if correct_length:
+        ml_amp = torch.cat([ml_amp[:, 0:1], ml_amp], dim=1)  # shape: (batch, n+1)
+        ml_freq = torch.cat([ml_freq[:, 0:1], ml_freq], dim=1)  # shape: (batch, n+1)
 
     assert ml_amp.shape == orig_amp.shape, f"ML generated amplitude shape {ml_amp.shape} does not match original amplitude shape {orig_amp.shape}"
     assert ml_freq.shape == orig_freq.shape, f"ML generated frequency shape {ml_freq.shape} does not match original frequency shape {orig_freq.shape}"
@@ -211,28 +215,28 @@ def get_calibrator_input(wfmodel, originals, labels,
     param_s1z = param_s1z.unsqueeze(-1).expand(-1, ml_amp.shape[-1])
     param_s2z = param_s2z.unsqueeze(-1).expand(-1, ml_amp.shape[-1])
 
-    # fig, ax = plt.subplots(4, 1, figsize=(12, 12))
-    # ax[0].plot(ml_amp[0].cpu().numpy(), label='ML Amp')
-    # ax[0].plot(orig_amp[0].cpu().numpy(), label='Original Amp')
-    # ax[0].set_title('ML Generated Amplitude vs Original Amplitude')
-    # ax[0].legend()
-    # ax[1].plot(ml_freq[0].cpu().numpy(), label='ML Freq')
-    # ax[1].plot(orig_freq[0].cpu().numpy(), label='Original Freq')
-    # ax[1].set_title('ML Generated Frequency vs Original Frequency')
-    # ax[1].legend()
-    # ax[2].plot(target_amp_residual[0].cpu().numpy(), label='Target Amp Residual')
-    # ax[2].set_title('Target Amplitude Residual')
-    # ax[2].legend()
-    # ax[3].plot(target_freq_residual[0].cpu().numpy(), label='Target Freq Residual')
-    # ax[3].set_title('Target Frequency Residual')
-    # ax[3].legend()
-    # plt.tight_layout()
-    # plt.savefig(f'calibrator_input_example_{NOW}.png')
-    # plt.close()
+    fig, ax = plt.subplots(4, 1, figsize=(12, 12))
+    ax[0].plot(ml_amp[0].cpu().numpy(), label=inputnames[0])
+    ax[0].plot(orig_amp[0].cpu().numpy(), label='original_amp')
+    ax[0].set_title('ML Generated Amplitude vs Original Amplitude')
+    ax[0].legend()
+    ax[1].plot(ml_freq[0].cpu().numpy(), label=inputnames[1])
+    ax[1].plot(orig_freq[0].cpu().numpy(), label='original_freq')
+    ax[1].set_title('ML Generated Frequency vs Original Frequency')
+    ax[1].legend()
+    ax[2].plot(target_amp_residual[0].cpu().numpy(), label=targetnames[0])
+    ax[2].set_title('Target Amplitude Residual')
+    ax[2].legend()
+    ax[3].plot(target_freq_residual[0].cpu().numpy(), label=targetnames[1])
+    ax[3].set_title('Target Frequency Residual')
+    ax[3].legend()
+    plt.tight_layout()
+    plt.savefig(f'calibrator_input_example_{NOW}.png')
+    plt.close()
 
     if params_mean is None or params_std is None:
-        params_mean = wfmodel.MODEL_CONFIG['params_mean']
-        params_std = wfmodel.MODEL_CONFIG['params_std']
+        params_mean = wfmodel.MODEL_CONFIG['labels_mean']
+        params_std = wfmodel.MODEL_CONFIG['labels_std']
         logger.debug(f"Using params_mean and params_std from the model config: {params_mean}, {params_std}")
     
     param_m1 = (param_m1 - params_mean[0]) / params_std[0]
@@ -291,7 +295,8 @@ def save_calibrator_data(wfmodel_modelpath=f'../trained-models/model-20251004_07
             targetnames = ['target_amp_residual', 'target_phase_residual']
 
         wfmodel = load_flex_model(configpath=wfmodel_configpath, 
-                                  model_path=wfmodel_modelpath, device=DEVICE)
+                                  model_path=wfmodel_modelpath,
+                                  device=DEVICE)
         wfmodel.eval()
         wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type=wftype)
         wftestloader = set_waveform_dataloaders(target_type=wftype, return_test_loader=True)
@@ -299,7 +304,7 @@ def save_calibrator_data(wfmodel_modelpath=f'../trained-models/model-20251004_07
         savenames = ['train', 'valid', 'test']
         for i in range(len(dataloaders)):
             savename = f'calibrator_data_{savenames[i]}_with{timestamp}model.hdf'
-            for batch in tqdm(dataloaders[i], desc="Generating calibrator data for batches"):
+            for batch in tqdm(dataloaders[i], desc="batches"):
                 originals, target, labels, keys, strains, attr = batch
                 indices = range(len(dataloaders[i].dataset))  # use the original sample indices from the dataset for this batch
                 get_calibrator_input(
@@ -308,10 +313,9 @@ def save_calibrator_data(wfmodel_modelpath=f'../trained-models/model-20251004_07
                     labels=labels,
                     data_hdf=savename,
                     indices=indices,
-                    params_mean=None,
-                    params_std=None,
                     inputnames=inputnames,
-                    targetnames=targetnames
+                    targetnames=targetnames,
+                    correct_length=False,
                 )
             logger.info(f"Finished generating and saving calibrator input and target data for {savenames[i]} set to HDF file: {savename}")
         logger.info(f"Finished generating and saving calibrator input and target data to HDF files for all sets (train, valid, test).")

@@ -1610,6 +1610,10 @@ class FlexCAEPhase(FlexCAE):
             assert labels.size(1) == self.num_classes, f"Labels dimension {labels.size(1)} does not match MODEL_CONFIG['num_classes'] {self.num_classes}!"
         else:
             raise ValueError("Labels must be provided for generation, since the model is conditional on the labels!")
+        
+        if labels.device != next(self.parameters()).device:
+            labels = labels.to(next(self.parameters()).device)
+            logger.info(f"Moved labels to device {next(self.parameters()).device} for generation.")
 
         self.eval()  # Set model to evaluation mode
         logger.info("Model set to evaluation mode for generation.")

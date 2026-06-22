@@ -190,11 +190,11 @@ class WaveformDataset(torch.utils.data.Dataset):
         self.target_normalized = target_normalized
         self._set_input_target_names()
 
-        self.params_mean = params_mean
-        self.params_std = params_std
-        logger.info(f'Parameters mean: {self.params_mean}, Parameters std: {self.params_std}')
-        assert self.params_mean is None or self.params_mean.shape == (4,), f"Expected params_mean to be of shape (4,), but got {self.params_mean.shape}"
-        assert self.params_std is None or self.params_std.shape == (4,), f"Expected params_std to be of shape (4,), but got {self.params_std.shape}"
+        # self.params_mean = params_mean
+        # self.params_std = params_std
+        # logger.info(f'Parameters mean: {self.params_mean}, Parameters std: {self.params_std}')
+        # assert self.params_mean is None or self.params_mean.shape == (4,), f"Expected params_mean to be of shape (4,), but got {self.params_mean.shape}"
+        # assert self.params_std is None or self.params_std.shape == (4,), f"Expected params_std to be of shape (4,), but got {self.params_std.shape}"
 
         # # NOTE: `init_hdf` inside `__getitem__` call, to allow spawning multiple workers for dataloading.
         # self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
