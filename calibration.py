@@ -748,12 +748,9 @@ def train_calibrator(train_datapath, valid_datapath,
             for group in optimizer.param_groups:
                 group["lr"] = 3e-4
 
-        thisepoch_trainloss_one = 0.0
-        thisepoch_trainloss_two = 0.0
-        counter = 0
+        epoch_trainloss = torch.zeros((2, len(training_loader)), dtype=getattr(torch, PRECISION), device=DEVICE)
         
-        for databatch in tqdm(training_loader, total=len(training_loader), desc='Train Steps'):
-            counter += 1
+        for counter, databatch in enumerate(tqdm(training_loader, total=len(training_loader), desc='Train Steps')):
             if dummyrun and counter > 2:
                 break
             
@@ -776,22 +773,21 @@ def train_calibrator(train_datapath, valid_datapath,
             optimizer.step()
 
             # -- log training loss for this batch
-            running_train_loss_file.write(f"{epoch+1},{trainloss_one.item()},{trainloss_two.item()}\n")
-            running_train_loss_file.flush()
-            thisepoch_trainloss_one += trainloss_one.item()
-            thisepoch_trainloss_two += trainloss_two.item()
+            epoch_trainloss[0, counter] = trainloss_one.detach()
+            epoch_trainloss[1, counter] = trainloss_two.detach()
             logger.debug(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {trainloss_one.item()}, Freq Loss: {trainloss_two.item()}")
+
+        # -- log all losses for this epoch to a CSV file
+        for i in range(epoch_trainloss.shape[1]):
+            running_train_loss_file.write(f"{epoch+1},{epoch_trainloss[0, i].item()},{epoch_trainloss[1, i].item()}\n")
+        running_train_loss_file.flush()
         logger.info(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {trainloss_one.item()}, Freq Loss: {trainloss_two.item()}")
 
         # -- validation loop
         calmodel.eval()
         with torch.no_grad():
-            thisepoch_valloss_one = 0.0
-            thisepoch_valloss_two = 0.0
-            counter = 0
-
-            for databatch in tqdm(validation_loader, total=len(validation_loader), desc='Val Steps'):
-                counter += 1
+            epoch_valloss = torch.zeros((2, len(validation_loader)), dtype=getattr(torch, PRECISION), device=DEVICE)
+            for counter, databatch in enumerate(tqdm(validation_loader, total=len(validation_loader), desc='Val Steps')):
                 if dummyrun and counter > 2:
                     break
 
@@ -809,11 +805,14 @@ def train_calibrator(train_datapath, valid_datapath,
                 val_loss = valloss_one + valloss_two
 
                 # -- log validation loss for this batch
-                running_val_loss_file.write(f"{epoch+1},{valloss_one.item()},{valloss_two.item()}\n")
-                running_val_loss_file.flush()
-                thisepoch_valloss_one += valloss_one.item()
-                thisepoch_valloss_two += valloss_two.item()
+                epoch_valloss[0, counter] = valloss_one.detach()
+                epoch_valloss[1, counter] = valloss_two.detach()
                 logger.debug(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {valloss_one.item()}, Val Freq Loss: {valloss_two.item()}")
+
+            # -- log all validation losses for this epoch to a CSV file
+            for i in range(epoch_valloss.shape[1]):
+                running_val_loss_file.write(f"{epoch+1},{epoch_valloss[0, i].item()},{epoch_valloss[1, i].item()}\n")
+            running_val_loss_file.flush()
             logger.info(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {valloss_one.item()}, Val Freq Loss: {valloss_two.item()}")
 
         # -- take a step in the learning rate scheduler based on the validation loss
@@ -822,10 +821,10 @@ def train_calibrator(train_datapath, valid_datapath,
         # -- log epoch losses
         epoch_losses.iloc[epoch] = {
             'epoch': epoch+1,
-            losscols[1]: thisepoch_trainloss_one/len(training_loader),
-            losscols[2]: thisepoch_trainloss_two/len(training_loader),
-            losscols[3]: thisepoch_valloss_one/len(validation_loader),
-            losscols[4]: thisepoch_valloss_two/len(validation_loader),
+            losscols[1]: epoch_trainloss[0].mean().item(),
+            losscols[2]: epoch_trainloss[1].mean().item(),
+            losscols[3]: epoch_valloss[0].mean().item(),
+            losscols[4]: epoch_valloss[1].mean().item(),
         }
         logger.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
 
