@@ -694,17 +694,19 @@ def testing(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
             mismatch_amp[i] = calculate_cosine_distance(recon_amp, orig_amp)
             mismatch_phase[i] = calculate_cosine_distance(recon_phase, orig_phase)
             mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
-            mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower) 
+            mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
+            
+            logger.debug(f"Test batch {idx+1}, sample {i+1}/{input.shape[0]}: m1={m1s[i].item():.2f}, m2={m2s[i].item():.2f}, chi1z={chi1zs[i].item():.2f}, chi2z={chi2zs[i].item():.2f}, chirp_mass={chirpmasses[i].item():.2f}, total_mass={totalmasses[i].item():.2f}, mass_ratio={massratios[i].item():.2f}, chieff={chieffs[i].item():.2f}, mismatch_amp={mismatch_amp[i]:.4e}, mismatch_phase={mismatch_phase[i]:.4e}, mismatch_hplus={mismatch_hplus[i]:.4e}, mismatch_hcross={mismatch_hcross[i]:.4e}")
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
             'm1': labels[:, 0].cpu().numpy(),
             'm2': labels[:, 1].cpu().numpy(),
             'chi1z': labels[:, 2].cpu().numpy(),
             'chi2z': labels[:, 3].cpu().numpy(),
-            'chirp_mass': chirpmasses.flatten(),
-            'total_mass': totalmasses.flatten(),
-            'mass_ratio': massratios.flatten(),
-            'chieff': chieffs.flatten(),
+            'chirp_mass': chirpmasses.flatten().cpu().numpy(),
+            'total_mass': totalmasses.flatten().cpu().numpy(),
+            'mass_ratio': massratios.flatten().cpu().numpy(),
+            'chieff': chieffs.flatten().cpu().numpy(),
             'mismatch_amp': mismatch_amp.flatten(),
             'mismatch_phase': mismatch_phase.flatten(),
             'mismatch_hplus': mismatch_hplus.flatten(),
@@ -822,8 +824,6 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
     Load the trained FlexTwoC2E1D model from the specified path.
     """
     logger.info("Starting training with specified hyperparameters")
-    device = torch.device("cpu") if device is None else device
-    precision = 'float32' if precision is None else precision
     if configpath is not None:
         if not configpath.endswith('.json'):
             configpath += '.json'
@@ -854,14 +854,15 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
         else:
             MODEL_CONFIG['labels_mean'] = np.array(MODEL_CONFIG['labels_mean'].strip('[]').split(',')).astype(float)
             MODEL_CONFIG['labels_std'] = np.array(MODEL_CONFIG['labels_std'].strip('[]').split(',')).astype(float)
+    
     if MODEL_CONFIG['labels_mean'] is not None and MODEL_CONFIG['labels_std'] is not None:
         # logger.warning('For now we will use predefined global params_mean and params_std for normalization 
         # instead of converting from MODEL_CONFIG, since the conversion is not working well and giving NaN values 
         # for some reason. This needs to be fixed later.')
         # labels_mean = params_mean.cpu().numpy()
         # labels_std = params_std.cpu().numpy()
-        MODEL_CONFIG['labels_mean'] = torch.tensor(MODEL_CONFIG['labels_mean'], dtype=getattr(torch, PRECISION)).to(DEVICE)
-        MODEL_CONFIG['labels_std'] = torch.tensor(MODEL_CONFIG['labels_std'], dtype=getattr(torch, PRECISION)).to(DEVICE)
+        MODEL_CONFIG['labels_mean'] = torch.tensor(MODEL_CONFIG['labels_mean'], dtype=getattr(torch, precision))
+        MODEL_CONFIG['labels_std'] = torch.tensor(MODEL_CONFIG['labels_std'], dtype=getattr(torch, precision))
 
     # Convert some hyperparameters from str to appropriate types if needed (e.g. lists, tuples)
     if isinstance(MODEL_CONFIG['input_shape'], str):
@@ -928,6 +929,12 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
     logger.info(f"Total number of trainable parameters: \
           {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     
+    # Send model to device and convert to desired precision
+    if device is not None:
+        logger.info(f"Moving model to device: {device} and converting to precision: {precision}")
+        model.to(getattr(torch, precision))
+        model.to(device)
+    
     if model_path is None:
         logger.info("No model path provided. Model will be initialized with random weights.")
     else:
@@ -942,10 +949,7 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
                 param.data = param.data.to(getattr(torch, precision))
         model.load_state_dict(torch.load(model_path, map_location=device))
         logger.info(f"Loaded model from {model_path}")
-    # Send model to device and convert to desired precision
-    # logger.info(f"Moving model to device: {device} and converting to precision: {precision}")
-    # model.to(device)
-    # model = model.to(getattr(torch, precision))
+
     if device.type == 'cuda':
         if precision=='float32':
             torch.set_float32_matmul_precision('high')
