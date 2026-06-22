@@ -31,5 +31,6 @@
     "modelname": "flexcvae_amp_phase",
     "target": "amp_phase",
     "input_normalized": true,
-    "target_normalized": false
+    "target_normalized": false,
+    "normalize_labels": true
 }

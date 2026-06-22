@@ -647,7 +647,7 @@ class FlexTwoC2E1D(nn.Module):
         Computes the total loss, including reconstruction and KL divergence.
     """
     def __init__(self, input_shape=(2,8191), num_classes=4, key_shape=(2,2), \
-                 labels_mean=None, labels_std=None, paramsnorm=False, \
+                 labels_mean=None, labels_std=None, normalize_labels=True, \
                  latent_dim_x=8, latent_dim_key=3, MODEL_CONFIG=None, **kwargs):
         super(FlexTwoC2E1D, self).__init__()
 
@@ -664,7 +664,7 @@ class FlexTwoC2E1D(nn.Module):
             latent_dim_key = MODEL_CONFIG.get('latent_dim_key', latent_dim_key)
             labels_mean = MODEL_CONFIG.get('labels_mean', labels_mean)
             labels_std = MODEL_CONFIG.get('labels_std', labels_std)
-            paramsnorm = MODEL_CONFIG.get('paramsnorm', paramsnorm)
+            normalize_labels = MODEL_CONFIG.get('normalize_labels', normalize_labels)
             self.activation = MODEL_CONFIG.get('activation', 'relu')
             self.beta = MODEL_CONFIG.get('beta', 0.1)  # default beta value for KL divergence loss
             self.decoder_input_type = MODEL_CONFIG.get('decoder_input_type', 'concat')
@@ -682,11 +682,11 @@ class FlexTwoC2E1D(nn.Module):
 
          # This works regardless of whether MODEL_CONFIG is provided or not, 
         # because if MODEL_CONFIG is not provided, the default values will be used.
-        if paramsnorm:
+        if normalize_labels:
             logging.info("Input parameter normalization is ENABLED. \
                 The model will normalize the input parameters.")
             if labels_mean is None or labels_std is None:
-                raise ValueError("labels_mean and labels_std must be provided when paramsnorm is True.")
+                raise ValueError("labels_mean and labels_std must be provided when 'normalize_labels' is True.")
             if not isinstance(labels_mean, torch.Tensor):
                 labels_mean = torch.tensor(labels_mean, dtype=torch.float64)
             if not isinstance(labels_std, torch.Tensor):
@@ -694,8 +694,10 @@ class FlexTwoC2E1D(nn.Module):
             self.register_buffer('labels_mean', labels_mean)
             self.register_buffer('labels_std', labels_std)
         elif labels_mean is not None or labels_std is not None:
-            logging.warning("labels_mean and labels_std are provided but paramsnorm is False. \
-                These will be ignored since input param normalization is NOT enabled.")
+            self.register_buffer('labels_mean', labels_mean)
+            self.register_buffer('labels_std', labels_std)
+            logger.warning("labels_mean and labels_std are provided but 'normalize_labels' is False. \
+                This means that labels_mean and labels_std were provided in MODEL_CONFIG. We will use them!")
         else:
             logging.info("Input parameter normalization is NOT enabled. \
                 The model will use the raw labels without normalization.")
@@ -1046,6 +1048,7 @@ class FlexTwoC2E1D(nn.Module):
             'model_architecture': str(self),
             'total_parameters': sum(p.numel() for p in self.parameters()),
             'trainable_parameters': sum(p.numel() for p in self.parameters() if p.requires_grad),
+            'normalize_labels': hasattr(self, 'labels_mean') and hasattr(self, 'labels_std'),
             'labels_mean': self.labels_mean.tolist() if hasattr(self, 'labels_mean') else None,
             'labels_std': self.labels_std.tolist() if hasattr(self, 'labels_std') else None,
         })

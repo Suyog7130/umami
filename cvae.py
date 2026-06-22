@@ -335,7 +335,7 @@ class CVAE(nn.Module):
         Computes the total loss, including reconstruction and KL divergence.
     """
     def __init__(self, input_shape, num_classes, key_shape, \
-                 labels_mean=None, labels_std=None, paramsnorm=False, \
+                 labels_mean=None, labels_std=None, normalize_labels=True, \
                  latent_dim_x=8, latent_dim_key=3, MODEL_CONFIG=None):
         super(CVAE, self).__init__()
 
@@ -358,11 +358,11 @@ class CVAE(nn.Module):
 
         # This works regardless of whether MODEL_CONFIG is provided or not, 
         # because if MODEL_CONFIG is not provided, the default values will be used.
-        if paramsnorm:
+        if normalize_labels:
             logger.info("Input parameter normalization is ENABLED. \
                 The model will normalize the input parameters.")
             if labels_mean is None or labels_std is None:
-                raise ValueError("labels_mean and labels_std must be provided when paramsnorm is True.")
+                raise ValueError("labels_mean and labels_std must be provided when 'normalize_labels' is True.")
             if not isinstance(labels_mean, torch.Tensor):
                 labels_mean = torch.tensor(labels_mean, dtype=torch.float64)
             if not isinstance(labels_std, torch.Tensor):
@@ -372,7 +372,7 @@ class CVAE(nn.Module):
         elif labels_mean is not None or labels_std is not None:
             self.register_buffer('labels_mean', labels_mean)
             self.register_buffer('labels_std', labels_std)
-            logger.warning("labels_mean and labels_std are provided but paramsnorm is False. \
+            logger.warning("labels_mean and labels_std are provided but 'normalize_labels' is False. \
                 This means that labels_mean and labels_std were provided in MODEL_CONFIG. We will use them!")
         else:
             logger.info("Input parameter normalization is NOT enabled. \
