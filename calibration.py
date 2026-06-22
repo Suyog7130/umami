@@ -21,7 +21,7 @@ import matplotlib.ticker as tck
 from tqdm import tqdm
 
 from datacvae import CustomDataset, CustomDataLoader
-from optimize import load_flex_model
+from optimize import load_flex_model, set_waveform_dataloaders
 
 from maincvae import plot_mismatch, plot_polarization_mismatch
 from plotutils import putils
@@ -143,7 +143,8 @@ class ResidualCalibrationCNN(nn.Module):
 
 def get_calibrator_input(wfmodel, originals, labels, 
                          data_hdf=None, indices=None,
-                         params_mean=None, params_std=None):
+                         params_mean=None, params_std=None,
+                         inputnames=None, targetnames=None):
     """
     Function to obtain the input and target for the calibrator model, 
     given the originals waveforms, the parameters, and the trained waveform model.
@@ -176,6 +177,11 @@ def get_calibrator_input(wfmodel, originals, labels,
     calibrator_target : tuple of torch.Tensor
         The target residuals for amplitude and frequency, each of shape: (batch, 2, n)
     """
+    if inputnames is None:
+        inputnames = ['ml_amp', 'ml_freq']
+    if targetnames is None:
+        targetnames = ['target_amp_residual', 'target_freq_residual']
+
     orig_amp, orig_freq = originals[:, 0, :], originals[:, 1, :]
 
     # -- get the ml predictions for this batch
@@ -224,12 +230,16 @@ def get_calibrator_input(wfmodel, originals, labels,
     # plt.savefig(f'calibrator_input_example_{NOW}.png')
     # plt.close()
 
-    if params_mean is not None and params_std is not None:
-        # -- normalize the parameters using the mean and std from the model config
-        param_m1 = (param_m1 - params_mean[0]) / params_std[0]
-        param_m2 = (param_m2 - params_mean[1]) / params_std[1]
-        param_s1z = (param_s1z - params_mean[2]) / params_std[2]
-        param_s2z = (param_s2z - params_mean[3]) / params_std[3]
+    if params_mean is None or params_std is None:
+        params_mean = wfmodel.MODEL_CONFIG['params_mean']
+        params_std = wfmodel.MODEL_CONFIG['params_std']
+        logger.debug(f"Using params_mean and params_std from the model config: {params_mean}, {params_std}")
+    
+    param_m1 = (param_m1 - params_mean[0]) / params_std[0]
+    param_m2 = (param_m2 - params_mean[1]) / params_std[1]
+    param_s1z = (param_s1z - params_mean[2]) / params_std[2]
+    param_s2z = (param_s2z - params_mean[3]) / params_std[3]
+    logger.debug(f"Normalized parameters: param_m1={param_m1}, param_m2={param_m2}, param_s1z={param_s1z}, param_s2z={param_s2z}")
 
     calibrator_input = torch.cat([calibrator_input, param_m1.unsqueeze(1), param_m2.unsqueeze(1),
                                 param_s1z.unsqueeze(1), param_s2z.unsqueeze(1)], dim=1)  # shape: (batch, 6, n)
@@ -252,10 +262,10 @@ def get_calibrator_input(wfmodel, originals, labels,
                 if group_name in f:
                     del f[group_name]  # delete existing group if it exists, to avoid appending to old data
                 grp = f.create_group(group_name)
-                grp.create_dataset('ml_amp', data=calibrator_input[i, 0, :].cpu().numpy())
-                grp.create_dataset('ml_freq', data=calibrator_input[i, 1, :].cpu().numpy())
-                grp.create_dataset('target_amp_residual', data=target_amp_residual[i].cpu().numpy())
-                grp.create_dataset('target_freq_residual', data=target_freq_residual[i].cpu().numpy())
+                grp.create_dataset(inputnames[0], data=calibrator_input[i, 0, :].cpu().numpy())
+                grp.create_dataset(inputnames[1], data=calibrator_input[i, 1, :].cpu().numpy())
+                grp.create_dataset(targetnames[0], data=target_amp_residual[i].cpu().numpy())
+                grp.create_dataset(targetnames[1], data=target_freq_residual[i].cpu().numpy())
                 grp.create_dataset('param_m1', data=param_m1[i, 0].cpu().numpy())
                 grp.create_dataset('param_m2', data=param_m2[i, 0].cpu().numpy())
                 grp.create_dataset('param_s1z', data=param_s1z[i, 0].cpu().numpy())
@@ -264,8 +274,51 @@ def get_calibrator_input(wfmodel, originals, labels,
     return calibrator_input, (target_amp_residual, target_freq_residual)
 
 
+def save_calibrator_data(wfmodel_modelpath=f'../trained-models/model-20251004_072338-10',
+                         wfmodel_configpath='modelconfig-cvae-paper-I.json',
+                         wftype: {'amp_freq', 'amp_phase'} = 'amp_phase',
+                         timestamp=NOW):
+        """
+        Generate and save the calibrator input and target data to HDF files, without training the model. This is useful for pre-generating the data for faster training later.
+        """
+        logger.info(f"Generating and saving calibrator input and target data to HDF files, without training the model. This is useful for pre-generating the data for faster training later.")
+
+        if wftype=='amp_freq':
+            inputnames = ['ml_amp', 'ml_freq']
+            targetnames = ['target_amp_residual', 'target_freq_residual']
+        elif wftype=='amp_phase':
+            inputnames = ['ml_amp', 'ml_phase']
+            targetnames = ['target_amp_residual', 'target_phase_residual']
+
+        wfmodel = load_flex_model(wfmodel_modelpath, device=DEVICE)
+        wfmodel.eval()
+        wftrainloader, wfvalidloader = set_waveform_dataloaders(target=wftype)
+        wftestloader = set_waveform_dataloaders(target=wftype, return_test_loader=True)
+        dataloaders = [wftrainloader, wfvalidloader, wftestloader]
+        savenames = ['train', 'valid', 'test']
+        for i in range(len(dataloaders)):
+            for batch in tqdm(dataloaders[i], desc="Generating calibrator data for batches"):
+                originals, target, labels, keys, strains, attr = batch
+                get_calibrator_input(
+                    wfmodel=wfmodel,
+                    originals=originals,
+                    labels=labels,
+                    data_hdf=f'calibrator_data_{savenames[i]}_{timestamp}.hdf',
+                    indices=indices,
+                    params_mean=None,
+                    params_std=None,
+                    inputnames=inputnames,
+                    targetnames=targetnames
+                )
+            logger.info(f"Finished generating and saving calibrator input and target data for {savenames[i]} set to HDF file: calibrator_data_{savenames[i]}_{timestamp}.hdf")
+        logger.info(f"Finished generating and saving calibrator input and target data to HDF files for all sets (train, valid, test).")
+
+
+
 def read_calibrator_input(data_hdf, indices, params_mean=None, params_std=None):
     """
+    DEPRECATED: We now save calibration data to HDF file first and then use CalibratorDataset to read it.
+
     Read Calibrator input and target residuals data from HDF file.
 
     Arguments:
@@ -399,6 +452,10 @@ class CalibratorDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.data_file.keys())  # number of groups in the HDF file, which corresponds to the number of data samples
+    
+    def _set_input_target_names(self, input_type=''):
+        self.input_names = ['ml_amp', 'ml_freq', 'param_m1', 'param_m2', 'param_s1z', 'param_s2z']
+        self.target_names = ['target_amp_residual', 'target_freq_residual']
     
     def init_hdf(self):
         # -- check if the HDF file exists, if not, create an empty HDF file with the same name, so that we can write to it later on in the `get_calibrator_input` function without having to worry about file not found errors.
@@ -798,6 +855,8 @@ def load_calibrator_model(model_path, device=DEVICE, precision=PRECISION):
 
 class CalibrationModel:
     """
+    NOT-IMPLEMENTED YET!
+
     A wrapper class to use a trained calibrator model for residual prediction.
     This will allow easy 
     """
@@ -1105,6 +1164,8 @@ if __name__ == "__main__":
                         help='If set, runs a quick dummy training loop for testing purposes.')
     
     methodargs = parser.add_mutually_exclusive_group(required=True)
+    methodargs.add_argument('--save-calibrator-data', action='store_true',
+                        help='Generate and save the calibrator input and target data to HDF files, without training the model. This is useful for pre-generating the data for faster training later.')
     methodargs.add_argument('--train', action='store_true',
                         help='Train the calibrator model using the training dataset.')
     methodargs.add_argument('--test', action='store_true',
