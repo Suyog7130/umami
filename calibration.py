@@ -231,15 +231,15 @@ def get_calibrator_input(wfmodel, originals, labels,
     ax[0].plot(orig_amp[0].cpu().numpy(), label='original_amp')
     ax[0].set_title('ML Generated Amplitude vs Original Amplitude')
     ax[0].legend()
-    ax[1].plot(ml_freq[0].cpu().numpy(), label=inputnames[1])
-    ax[1].plot(orig_freq[0].cpu().numpy(), label='original_freq')
-    ax[1].set_title('ML Generated Frequency vs Original Frequency')
+    ax[1].plot(target_amp_residual[0].cpu().numpy(), label=targetnames[0])
+    ax[1].set_title('Target Amplitude Residual')
     ax[1].legend()
-    ax[2].plot(target_amp_residual[0].cpu().numpy(), label=targetnames[0])
-    ax[2].set_title('Target Amplitude Residual')
+    ax[2].plot(ml_freq[0].cpu().numpy(), label=inputnames[1])
+    ax[2].plot(orig_freq[0].cpu().numpy(), label='original_freq')
+    ax[2].set_title('ML Generated Frequency vs Original Frequency')
     ax[2].legend()
     ax[3].plot(target_freq_residual[0].cpu().numpy(), label=targetnames[1])
-    ax[3].set_title('Target Frequency Residual')
+    ax[3].set_title(targetnames[1])
     ax[3].legend()
     plt.tight_layout()
     plt.savefig(savedir + f'calibrator_input_example_{NOW}.png')
@@ -327,10 +327,10 @@ def save_calibrator_data(
     for i in range(len(dataloaders)):
         savename = f'calibrator_data_{savenames[i]}_with{timestamp}model.hdf'
         for batch in tqdm(dataloaders[i], desc="batches"):
-            originals, target, labels, keys, strains, indices, attr = batch
+            input, target, labels, keys, strains, indices, attr = batch
             get_calibrator_input(
                 wfmodel=wfmodel,
-                originals=originals,
+                originals=target,   # targets are unnormalized [amp,phase] waveforms
                 labels=labels,
                 data_hdf=savename,
                 indices=indices,
@@ -349,7 +349,7 @@ def save_calibrator_data(
         'inputnames': inputnames,
         'targetnames': targetnames,
     }
-    config_fname = f'calibrator_data_config_{timestamp}.json'
+    config_fname = f'calibrator_data_with{timestamp}model_config.json'
     with open(savedir + config_fname, 'w') as f:
         json.dump(config, f, indent=4)
     logger.info(f"Finished generating and saving calibrator input and target data to HDF files for all sets (train, valid, test).")
