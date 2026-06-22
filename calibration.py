@@ -430,6 +430,8 @@ def match_data_between_wf_and_calibrator_hdfs(wf_hdf, calibrator_hdf, wfmodel,
                                               wf_dataset_obj=None,
                                               params_mean=None, params_std=None):
     """
+    DEPRECATED: We now save calibration data to HDF file first and then use CalibratorDataset to read it.
+
     Check if all the groups / waveforms present in the `wf_hdf` are also present in the
     `calibrator_hdf`! If not, then create the missing groups in the `calibrator_hdf` by 
     reading data from the `wf_hdf` and using the the `get_calibrator_input` function!
@@ -483,24 +485,32 @@ class CalibratorDataset(torch.utils.data.Dataset):
     """
     A custom dataset class for the calibrator model, which reads the calibrator input and target residuals from a HDF file.
     """
-    def __init__(self, data_hdf, params_mean=None, params_std=None):
-        self.data_hdf = data_hdf
-        self.params_mean = params_mean
-        self.params_std = params_std
-        assert self.params_mean is None or self.params_mean.shape == (4,), f"Expected params_mean to be of shape (4,), but got {self.params_mean.shape}"
-        assert self.params_std is None or self.params_std.shape == (4,), f"Expected params_std to be of shape (4,), but got {self.params_std.shape}"
+    def __init__(self, filepath, labels_mean=None, labels_std=None, 
+                 wftype: {'amp_freq', 'amp_phase'} = 'amp_phase'):
+        self.filepath = filepath
+        self.labels_mean = labels_mean
+        self.labels_std = labels_std
+        self.wftype = wftype
+        assert self.labels_mean is None or self.labels_mean.shape == (4,), f"Expected labels_mean to be of shape (4,), but got {self.labels_mean.shape}"
+        assert self.labels_std is None or self.labels_std.shape == (4,), f"Expected labels_std to be of shape (4,), but got {self.labels_std.shape}"
         self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
+        self._set_input_target_names()
 
     def __len__(self):
         return len(self.data_file.keys())  # number of groups in the HDF file, which corresponds to the number of data samples
     
-    def _set_input_target_names(self, input_type=''):
-        self.input_names = ['ml_amp', 'ml_freq', 'param_m1', 'param_m2', 'param_s1z', 'param_s2z']
-        self.target_names = ['target_amp_residual', 'target_freq_residual']
+    def _set_input_target_names(self):
+        if self.wftype=='amp_freq':
+            self.inputnames = ['ml_amp', 'ml_freq']
+            self.targetnames = ['target_amp_residual', 'target_freq_residual']
+        elif self.wftype=='amp_phase':
+            self.inputnames = ['ml_amp', 'ml_phase']
+            self.targetnames = ['target_amp_residual', 'target_phase_residual']
+
     
     def init_hdf(self):
         # -- check if the HDF file exists, if not, create an empty HDF file with the same name, so that we can write to it later on in the `get_calibrator_input` function without having to worry about file not found errors.
-        data_hdf = self.data_hdf + '.hdf' if not self.data_hdf.endswith('.hdf') else self.data_hdf
+        data_hdf = self.filepath + '.hdf' if not self.filepath.endswith('.hdf') else self.filepath
         data_path = f'../data/{data_hdf}'
 
         if not os.path.exists(data_path):
@@ -518,7 +528,7 @@ class CalibratorDataset(torch.utils.data.Dataset):
         # close the HDF file when the dataset is deleted, to free up resources
         if hasattr(self, 'data_file') and self.data_file is not None:
             self.data_file.close()
-            logger.info(f"Closed HDF file {self.data_hdf} after reading calibrator input and target residuals.")
+            logger.info(f"Closed HDF file {self.filepath} after reading calibrator input and target residuals.")
 
     def __del__(self):
         self.close_hdf()
@@ -526,10 +536,10 @@ class CalibratorDataset(torch.utils.data.Dataset):
     def read_input_data(self, index):
         # -- read the calibrator input and target residuals from the HDF file for the given indices
         group_name = f'sample{int(index)}'
-        ml_amp = torch.tensor(self.data_file[group_name]['ml_amp'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
-        ml_freq = torch.tensor(self.data_file[group_name]['ml_freq'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
-        target_amp_residual = torch.tensor(self.data_file[group_name]['target_amp_residual'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
-        target_freq_residual = torch.tensor(self.data_file[group_name]['target_freq_residual'][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+        ml_out_one = torch.tensor(self.data_file[group_name][self.inputnames[0]][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+        ml_out_two = torch.tensor(self.data_file[group_name][self.inputnames[1]][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+        target_residual_one = torch.tensor(self.data_file[group_name][self.targetnames[0]][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+        target_residual_two = torch.tensor(self.data_file[group_name][self.targetnames[1]][:], dtype=getattr(torch, PRECISION), device=DEVICE)
 
         # -- parameter values are scalars for each data, so we don't convert them to tensors until we read them, and then we repeat them across the time dimension to match the shape of ml_amp/ml_freq, which is (n,)
         # -- Scalar values in HDF datasets are available via ellipsis indexing `[...]`
@@ -538,24 +548,21 @@ class CalibratorDataset(torch.utils.data.Dataset):
         param_s1z = self.data_file[group_name]['param_s1z'][...].astype(getattr(np, PRECISION)).item()
         param_s2z = self.data_file[group_name]['param_s2z'][...].astype(getattr(np, PRECISION)).item()
 
-        if self.params_mean is not None and self.params_std is not None:
+        if self.labels_mean is not None and self.labels_std is not None:
             # -- normalize the parameters using the mean and std from the model config
-            param_m1 = (param_m1 - self.params_mean[0].item()) / self.params_std[0].item()
-            param_m2 = (param_m2 - self.params_mean[1].item()) / self.params_std[1].item()
-            param_s1z = (param_s1z - self.params_mean[2].item()) / self.params_std[2].item()
-            param_s2z = (param_s2z - self.params_mean[3].item()) / self.params_std[3].item()
+            param_m1 = (param_m1 - self.labels_mean[0].item()) / self.labels_std[0].item()
+            param_m2 = (param_m2 - self.labels_mean[1].item()) / self.labels_std[1].item()
+            param_s1z = (param_s1z - self.labels_mean[2].item()) / self.labels_std[2].item()
+            param_s2z = (param_s2z - self.labels_mean[3].item()) / self.labels_std[3].item()
             logger.debug(f"Read calibrator input from HDF for group {group_name}: param_m1={param_m1}, param_m2={param_m2}, param_s1z={param_s1z}, param_s2z={param_s2z}")
         
         params = torch.tensor([param_m1, param_m2, param_s1z, param_s2z], dtype=getattr(torch, PRECISION), device=DEVICE)
-        params = params.unsqueeze(-1).expand(-1, ml_amp.shape[-1])  # shape: (4, n)
-        calibrator_input = torch.stack([ml_amp, ml_freq, params[0], params[1], params[2], params[3]], dim=0)  # shape: (6, n)
-        return (calibrator_input, target_amp_residual, target_freq_residual)
+        params = params.unsqueeze(-1).expand(-1, ml_out_one.shape[-1])  # shape: (4, n)
+        calibrator_input = torch.stack([ml_out_one, ml_out_two, params[0], params[1], params[2], params[3]], dim=0)  # shape: (6, n)
+        return (calibrator_input, target_residual_one, target_residual_two)  # return as a tuple
 
     def __getitem__(self, idx):
-        calibrator_input, target_amp_residual, target_freq_residual = self.read_input_data(
-            index=idx
-        )
-        return (calibrator_input.squeeze(0), target_amp_residual.squeeze(0), target_freq_residual.squeeze(0))
+        return self.read_input_data(index=idx)
     
 
 class CalibratorDataLoader(torch.utils.data.DataLoader):
@@ -586,11 +593,12 @@ def merger_weighted_mse_loss_func(true, predicted, amp_ml):
     
     
 
-def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338-10', 
+def train_calibrator(train_datapath, valid_datapath,
+                     wfmodel_modelpath=f'../trained-models/model-20251004_072338-10',
                      wfmodel_configpath='modelconfig-cvae-paper-I.json',
-                     approximant='SEOBNRv4', batch_size=64, num_epochs=25,
-                     timestamp=NOW, use_calibrator_dataloaders=True,
-                     dummyrun=False):
+                     batch_size=64, num_epochs=25,
+                     wftype: {'amp_freq', 'amp_phase'} = 'amp_phase',
+                     timestamp=NOW, dummyrun=False,):
     """
     Train the residual calibrator model.
 
@@ -614,19 +622,19 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
     HDF files, without having to worry about the shape mismatch issue. We can always retrain the ML 
     model later with the correct shape of the waveforms, and then retrain the calibrator on top of that.
     """
-    logger.info(f"Training residual calibrator model with ML waveform model from {wfmodel_modelpath} and config from {wfmodel_configpath}")
-    # -- init waveform model
-    try:
-        wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
-                                configpath=wfmodel_configpath, 
-                                device=DEVICE, precision=PRECISION,)
-    except FileNotFoundError:
-        wfmodel_modelpath = f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
-        wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
-                                configpath=wfmodel_configpath, 
-                                device=DEVICE, precision=PRECISION,)
-    wfmodel.eval()  # set to eval mode since we are only using it for inference to generate the calibrator inputs
-    logger.info(f"Loaded waveform model for calibrator input generation: {wfmodel}")
+    # logger.info(f"Training residual calibrator model with ML waveform model from {wfmodel_modelpath} and config from {wfmodel_configpath}")
+    # # -- init waveform model
+    # try:
+    #     wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
+    #                             configpath=wfmodel_configpath, 
+    #                             device=DEVICE, precision=PRECISION,)
+    # except FileNotFoundError:
+    #     wfmodel_modelpath = f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
+    #     wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
+    #                             configpath=wfmodel_configpath, 
+    #                             device=DEVICE, precision=PRECISION,)
+    # wfmodel.eval()  # set to eval mode since we are only using it for inference to generate the calibrator inputs
+    # logger.info(f"Loaded waveform model for calibrator input generation: {wfmodel}")
 
     # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
     with open(wfmodel_configpath, 'r') as f:
@@ -637,9 +645,6 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
     savename = f'../{PROJECT_DIR}/results/{TODAY}'
     os.makedirs(savename, exist_ok=True)
     os.makedirs(f'../{PROJECT_DIR}/trained-models', exist_ok=True)
-    
-    trainhdf = '../data/SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen.hdf'
-    valhdf = '../data/SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen.hdf'
 
     calmodel = ResidualCalibrationCNN(
         input_channels=6,  # [ml_amp, ml_freq, param_m1, param_m2, param_s1z, param_s2z]
@@ -657,40 +662,49 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
     logger.info(f"Calibrator model architecture: {calmodel}")
 
     
-    wf_train_set = CustomDataset(forwhat='train', approximant=approximant, hdf_fname=trainhdf, 
-                                train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
-    wf_valid_set = CustomDataset(forwhat='valid', approximant=approximant, hdf_fname=valhdf, 
-                                train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
+    # trainhdf = '../data/SEOBNRv4-train-100000-fcutoff-uniform-aligned-regen.hdf'
+    # valhdf = '../data/SEOBNRv4-val-100000-fcutoff-uniform-aligned-regen.hdf'
+    # wf_train_set = CustomDataset(forwhat='train', approximant=approximant, hdf_fname=trainhdf, 
+    #                             train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
+    # wf_valid_set = CustomDataset(forwhat='valid', approximant=approximant, hdf_fname=valhdf, 
+    #                             train_device=DEVICE, precision=PRECISION, return_sample_indices=True)
 
-    if use_calibrator_dataloaders:
-        # -- make sure that calibarator HDF datagroups match those in the waveform HDF!
-        match_data_between_wf_and_calibrator_hdfs(
-            wf_hdf=trainhdf, 
-            calibrator_hdf=f'calibrator_training_data_{timestamp}.hdf', 
-            wfmodel=wfmodel,
-            wf_dataset_obj=wf_train_set,
-            params_mean=labels_mean, params_std=labels_std
-        )
-        match_data_between_wf_and_calibrator_hdfs(
-            wf_hdf=valhdf, 
-            calibrator_hdf=f'calibrator_validation_data_{timestamp}.hdf', 
-            wfmodel=wfmodel,
-            wf_dataset_obj=wf_valid_set,
-            params_mean=labels_mean, params_std=labels_std
-        )
-        train_set = CalibratorDataset(data_hdf=f'calibrator_training_data_{timestamp}', 
-                                        params_mean=labels_mean, params_std=labels_std)
-        valid_set = CalibratorDataset(data_hdf=f'calibrator_validation_data_{timestamp}', 
-                                        params_mean=labels_mean, params_std=labels_std)
-        training_loader = CalibratorDataLoader(train_set, batch_size=batch_size, shuffle=True)
-        validation_loader = CalibratorDataLoader(valid_set, batch_size=batch_size, shuffle=True)
-        logger.info("Using CalibratorDataset and CalibratorDataLoader for training the calibrator model, which read the calibrator input and target residuals from HDF files.")
-    else:
-        train_set = wf_train_set
-        valid_set = wf_valid_set
-        training_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
-        validation_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=True)
-        logger.info("Using CustomDataset and CustomDataLoader for training the calibrator model, which generate the calibrator input and target residuals on the fly by running the ML model inference every time. This is computationally expensive, so it's recommended to use the CalibratorDataset and CalibratorDataLoader instead, which read the pre-generated data from HDF files.")
+    # if use_calibrator_dataloaders:
+    #     # -- make sure that calibarator HDF datagroups match those in the waveform HDF!
+    #     match_data_between_wf_and_calibrator_hdfs(
+    #         wf_hdf=trainhdf, 
+    #         calibrator_hdf=f'calibrator_training_data_{timestamp}.hdf', 
+    #         wfmodel=wfmodel,
+    #         wf_dataset_obj=wf_train_set,
+    #         params_mean=labels_mean, params_std=labels_std
+    #     )
+    #     match_data_between_wf_and_calibrator_hdfs(
+    #         wf_hdf=valhdf, 
+    #         calibrator_hdf=f'calibrator_validation_data_{timestamp}.hdf', 
+    #         wfmodel=wfmodel,
+    #         wf_dataset_obj=wf_valid_set,
+    #         params_mean=labels_mean, params_std=labels_std
+    #     )
+    #     train_set = CalibratorDataset(data_hdf=f'calibrator_training_data_{timestamp}', 
+    #                                     params_mean=labels_mean, params_std=labels_std)
+    #     valid_set = CalibratorDataset(data_hdf=f'calibrator_validation_data_{timestamp}', 
+    #                                     params_mean=labels_mean, params_std=labels_std)
+    #     training_loader = CalibratorDataLoader(train_set, batch_size=batch_size, shuffle=True)
+    #     validation_loader = CalibratorDataLoader(valid_set, batch_size=batch_size, shuffle=True)
+    #     logger.info("Using CalibratorDataset and CalibratorDataLoader for training the calibrator model, which read the calibrator input and target residuals from HDF files.")
+    # else:
+    #     train_set = wf_train_set
+    #     valid_set = wf_valid_set
+    #     training_loader = CustomDataLoader(train_set, batch_size=batch_size, shuffle=True)
+    #     validation_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=True)
+    #     logger.info("Using CustomDataset and CustomDataLoader for training the calibrator model, which generate the calibrator input and target residuals on the fly by running the ML model inference every time. This is computationally expensive, so it's recommended to use the CalibratorDataset and CalibratorDataLoader instead, which read the pre-generated data from HDF files.")
+
+    train_set = CalibratorDataset(filepath=train_datapath, labels_mean=labels_mean, labels_std=labels_std)
+    valid_set = CalibratorDataset(filepath=valid_datapath, labels_mean=labels_mean, labels_std=labels_std)
+    training_loader = CalibratorDataLoader(train_set, batch_size=batch_size, shuffle=True)
+    validation_loader = CalibratorDataLoader(valid_set, batch_size=batch_size, shuffle=True)
+    logger.info("Using CalibratorDataset and CalibratorDataLoader for training the calibrator model, which read the calibrator input and target residuals from HDF files.")
+
     logger.info(training_loader.__dict__)
     ntbatches = len(training_loader)
     nvbatches = len(validation_loader)
@@ -707,19 +721,19 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
     loss_fn = torch.nn.MSELoss()
     logger.info(f"Starting training loop for {num_epochs} epochs...")
 
-    epoch_losses = pd.DataFrame(columns=['epoch', 'train_loss_amp', 'train_loss_freq', 'val_loss_amp', 'val_loss_freq'],
-                                index=range(num_epochs))
+    if wftype=='amp_freq':
+        losscols = ['epoch', 'train_loss_amp', 'train_loss_freq', 'val_loss_amp', 'val_loss_freq']
+    elif wftype=='amp_phase':
+        losscols = ['epoch', 'train_loss_amp', 'train_loss_phase', 'val_loss_amp', 'val_loss_phase']
+    else:
+        raise ValueError("Invalid wftype. Please choose either 'amp_freq' or 'amp_phase'.")
+    epoch_losses = pd.DataFrame(columns=losscols, index=range(num_epochs))
     running_train_loss_file = open(f'{savename}/calibrator_running_train_losses_{NOW}.csv', 'w')
-    running_train_loss_file.write(','.join(['epoch', 'train_loss_amp', 'train_loss_freq']) + '\n')
+    running_train_loss_file.write(','.join(losscols[1:3]) + '\n')
     running_val_loss_file = open(f'{savename}/calibrator_running_val_losses_{NOW}.csv', 'w')
-    running_val_loss_file.write(','.join(['epoch', 'val_loss_amp', 'val_loss_freq']) + '\n')
+    running_val_loss_file.write(','.join(losscols[3:5]) + '\n')
 
     logger.info(f"Training calibrator model for {num_epochs} epochs with batch size {batch_size}...")
-
-    calibrator_training_data_hdf = f'calibrator_training_data_{timestamp}.hdf'
-    calibrator_val_data_hdf = f'calibrator_validation_data_{timestamp}.hdf'
-    logger.info(f"Calibrator training data file is set to {calibrator_training_data_hdf}, \
-                and validation data is set to {calibrator_val_data_hdf}")
 
     if dummyrun:
         logger.info("Running in dummy mode for quick testing...")
@@ -742,52 +756,32 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             counter += 1
             if dummyrun and counter > 2:
                 break
+            
+            calibrator_input, target_residual_one, target_residual_two = databatch
 
-
-            # originals, _, labels, keys, _, indices = databatch
-            # originals = originals.to(DEVICE)
-            # labels = labels.to(DEVICE)
-
-            # if epoch == 0:
-            #     try:
-            #         calibrator_input, calibrator_target = read_calibrator_input(
-            #             data_hdf=calibrator_training_data_hdf,          
-            #             indices=indices, params_mean=labels_mean, params_std=labels_std)
-            #     except FileNotFoundError:
-            #         logger.warning("Calibrator input data not found, generating new data...")
-            #         calibrator_input, calibrator_target = get_calibrator_input(
-            #             wfmodel, originals, labels, 
-            #             data_hdf=calibrator_training_data_hdf, 
-            #             indices=indices, params_mean=labels_mean, params_std=labels_std)
-            # else:
-            #     calibrator_input, calibrator_target = read_calibrator_input(
-            #         data_hdf=calibrator_training_data_hdf,          
-            #         indices=indices, params_mean=labels_mean, params_std=labels_std)
-            # target_amp_residual, target_freq_residual = calibrator_target
-
-            calibrator_input, target_amp_residual, target_freq_residual = databatch
-
-            out = calmodel(calibrator_input)  # shape: (batch, 2, n)
-            pred_amp_residual, pred_freq_residual = out[:, 0, :], out[:, 1, :]
+            predictions = calmodel(calibrator_input)  # shape: (batch, 2, n)
+            predicted_residual_one, predicted_residual_two = predictions[:, 0, :], predictions[:, 1, :]
 
             # -- compute loss and backprop
-            # amp_loss = loss_fn(pred_amp_residual, target_amp_residual)
-            # freq_loss = loss_fn(pred_freq_residual, target_freq_residual)
-            amp_loss = merger_weighted_mse_loss_func(target_amp_residual, pred_amp_residual, calibrator_input[:, 0, :])
-            freq_loss = merger_weighted_mse_loss_func(target_freq_residual, pred_freq_residual, calibrator_input[:, 0, :])
+            # amp_loss = loss_fn(predicted_residual_one, target_residual_one)
+            # freq_loss = loss_fn(predicted_residual_two, target_residual_two)
+            trainloss_one = merger_weighted_mse_loss_func(target_residual_one, predicted_residual_one, 
+                                                            calibrator_input[:, 0, :])
+            trainloss_two = merger_weighted_mse_loss_func(target_residual_two, predicted_residual_two, 
+                                                            calibrator_input[:, 0, :])
 
-            loss = amp_loss + freq_loss
+            loss = trainloss_one + trainloss_two
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
 
             # -- log training loss for this batch
-            running_train_loss_file.write(f"{epoch+1},{amp_loss.item()},{freq_loss.item()}\n")
+            running_train_loss_file.write(f"{epoch+1},{trainloss_one.item()},{trainloss_two.item()}\n")
             running_train_loss_file.flush()
-            train_loss_amp += amp_loss.item()
-            train_loss_freq += freq_loss.item()
-            logger.debug(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {amp_loss.item()}, Freq Loss: {freq_loss.item()}")
-        logger.info(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {amp_loss.item()}, Freq Loss: {freq_loss.item()}")
+            train_loss_amp += trainloss_one.item()
+            train_loss_freq += trainloss_two.item()
+            logger.debug(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {trainloss_one.item()}, Freq Loss: {trainloss_two.item()}")
+        logger.info(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {trainloss_one.item()}, Freq Loss: {trainloss_two.item()}")
 
         # -- validation loop
         calmodel.eval()
@@ -801,45 +795,26 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
                 if dummyrun and counter > 2:
                     break
 
-                calibrator_input, target_amp_residual, target_freq_residual = databatch
+                calibrator_input, target_residual_one, target_residual_two = databatch
 
-                # originals, _, labels, keys, _, indices = databatch
-                # originals = originals.to(DEVICE)
-                # labels = labels.to(DEVICE)
+                predictions = calmodel(calibrator_input)  # shape: (batch, 2, n)
+                predicted_residual_one, predicted_residual_two = predictions[:, 0, :], predictions[:, 1, :]
 
-                # if epoch == 0:
-                #     try:
-                #         calibrator_input, calibrator_target = read_calibrator_input(
-                #             data_hdf=calibrator_val_data_hdf,          
-                #             indices=indices, params_mean=labels_mean, params_std=labels_std)
-                #     except FileNotFoundError:
-                #         logger.warning("Calibrator input data not found, generating new data...")
-                #         calibrator_input, calibrator_target = get_calibrator_input(
-                #             wfmodel, originals, labels, 
-                #             data_hdf=calibrator_val_data_hdf, 
-                #             indices=indices, params_mean=labels_mean, params_std=labels_std)
-                # else:
-                #     calibrator_input, calibrator_target = read_calibrator_input(
-                #         data_hdf=calibrator_val_data_hdf,          
-                #         indices=indices, params_mean=labels_mean, params_std=labels_std)
-                # target_amp_residual, target_freq_residual = calibrator_target
-
-                out = calmodel(calibrator_input)  # shape: (batch, 2, n)
-                pred_amp_residual, pred_freq_residual = out[:, 0, :], out[:, 1, :]
-
-                # val_amp_loss = loss_fn(pred_amp_residual, target_amp_residual)
-                # val_freq_loss = loss_fn(pred_freq_residual, target_freq_residual)
-                val_amp_loss = merger_weighted_mse_loss_func(target_amp_residual, pred_amp_residual, calibrator_input[:, 0, :])
-                val_freq_loss = merger_weighted_mse_loss_func(target_freq_residual, pred_freq_residual, calibrator_input[:, 0, :])
-                val_loss = val_loss_amp + val_loss_freq
+                # val_amp_loss = loss_fn(predicted_residual_one, target_residual_one)
+                # val_freq_loss = loss_fn(predicted_residual_two, target_residual_two)
+                valloss_one = merger_weighted_mse_loss_func(target_residual_one, predicted_residual_one, 
+                                                             calibrator_input[:, 0, :])
+                valloss_two = merger_weighted_mse_loss_func(target_residual_two, predicted_residual_two, 
+                                                              calibrator_input[:, 0, :])
+                val_loss = valloss_one + valloss_two
 
                 # -- log validation loss for this batch
-                running_val_loss_file.write(f"{epoch+1},{val_amp_loss.item()},{val_freq_loss.item()}\n")
+                running_val_loss_file.write(f"{epoch+1},{valloss_one.item()},{valloss_two.item()}\n")
                 running_val_loss_file.flush()
-                val_loss_amp += val_amp_loss.item()
-                val_loss_freq += val_freq_loss.item()
-                logger.debug(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {val_amp_loss.item()}, Val Freq Loss: {val_freq_loss.item()}")
-            logger.info(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {val_amp_loss.item()}, Val Freq Loss: {val_freq_loss.item()}")
+                val_loss_amp += valloss_one.item()
+                val_loss_freq += valloss_two.item()
+                logger.debug(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {valloss_one.item()}, Val Freq Loss: {valloss_two.item()}")
+            logger.info(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {valloss_one.item()}, Val Freq Loss: {valloss_two.item()}")
 
         # -- take a step in the learning rate scheduler based on the validation loss
         scheduler.step(val_loss)
@@ -847,10 +822,10 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
         # -- log epoch losses
         epoch_losses.iloc[epoch] = {
             'epoch': epoch+1,
-            'train_loss_amp': train_loss_amp/len(training_loader),
-            'train_loss_freq': train_loss_freq/len(training_loader),
-            'val_loss_amp': val_loss_amp/len(validation_loader),
-            'val_loss_freq': val_loss_freq/len(validation_loader),
+            losscols[1]: trainloss_one/len(training_loader),
+            losscols[2]: trainloss_two/len(training_loader),
+            losscols[3]: val_loss_amp/len(validation_loader),
+            losscols[4]: val_loss_freq/len(validation_loader),
         }
         logger.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
 
