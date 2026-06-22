@@ -748,8 +748,8 @@ def train_calibrator(train_datapath, valid_datapath,
             for group in optimizer.param_groups:
                 group["lr"] = 3e-4
 
-        train_loss_amp = 0.0
-        train_loss_freq = 0.0
+        thisepoch_trainloss_one = 0.0
+        thisepoch_trainloss_two = 0.0
         counter = 0
         
         for databatch in tqdm(training_loader, total=len(training_loader), desc='Train Steps'):
@@ -778,16 +778,16 @@ def train_calibrator(train_datapath, valid_datapath,
             # -- log training loss for this batch
             running_train_loss_file.write(f"{epoch+1},{trainloss_one.item()},{trainloss_two.item()}\n")
             running_train_loss_file.flush()
-            train_loss_amp += trainloss_one.item()
-            train_loss_freq += trainloss_two.item()
+            thisepoch_trainloss_one += trainloss_one.item()
+            thisepoch_trainloss_two += trainloss_two.item()
             logger.debug(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {trainloss_one.item()}, Freq Loss: {trainloss_two.item()}")
         logger.info(f"Epoch {epoch+1}, Batch {counter}, Amp Loss: {trainloss_one.item()}, Freq Loss: {trainloss_two.item()}")
 
         # -- validation loop
         calmodel.eval()
         with torch.no_grad():
-            val_loss_amp = 0.0
-            val_loss_freq = 0.0
+            thisepoch_valloss_one = 0.0
+            thisepoch_valloss_two = 0.0
             counter = 0
 
             for databatch in tqdm(validation_loader, total=len(validation_loader), desc='Val Steps'):
@@ -811,8 +811,8 @@ def train_calibrator(train_datapath, valid_datapath,
                 # -- log validation loss for this batch
                 running_val_loss_file.write(f"{epoch+1},{valloss_one.item()},{valloss_two.item()}\n")
                 running_val_loss_file.flush()
-                val_loss_amp += valloss_one.item()
-                val_loss_freq += valloss_two.item()
+                thisepoch_valloss_one += valloss_one.item()
+                thisepoch_valloss_two += valloss_two.item()
                 logger.debug(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {valloss_one.item()}, Val Freq Loss: {valloss_two.item()}")
             logger.info(f"Epoch {epoch+1}, Batch {counter}, Val Amp Loss: {valloss_one.item()}, Val Freq Loss: {valloss_two.item()}")
 
@@ -822,10 +822,10 @@ def train_calibrator(train_datapath, valid_datapath,
         # -- log epoch losses
         epoch_losses.iloc[epoch] = {
             'epoch': epoch+1,
-            losscols[1]: trainloss_one/len(training_loader),
-            losscols[2]: trainloss_two/len(training_loader),
-            losscols[3]: val_loss_amp/len(validation_loader),
-            losscols[4]: val_loss_freq/len(validation_loader),
+            losscols[1]: thisepoch_trainloss_one/len(training_loader),
+            losscols[2]: thisepoch_trainloss_two/len(training_loader),
+            losscols[3]: thisepoch_valloss_one/len(validation_loader),
+            losscols[4]: thisepoch_valloss_two/len(validation_loader),
         }
         logger.info(f"Epoch {epoch+1}/{num_epochs}, Validation Loss: {val_loss/len(validation_loader)}")
 
@@ -848,6 +848,19 @@ def train_calibrator(train_datapath, valid_datapath,
     # -- close the running loss files
     running_train_loss_file.close()
     running_val_loss_file.close()
+    # -- Save calibrator training config metadata to JSON
+    calibrator_training_metadata = {
+        'wfmodel_modelpath': wfmodel_modelpath,
+        'wfmodel_configpath': wfmodel_configpath,
+        'train_datapath': train_datapath,
+        'valid_datapath': valid_datapath,
+        'batch_size': batch_size,
+        'num_epochs': num_epochs,
+        'wftype': wftype,
+        'timestamp': timestamp,
+    }
+    with open(f'{savename}/calibrator_training_metadata_{NOW}.json', 'w') as f:
+        json.dump(calibrator_training_metadata, f, indent=4)
     print("Training complete!")
 
 
@@ -1211,6 +1224,8 @@ if __name__ == "__main__":
     if args.train:
         logger.info("Training the calibrator model...")
         train_calibrator(
+            train_datapath='../data/calibrator_data_train_with20260619-064140-epoch98model.hdf',
+            valid_datapath='../data/calibrator_data_valid_with20260619-064140-epoch98model.hdf',
             batch_size=args.batch_size,
             num_epochs=args.num_epochs,
             dummyrun=args.dummy_run,
