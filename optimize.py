@@ -1061,10 +1061,18 @@ def run_testing(configpath=None, model_path=None, fname=None,
     mismatch_types = ['mismatch_amp', 'mismatch_phase', 'mismatch_hplus', 'mismatch_hcross']
     titles = ['Amplitude', 'Phase', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
     plot_mm_hist(dfmm, types=mismatch_types, titles=titles, savedir=savedir)
-
     # save test results and configuration
     dfmm.to_hdf(os.path.join(savedir, f'mismatch-results-{NOW}.h5'), key='dfmm', mode='w')
-    model.save_model_config(filepath=os.path.join(savedir, f'test-config-{NOW}.json'))
+    config = model.MODEL_CONFIG.copy()
+    config.update({
+        'training_configpath': configpath,
+        'model_path': model_path,
+        'batch_size': batch_size,
+        'num_workers': num_workers,
+        'savedir': savedir,
+    })
+    with open(os.path.join(savedir, f'test-config-{NOW}.json'), 'w') as f:
+        json.dump(config, f, indent=4)
     logger.info(f"Test results and configuration saved to {savedir}")
     logger.info("Testing completed and results saved.")
 
