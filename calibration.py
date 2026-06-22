@@ -59,6 +59,15 @@ else:
     PRECISION = 'float32'  # Use double precision for CPU
 
 
+# -- get mean and std of labels for normalization
+params_fname = '../data/params-' + APPROXIMANT + '-train-100000-fcutoff-uniform-aligned-regen-4vals.csv'
+params_df = pd.read_csv(params_fname, index_col=0, sep=',')
+params_mean = params_df.mean().values
+params_std = params_df.std().values
+logger.info(f"Labels mean: {params_mean}")
+logger.info(f"Labels std: {params_std}")
+params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION))
+params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION))
 
 class ConvBlock(nn.Module):
     def __init__(self, channels, kernel_size=7, dropout=0.0):
@@ -143,7 +152,7 @@ class ResidualCalibrationCNN(nn.Module):
 
 def get_calibrator_input(wfmodel, originals, labels, 
                          data_hdf=None, indices=None,
-                         params_mean=None, params_std=None,
+                         labels_mean=None, labels_std=None,
                          inputnames=None, targetnames=None,
                          correct_length=True):
     """
@@ -165,10 +174,10 @@ def get_calibrator_input(wfmodel, originals, labels,
         The original sample indices from the dataset for this batch, shape: (batch,), used for saving 
         the data to HDF file with unique group names, by default None.
         NOTE: These are the only groups that will be saved to the HDF file.
-    params_mean : torch.Tensor, optional
-        The mean values for normalizing the parameters, by default None.
-    params_std : torch.Tensor, optional
-        The standard deviation values for normalizing the parameters, by default None.
+    labels_mean : torch.Tensor, optional
+        The mean values for normalizing the labels, by default None.
+    labels_std : torch.Tensor, optional
+        The standard deviation values for normalizing the labels, by default None.
 
     Returns
     -------
@@ -235,14 +244,19 @@ def get_calibrator_input(wfmodel, originals, labels,
     plt.close()
 
     if params_mean is None or params_std is None:
-        params_mean = wfmodel.MODEL_CONFIG['labels_mean']
-        params_std = wfmodel.MODEL_CONFIG['labels_std']
-        logger.debug(f"Using params_mean and params_std from the model config: {params_mean}, {params_std}")
-    
-    param_m1 = (param_m1 - params_mean[0]) / params_std[0]
-    param_m2 = (param_m2 - params_mean[1]) / params_std[1]
-    param_s1z = (param_s1z - params_mean[2]) / params_std[2]
-    param_s2z = (param_s2z - params_mean[3]) / params_std[3]
+        labels_mean = wfmodel.MODEL_CONFIG['labels_mean']
+        labels_std = wfmodel.MODEL_CONFIG['labels_std']
+        if labels_mean is None or labels_std is None:
+            logger.warning("labels_mean and labels_std are not provided and not found in the model config. So, we will use the global labels_mean and labels_std calculated from the training data CSV file.")
+            labels_mean = params_mean
+            labels_std = params_std
+        else:
+            logger.debug(f"Using labels_mean and labels_std from the model config: {labels_mean}, {labels_std}")
+
+    param_m1 = (param_m1 - labels_mean[0]) / labels_std[0]
+    param_m2 = (param_m2 - labels_mean[1]) / labels_std[1]
+    param_s1z = (param_s1z - labels_mean[2]) / labels_std[2]
+    param_s2z = (param_s2z - labels_mean[3]) / labels_std[3]
     logger.debug(f"Normalized parameters: param_m1={param_m1}, param_m2={param_m2}, param_s1z={param_s1z}, param_s2z={param_s2z}")
 
     calibrator_input = torch.cat([calibrator_input, param_m1.unsqueeze(1), param_m2.unsqueeze(1),
@@ -597,8 +611,8 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
     # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
     with open(wfmodel_configpath, 'r') as f:
         model_config = json.load(f)
-    params_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE)
-    params_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE)
+    labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE)
+    labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE)
 
     savename = f'../{PROJECT_DIR}/results/{TODAY}'
     os.makedirs(savename, exist_ok=True)
@@ -635,19 +649,19 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             calibrator_hdf=f'calibrator_training_data_{timestamp}.hdf', 
             wfmodel=wfmodel,
             wf_dataset_obj=wf_train_set,
-            params_mean=params_mean, params_std=params_std
+            params_mean=labels_mean, params_std=labels_std
         )
         match_data_between_wf_and_calibrator_hdfs(
             wf_hdf=valhdf, 
             calibrator_hdf=f'calibrator_validation_data_{timestamp}.hdf', 
             wfmodel=wfmodel,
             wf_dataset_obj=wf_valid_set,
-            params_mean=params_mean, params_std=params_std
+            params_mean=labels_mean, params_std=labels_std
         )
         train_set = CalibratorDataset(data_hdf=f'calibrator_training_data_{timestamp}', 
-                                        params_mean=params_mean, params_std=params_std)
+                                        params_mean=labels_mean, params_std=labels_std)
         valid_set = CalibratorDataset(data_hdf=f'calibrator_validation_data_{timestamp}', 
-                                        params_mean=params_mean, params_std=params_std)
+                                        params_mean=labels_mean, params_std=labels_std)
         training_loader = CalibratorDataLoader(train_set, batch_size=batch_size, shuffle=True)
         validation_loader = CalibratorDataLoader(valid_set, batch_size=batch_size, shuffle=True)
         logger.info("Using CalibratorDataset and CalibratorDataLoader for training the calibrator model, which read the calibrator input and target residuals from HDF files.")
@@ -718,17 +732,17 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
             #     try:
             #         calibrator_input, calibrator_target = read_calibrator_input(
             #             data_hdf=calibrator_training_data_hdf,          
-            #             indices=indices, params_mean=params_mean, params_std=params_std)
+            #             indices=indices, params_mean=labels_mean, params_std=labels_std)
             #     except FileNotFoundError:
             #         logger.warning("Calibrator input data not found, generating new data...")
             #         calibrator_input, calibrator_target = get_calibrator_input(
             #             wfmodel, originals, labels, 
             #             data_hdf=calibrator_training_data_hdf, 
-            #             indices=indices, params_mean=params_mean, params_std=params_std)
+            #             indices=indices, params_mean=labels_mean, params_std=labels_std)
             # else:
             #     calibrator_input, calibrator_target = read_calibrator_input(
             #         data_hdf=calibrator_training_data_hdf,          
-            #         indices=indices, params_mean=params_mean, params_std=params_std)
+            #         indices=indices, params_mean=labels_mean, params_std=labels_std)
             # target_amp_residual, target_freq_residual = calibrator_target
 
             calibrator_input, target_amp_residual, target_freq_residual = databatch
@@ -777,17 +791,17 @@ def train_calibrator(wfmodel_modelpath=f'../trained-models/model-20251004_072338
                 #     try:
                 #         calibrator_input, calibrator_target = read_calibrator_input(
                 #             data_hdf=calibrator_val_data_hdf,          
-                #             indices=indices, params_mean=params_mean, params_std=params_std)
+                #             indices=indices, params_mean=labels_mean, params_std=labels_std)
                 #     except FileNotFoundError:
                 #         logger.warning("Calibrator input data not found, generating new data...")
                 #         calibrator_input, calibrator_target = get_calibrator_input(
                 #             wfmodel, originals, labels, 
                 #             data_hdf=calibrator_val_data_hdf, 
-                #             indices=indices, params_mean=params_mean, params_std=params_std)
+                #             indices=indices, params_mean=labels_mean, params_std=labels_std)
                 # else:
                 #     calibrator_input, calibrator_target = read_calibrator_input(
                 #         data_hdf=calibrator_val_data_hdf,          
-                #         indices=indices, params_mean=params_mean, params_std=params_std)
+                #         indices=indices, params_mean=labels_mean, params_std=labels_std)
                 # target_amp_residual, target_freq_residual = calibrator_target
 
                 out = calmodel(calibrator_input)  # shape: (batch, 2, n)
