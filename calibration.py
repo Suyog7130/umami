@@ -32,7 +32,8 @@ from utils.gwutils import calc_time_array
 from utils.plotting import plot_twopanel
 
 import logging
-global logger
+# global logger
+logger = logging.getLogger(__name__)
 
 
 PROJECT_DIR = 'v0p1'
@@ -509,7 +510,6 @@ class CalibratorDataset(torch.utils.data.Dataset):
         elif self.wftype=='amp_phase':
             self.inputnames = ['ml_amp', 'ml_phase']
             self.targetnames = ['target_amp_residual', 'target_phase_residual']
-
     
     def init_hdf(self):
         # -- check if the HDF file exists, if not, create an empty HDF file with the same name, so that we can write to it later on in the `get_calibrator_input` function without having to worry about file not found errors.
@@ -542,10 +542,11 @@ class CalibratorDataset(torch.utils.data.Dataset):
 
         # -- read the calibrator input and target residuals from the HDF file for the given indices
         group_name = f'sample{int(index)}'
-        ml_out_one = torch.tensor(self.data_file[group_name][self.inputnames[0]][:], dtype=getattr(torch, PRECISION), device=DEVICE)
-        ml_out_two = torch.tensor(self.data_file[group_name][self.inputnames[1]][:], dtype=getattr(torch, PRECISION), device=DEVICE)
-        target_residual_one = torch.tensor(self.data_file[group_name][self.targetnames[0]][:], dtype=getattr(torch, PRECISION), device=DEVICE)
-        target_residual_two = torch.tensor(self.data_file[group_name][self.targetnames[1]][:], dtype=getattr(torch, PRECISION), device=DEVICE)
+        ml_out_one = torch.tensor(self.data_file[group_name][self.inputnames[0]][:], dtype=getattr(torch, PRECISION))
+        ml_out_two = torch.tensor(self.data_file[group_name][self.inputnames[1]][:], dtype=getattr(torch, PRECISION))
+        target_residual_one = torch.tensor(self.data_file[group_name][self.targetnames[0]][:], dtype=getattr(torch, PRECISION))
+        target_residual_two = torch.tensor(self.data_file[group_name][self.targetnames[1]][:], dtype=getattr(torch, PRECISION))
+        logger.debug(f"read data is on device: {ml_out_one.device}, {ml_out_two.device}, {target_residual_one.device}, {target_residual_two.device}")
 
         # -- parameter values are scalars for each data, so we don't convert them to tensors until we read them, and then we repeat them across the time dimension to match the shape of ml_amp/ml_freq, which is (n,)
         # -- Scalar values in HDF datasets are available via ellipsis indexing `[...]`
@@ -562,7 +563,7 @@ class CalibratorDataset(torch.utils.data.Dataset):
             param_s2z = (param_s2z - self.labels_mean[3].item()) / self.labels_std[3].item()
             logger.debug(f"Read calibrator input from HDF for group {group_name}: param_m1={param_m1}, param_m2={param_m2}, param_s1z={param_s1z}, param_s2z={param_s2z}")
         
-        params = torch.tensor([param_m1, param_m2, param_s1z, param_s2z], dtype=getattr(torch, PRECISION), device=DEVICE)
+        params = torch.tensor([param_m1, param_m2, param_s1z, param_s2z], dtype=getattr(torch, PRECISION))
         params = params.unsqueeze(-1).expand(-1, ml_out_one.shape[-1])  # shape: (4, n)
         calibrator_input = torch.stack([ml_out_one, ml_out_two, params[0], params[1], params[2], params[3]], dim=0)  # shape: (6, n)
         return (calibrator_input, target_residual_one, target_residual_two)  # return as a tuple
@@ -575,10 +576,11 @@ class CalibratorDataLoader(torch.utils.data.DataLoader):
     """
     A custom data loader class for the calibrator dataset, which simply wraps the CalibratorDataset and allows for batching and shuffling.
     """
-    def __init__(self, dataset, batch_size=32, shuffle=True):
-        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle)
-            
-        
+    def __init__(self, dataset, batch_size=32, shuffle=True,
+                 num_workers=0, pin_memory=True):
+        super().__init__(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=pin_memory)
+
+
 def merger_weighted_mse_loss_func(true, predicted, amp_ml):
     """
     A custom loss function that computes a weighted MSE loss, where the weights are based on the amplitude of the ML generated waveform.
@@ -604,6 +606,7 @@ def train_calibrator(train_datapath, valid_datapath,
                      wfmodel_configpath='modelconfig-cvae-paper-I.json',
                      batch_size=64, num_epochs=25,
                      wftype: {'amp_freq', 'amp_phase'} = 'amp_phase',
+                     num_workers=0, pin_memory=True,
                      timestamp=NOW, dummyrun=False,):
     """
     Train the residual calibrator model.
@@ -645,8 +648,8 @@ def train_calibrator(train_datapath, valid_datapath,
     # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
     with open(wfmodel_configpath, 'r') as f:
         model_config = json.load(f)
-    labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE)
-    labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE)
+    labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION))
+    labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION))
 
     savename = f'../{PROJECT_DIR}/results/{TODAY}'
     os.makedirs(savename, exist_ok=True)
@@ -707,11 +710,10 @@ def train_calibrator(train_datapath, valid_datapath,
 
     train_set = CalibratorDataset(filepath=train_datapath, labels_mean=labels_mean, labels_std=labels_std)
     valid_set = CalibratorDataset(filepath=valid_datapath, labels_mean=labels_mean, labels_std=labels_std)
-    training_loader = CalibratorDataLoader(train_set, batch_size=batch_size, shuffle=True)
-    validation_loader = CalibratorDataLoader(valid_set, batch_size=batch_size, shuffle=True)
-    logger.info("Using CalibratorDataset and CalibratorDataLoader for training the calibrator model, which read the calibrator input and target residuals from HDF files.")
+    training_loader = CalibratorDataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    validation_loader = CalibratorDataLoader(valid_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    logger.info("Using CalibratorDataset and CalibratorDataLoader for training the calibrator model, will read the calibrator input and target residuals from HDF files.")
 
-    logger.info(training_loader.__dict__)
     ntbatches = len(training_loader)
     nvbatches = len(validation_loader)
     logger.info(f'Number of Training batches: {ntbatches}')  # this doesn't return the batchsize!
@@ -761,6 +763,9 @@ def train_calibrator(train_datapath, valid_datapath,
                 break
             
             calibrator_input, target_residual_one, target_residual_two = databatch
+            calibrator_input = calibrator_input.to(device=DEVICE, dtype=getattr(torch, PRECISION))
+            target_residual_one = target_residual_one.to(device=DEVICE, dtype=getattr(torch, PRECISION))
+            target_residual_two = target_residual_two.to(device=DEVICE, dtype=getattr(torch, PRECISION))
 
             predictions = calmodel(calibrator_input)  # shape: (batch, 2, n)
             predicted_residual_one, predicted_residual_two = predictions[:, 0, :], predictions[:, 1, :]
@@ -798,6 +803,9 @@ def train_calibrator(train_datapath, valid_datapath,
                     break
 
                 calibrator_input, target_residual_one, target_residual_two = databatch
+                calibrator_input = calibrator_input.to(device=DEVICE, dtype=getattr(torch, PRECISION))
+                target_residual_one = target_residual_one.to(device=DEVICE, dtype=getattr(torch, PRECISION))
+                target_residual_two = target_residual_two.to(device=DEVICE, dtype=getattr(torch, PRECISION))
 
                 predictions = calmodel(calibrator_input)  # shape: (batch, 2, n)
                 predicted_residual_one, predicted_residual_two = predictions[:, 0, :], predictions[:, 1, :]
@@ -1194,6 +1202,8 @@ if __name__ == "__main__":
                         help='Batch size for training the calibrator model.')
     trainparser.add_argument('--num-epochs', type=int, default=25, 
                         help='Number of epochs to train the calibrator model.')
+    trainparser.add_argument('--num-workers', type=int, default=4,
+                        help='Number of worker threads for data loading.')
     trainparser.add_argument('--dummy-run', action='store_true', 
                         help='If set, runs a quick dummy training loop for testing purposes.')
     
@@ -1235,6 +1245,7 @@ if __name__ == "__main__":
             num_epochs=args.num_epochs,
             dummyrun=args.dummy_run,
             timestamp=args.timestamp,
+            num_workers=args.num_workers,
         )
     if args.plot_results is not None:
         plot_calibrated_mm_hist(args.plot_results, results_dir=args.results_dir)
