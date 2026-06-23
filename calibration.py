@@ -1094,7 +1094,6 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         # -- iterate over all waveforms in the batch
         for i in range(calibrator_input.shape[0]):
             recon_amp, recon_phase = cal_out_one[i, :], cal_out_two[i, :]
-            recon_hp, recon_hc = polarizations_from_amp_phase(recon_amp, recon_phase, scale_factor=10**20)
 
             grpidx = bidx * batch_size + i
             input, target, wflabels, keys, strains, attr = wf_dataset.get_data_by_groupname(grpnames[grpidx])
@@ -1102,6 +1101,9 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             orig_hp, orig_hc = strains[0, :], strains[1, :]
             delta_t = attr['delta_t']
             f_lower = attr['f_lower']
+
+            phase_zero = np.unwrap(np.arctan2(orig_hc, orig_hp))[0]  # phase at the start of the waveform
+            recon_hp, recon_hc = polarizations_from_amp_phase(recon_amp, recon_phase, scale_factor=10**20, phase_zero=phase_zero)
 
             # -- Check wflabels with calibrator_input labels to make sure they match!
             wflabels = wflabels.to(device=DEVICE, dtype=getattr(torch, PRECISION))
