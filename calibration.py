@@ -1214,11 +1214,18 @@ def plot_calibration_results(original: torch.Tensor,
     logger.info("Saved all calibration result plots.")
 
 
-def plot_calibrated_mm_hist(hdf_path, results_dir=None):
+def plot_calibrated_mm_hist(hdf_path, results_dir=None,
+                            wftype: {'amp_freq', 'amp_phase'} = 'amp_phase'):
     """
     Read the calibrated mismatch results from the HDF file and return as a pandas DataFrame.
     """
     from lossplots import plot_mm_hist
+    if wftype == 'amp_freq':
+        types = ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']
+        titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
+    elif wftype == 'amp_phase':
+        types = ['mismatch_amp', 'mismatch_phase', 'mismatch_hplus', 'mismatch_hcross']
+        titles = ['Amplitude', 'Phase', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
 
     if not hdf_path.endswith('.h5'):
         hdf_path += '.h5'
@@ -1229,7 +1236,8 @@ def plot_calibrated_mm_hist(hdf_path, results_dir=None):
     dfmm = pd.read_hdf(hdf_path, key='mismatch_results')
     logger.info(f"Read calibrated mismatch results from {hdf_path}, with {len(dfmm)} entries.")
     
-    plot_mm_hist(dfmm, savedir=results_dir, fname=f'calibrated', now=NOW)
+    plot_mm_hist(dfmm, savedir=results_dir, 
+                 fname=f'calibrated', now=NOW, types=types, titles=titles)
     logger.info("Plotted calibrated mismatch histograms.")
 
 

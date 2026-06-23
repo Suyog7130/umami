@@ -1,11 +1,13 @@
 
 import os
 import h5py
-import logging
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+import logging
+logger = logging.getLogger(__name__)
 
 from scipy.interpolate import griddata
 from matplotlib.colors import LogNorm
@@ -446,8 +448,10 @@ def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13,
     mismatch values for that type.
     """
     if types is None:
+        logging.warning("No mismatch types provided, using default types.")
         types = ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']
     if titles is None:
+        logging.warning("No mismatch titles provided, using default titles.")
         titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
     fig, ax = plt.subplots(2, 2, figsize=(10, 10))
     ax = ax.flatten()
@@ -462,12 +466,16 @@ def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13,
         ax[i].set_ylabel('Count', fontsize=fontsize)
         ax[i].text(0.95, 0.95, f'{titles[i]}', fontweight='bold',
                    transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
-        ax[i].text(0.95, 0.85, f'Mode: {dfmm[t].mode()[0]:.2e}\nMean: {dfmm[t].mean():.2e}\nMedian: {dfmm[t].median():.2e}', 
+        _mode = dfmm[t].mode()[0]
+        _mean = dfmm[t].mean()
+        _median = dfmm[t].median()
+        logger.info(f"{t}: Mode = {_mode:.2e}, Mean = {_mean:.2e}, Median = {_median:.2e}")
+        ax[i].text(0.95, 0.85, f'Mode: {_mode:.2e}\nMean: {_mean:.2e}\nMedian: {_median:.2e}', 
                    transform=ax[i].transAxes, fontsize=labelsize, va='top', ha='right')
         ax[i].tick_params(which="both", direction='in', top=True, right=True)
         ax[i].tick_params(labelsize=labelsize)
     plt.tight_layout()
-    savename = savedir + f'mismatch_hist'
+    savename = os.path.join(savedir, f'mismatch_hist')
     savename += f'-{fname}' if fname else ''
     savename += '-log' if log else ''
     plt.savefig(savename+'-'+now+'.png', dpi=300, bbox_inches='tight', transparent=True)
