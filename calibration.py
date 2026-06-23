@@ -1012,21 +1012,23 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
 
     # -- We need the waveforms data for to have the original [amp,freq/phase] and [hp,hc] values available to use for mismatch calculation. It is assumed that the group names match between the two datasets.
     wf_dataset = WaveformDataset(hdf_fname=wf_datapath, 
-                                 target_type=wftype, 
+                                 target_type=wftype,
                                  return_indices=False)
+    logger.info(f"Loaded waveform dataset from {wf_datapath} for testing the calibrator model")
 
+    # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
+    with open(wfmodel_configpath, 'r') as f:
+        model_config = json.load(f)
+    labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE) # shape: (4,)
+    labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE) # shape: (4,)
+    
     # NOTE: This model was trained with double-normalized labels, so we need to denormalize the labels again!
-    if not calibrator_modelpath == f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt':
-        # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
-        with open(wfmodel_configpath, 'r') as f:
-            model_config = json.load(f)
-        labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE) # shape: (4,)
-        labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE) # shape: (4,)
+    if calibrator_modelpath == f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt':
+        testset = CalibratorDataset(filepath=test_datapath, labels_mean=labels_mean, labels_std=labels_std)
     else:
-        labels_mean = None
-        labels_std = None
+        # -- For all other models data dataloading ignored labels normalization!
+        testset = CalibratorDataset(filepath=test_datapath, labels_mean=None, labels_std=None)
 
-    testset = CalibratorDataset(filepath=test_datapath, labels_mean=labels_mean, labels_std=labels_std)
     testloader = CalibratorDataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
     grpnames = testset.group_names
 
@@ -1056,6 +1058,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         cal_out_two = ml_out_two + pred_residual_two
 
         labels = calibrator_input[:, 2:6, 0]  # shape: (batch, 4)
+
         # -- denormalize labels for plotting and mismatch calculation
         labels = labels * labels_std.unsqueeze(0) + labels_mean.unsqueeze(0)
 
@@ -1063,7 +1066,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         if calibrator_modelpath == f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt':
             logger.warning(f"Calibrator model {calibrator_modelpath} was trained with double-normalized labels, so we need to denormalize the labels again for plotting and mismatch calculation.")
             labels = labels * labels_std.unsqueeze(0) + labels_mean.unsqueeze(0)
-        print(f"Batch {bidx+1}/{len(testloader)}, Labels (m1, m2, chi1z, chi2z): {labels.cpu().numpy()}")
+        # print(f"Batch {bidx+1}/{len(testloader)}, Labels (m1, m2, chi1z, chi2z): {labels.cpu().numpy()}")
 
         if bidx == 0:  # just plot the first batch for now, which is of shape (batch_size, 2, n)
             logger.info(f"Plotting calibration results for the first batch of test data...")
@@ -1073,7 +1076,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                 target_residual=torch.stack([target_residual_one, target_residual_two], dim=1),
                 output_residual=torch.stack([pred_residual_one, pred_residual_two], dim=1),
                 title=f'$m_1 = {labels[0, 0].item():.2f}, m_2 = {labels[0, 1].item():.2f}, \\chi_1(z) = {labels[0, 2].item():.2f}, \\chi_2(z) = {labels[0, 3].item():.2f}$',
-                savename=f'wf{int(grpnames[0])}' if isinstance(grpnames, list) else f'wf{grpnames[0].item()}',
+                savename = grpnames[0] if isinstance(grpnames, list) else f'wf{int(grpnames[0].item())}',
                 savedir=savedir,
             )
 
@@ -1082,40 +1085,49 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         mismatch_hplus = np.zeros(calibrator_input.shape[0])
         mismatch_hcross = np.zeros(calibrator_input.shape[0])
 
+        m1s, m2s, chi1zs, chi2zs = labels[:, 0], labels[:, 1], labels[:, 2], labels[:, 3]
+        chirpmasses = calc_chirp_mass(m1s, m2s)
+        totalmasses = m1s + m2s
+        massratios = m1s / m2s
+        chieffs = calc_chieff(m1s, m2s, chi1zs, chi2zs)
+
         # -- iterate over all waveforms in the batch
         for i in range(calibrator_input.shape[0]):
+            recon_amp, recon_phase = cal_out_one[i, :], cal_out_two[i, :]
+            recon_hp, recon_hc = polarizations_from_amp_phase(recon_amp, recon_phase, scale_factor=10**20)
         
-            input, target, wflabels, keys, strains, attr = wf_dataset.get_data_by_groupname(grpnames[bidx*batch_size:(bidx+1)*batch_size])
-            # -- Check wflabels with calibrator_input labels to make sure they match!
-            assert torch.allclose(wflabels[i], labels[i]), f"Mismatch between waveform dataset labels and calibrator input labels for sample {i} in batch {bidx}. Waveform dataset labels: {wflabels[i]}, Calibrator input labels: {labels[i]}"
-            exit(0)
+            input, target, wflabels, keys, strains, attr = wf_dataset.get_data_by_groupname(grpnames[i])
+            orig_amp, orig_phase = target[0, :], target[1, :]
+            orig_hp, orig_hc = strains[0, :], strains[1, :]
+            delta_t = attr['delta_t']
+            f_lower = attr['f_lower']
 
-            delta_t = attr['delta_t'][i]
-            f_lower = attr['f_lower'][i]
+            # -- Check wflabels with calibrator_input labels to make sure they match!
+            wflabels = wflabels.to(device=DEVICE, dtype=getattr(torch, PRECISION))
+            assert torch.allclose(wflabels, labels[i], atol=1e-3), f"Mismatch between waveform dataset labels and calibrator input labels for sample {i} in batch {bidx}. Waveform dataset labels: {wflabels}, Calibrator input labels: {labels[i]}"
 
             mismatch_amp[i] = calculate_cosine_distance(recon_amp, orig_amp)
             mismatch_phase[i] = calculate_cosine_distance(recon_phase, orig_phase)
             mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
             mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
-
-            logger.debug(f"Test batch {idx+1}, sample {i+1}/{input.shape[0]}: m1={m1s[i].item():.2f}, m2={m2s[i].item():.2f}, chi1z={chi1zs[i].item():.2f}, chi2z={chi2zs[i].item():.2f}, chirp_mass={chirpmasses[i].item():.2f}, total_mass={totalmasses[i].item():.2f}, mass_ratio={massratios[i].item():.2f}, chieff={chieffs[i].item():.2f}, mismatch_amp={mismatch_amp[i]:.4e}, mismatch_phase={mismatch_phase[i]:.4e}, mismatch_hplus={mismatch_hplus[i]:.4e}, mismatch_hcross={mismatch_hcross[i]:.4e}")
+            logger.debug(f"Batch {bidx+1}/{len(testloader)}, Sample {i+1}/{calibrator_input.shape[0]}, Mismatch (Amp, Phase, hplus, hcross): ({mismatch_amp[i]:.4e}, {mismatch_phase[i]:.4e}, {mismatch_hplus[i]:.4e}, {mismatch_hcross[i]:.4e})")
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
-            'dataindex': indices.cpu().numpy(),
             'm1': labels[:, 0].cpu().numpy(),
             'm2': labels[:, 1].cpu().numpy(),
             'chi1z': labels[:, 2].cpu().numpy(),
             'chi2z': labels[:, 3].cpu().numpy(),
-            'chirp_mass': chirpmasses.flatten(),
-            'total_mass': totalmasses.flatten(),
-            'mass_ratio': massratios.flatten(),
-            'chieff': chieffs.flatten(),
+            'chirp_mass': chirpmasses.cpu().numpy(),
+            'total_mass': totalmasses.cpu().numpy(),
+            'mass_ratio': massratios.cpu().numpy(),
+            'chieff': chieffs.cpu().numpy(),
             'mismatch_amp': mismatch_amp.flatten(),
-            'mismatch_freq': mismatch_freq.flatten(),
+            'mismatch_phase': mismatch_phase.flatten(),
             'mismatch_hplus': mismatch_hplus.flatten(),
             'mismatch_hcross': mismatch_hcross.flatten(),
         })], ignore_index=True)
-        logger.info(f"Processed test batch {i+1}/{len(testloader)}, with data indices {indices.cpu().numpy()}, and average amplitude mismatch {mismatch_amp.mean().item():.4e}, frequency mismatch {mismatch_freq.mean().item():.4e}, hplus mismatch {mismatch_hplus.mean().item():.4e}, and hcross mismatch {mismatch_hcross.mean().item():.4e}")
+        logger.info(f"Processed batch {bidx+1}/{len(testloader)}, appended mismatch results to dataframe. Average mismatch for this batch: Amp: {mismatch_amp.mean():.4e}, Phase: {mismatch_phase.mean():.4e}, hplus: {mismatch_hplus.mean():.4e}, hcross: {mismatch_hcross.mean():.4e}")
+        exit(0)
 
     savename = os.path.join(savedir, f'calibrator_test_mismatch_results_{timestamp}')
     savename += '-dummy' if dummyrun else ''

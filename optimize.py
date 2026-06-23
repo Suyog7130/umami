@@ -179,11 +179,11 @@ class WaveformDataset(torch.utils.data.Dataset):
                  target_type: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_phase',
                  input_normalized=True, target_normalized=False,
                  params_mean=None, params_std=None,
-                 train_device=DEVICE, precision=PRECISION,
+                 device=DEVICE, precision=PRECISION,
                  return_indices=False):
         super(WaveformDataset, self).__init__()
         self.hdf_fname = hdf_fname
-        self.train_device = train_device
+        self.train_device = device
         self.precision = precision
         self.return_indices = return_indices
 
