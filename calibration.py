@@ -485,9 +485,12 @@ class CalibratorDataset(torch.utils.data.Dataset):
     """
     A custom dataset class for the calibrator model, which reads the calibrator input and target residuals from a HDF file.
     """
-    def __init__(self, filepath, labels_mean=None, labels_std=None, 
+    def __init__(self, filepath, 
+                 labels_mean=None, labels_std=None, 
                  wftype: {'amp_freq', 'amp_phase'} = 'amp_phase'):
         self.filepath = filepath
+        if labels_mean is not None and labels_std is not None:
+            logger.warning(f"It is usually recommended to have the calibrator input data to have already performed all pre-processing etc. to the data, including labels normalization. Since, the Dataset has been initialized with the labels_mean and labels_std, we will use them to normalize the parameters when reading the data from the HDF file. If the data has labels already normalized, then this means that we will have done double normalization, which is not recommended. Please check the data and the labels_mean and labels_std values to ensure that they are consistent.")
         self.labels_mean = labels_mean
         self.labels_std = labels_std
         self.wftype = wftype
@@ -645,11 +648,11 @@ def train_calibrator(train_datapath, valid_datapath,
     # wfmodel.eval()  # set to eval mode since we are only using it for inference to generate the calibrator inputs
     # logger.info(f"Loaded waveform model for calibrator input generation: {wfmodel}")
 
-    # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
-    with open(wfmodel_configpath, 'r') as f:
-        model_config = json.load(f)
-    labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION))
-    labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION))
+    # # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
+    # with open(wfmodel_configpath, 'r') as f:
+    #     model_config = json.load(f)
+    # labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION))
+    # labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION))
 
     resultdir = f'../{PROJECT_DIR}/results/{TODAY}/'
     modeldir = f'../{PROJECT_DIR}/{TODAY}/trained-models/'
@@ -709,8 +712,10 @@ def train_calibrator(train_datapath, valid_datapath,
     #     validation_loader = CustomDataLoader(valid_set, batch_size=batch_size, shuffle=True)
     #     logger.info("Using CustomDataset and CustomDataLoader for training the calibrator model, which generate the calibrator input and target residuals on the fly by running the ML model inference every time. This is computationally expensive, so it's recommended to use the CalibratorDataset and CalibratorDataLoader instead, which read the pre-generated data from HDF files.")
 
-    train_set = CalibratorDataset(filepath=train_datapath, labels_mean=labels_mean, labels_std=labels_std)
-    valid_set = CalibratorDataset(filepath=valid_datapath, labels_mean=labels_mean, labels_std=labels_std)
+    train_set = CalibratorDataset(filepath=train_datapath, 
+                                  labels_mean=None, labels_std=None  # data has labels already normalized!
+                                  )
+    valid_set = CalibratorDataset(filepath=valid_datapath, labels_mean=None, labels_std=None)
     training_loader = CalibratorDataLoader(train_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     validation_loader = CalibratorDataLoader(valid_set, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     logger.info("Using CalibratorDataset and CalibratorDataLoader for training the calibrator model, will read the calibrator input and target residuals from HDF files.")
@@ -986,15 +991,20 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     # wfmodel.eval()  # set to eval mode since we are only using it for inference to generate the calibrator inputs
     # logger.info(f"Loaded waveform model for calibrator input generation: {wfmodel}")
 
-    # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
-    with open(wfmodel_configpath, 'r') as f:
-        model_config = json.load(f)
-    labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE) # shape: (4,)
-    labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE) # shape: (4,)
-
     # -- init calibrator model
     calmodel = load_calibrator_model(calibrator_modelpath, device=DEVICE, precision=PRECISION)
     logger.info(f"Loaded calibrator model from {calibrator_modelpath} for testing: {calmodel}")
+
+    # NOTE: This model was trained with double-normalized labels, so we need to denormalize the labels again!
+    if not calibrator_modelpath == f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt':
+        # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
+        with open(wfmodel_configpath, 'r') as f:
+            model_config = json.load(f)
+        labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE) # shape: (4,)
+        labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE) # shape: (4,)
+    else:
+        labels_mean = None
+        labels_std = None
 
     testset = CalibratorDataset(filepath=test_datapath, labels_mean=labels_mean, labels_std=labels_std)
     testloader = CalibratorDataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=0)
@@ -1029,7 +1039,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         # -- denormalize labels for plotting and mismatch calculation
         labels = labels * labels_std.unsqueeze(0) + labels_mean.unsqueeze(0)
 
-        # FIXME: For this model I did the labels normalization twice, since the calibration input data itself had normalized labels, and I applied the normalization again during dataloading.
+        # NOTE: This model was trained with double-normalized labels, so we need to denormalize the labels again!
         if calibrator_modelpath == f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt':
             logger.warning(f"Calibrator model {calibrator_modelpath} was trained with double-normalized labels, so we need to denormalize the labels again for plotting and mismatch calculation.")
             labels = labels * labels_std.unsqueeze(0) + labels_mean.unsqueeze(0)
