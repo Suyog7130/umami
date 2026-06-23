@@ -952,7 +952,7 @@ class CalibrationModel:
 def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10', 
                     wfmodel_configpath='modelconfig-cvae-paper-I.json',
                     calibrator_modelpath=f'trained-models/calibrator_model_20260605-011742_epoch20.pt',
-                    dataset_path='../data/SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen.hdf',
+                    test_datapath='../data/SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen.hdf',
                     savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
                     batch_size=128, 
                     dummyrun=False,
@@ -967,35 +967,31 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     """
     savedir = os.path.join(savedir, f'calibration_results_{NOW}/')
     print(f"Saving calibrator testing results to {savedir}...")
-    ensure_dirs_and_files([savedir])
-    logger.info(f"Testing residual calibrator model with ML waveform model from {wfmodel_modelpath} and config from {wfmodel_configpath}, and calibrator model from {calibrator_modelpath} on dataset {dataset_path}")
+    ensure_dir(savedir)
+    logger.info(f"Testing residual calibrator model with ML waveform model from {wfmodel_modelpath} and config from {wfmodel_configpath}, and calibrator model from {calibrator_modelpath} on dataset {test_datapath}")
 
-    wfmodel_modelpath = wfmodel_modelpath if os.path.exists(wfmodel_modelpath) else f'../{PROJECT_DIR}/{wfmodel_modelpath}'
-    calibrator_modelpath = calibrator_modelpath if os.path.exists(calibrator_modelpath) else f'../{PROJECT_DIR}/{calibrator_modelpath}'
+    # wfmodel_modelpath = wfmodel_modelpath if os.path.exists(wfmodel_modelpath) else f'../{PROJECT_DIR}/{wfmodel_modelpath}'
+    # calibrator_modelpath = calibrator_modelpath if os.path.exists(calibrator_modelpath) else f'../{PROJECT_DIR}/{calibrator_modelpath}'
 
-    wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
-                            configpath=wfmodel_configpath, 
-                            device=DEVICE, precision=PRECISION,)
-    wfmodel.eval()  # set to eval mode since we are only using it for inference to generate the calibrator inputs
-    logger.info(f"Loaded waveform model for calibrator input generation: {wfmodel}")
+    # wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
+    #                         configpath=wfmodel_configpath, 
+    #                         device=DEVICE, precision=PRECISION,)
+    # wfmodel.eval()  # set to eval mode since we are only using it for inference to generate the calibrator inputs
+    # logger.info(f"Loaded waveform model for calibrator input generation: {wfmodel}")
 
     # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
     with open(wfmodel_configpath, 'r') as f:
         model_config = json.load(f)
-    params_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE)
-    params_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE)
+    labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE)
+    labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE)
 
     # -- init calibrator model
     calmodel = load_calibrator_model(calibrator_modelpath, device=DEVICE, precision=PRECISION)
     logger.info(f"Loaded calibrator model from {calibrator_modelpath} for testing: {calmodel}")
 
-    test_dataset = CustomDataset(approximant='SEOBNRv4', 
-                                 hdf_fname=dataset_path, 
-                                precision=PRECISION, 
-                                return_phases=True, return_sample_indices=True, return_attributes=True)
-    testloader = CustomDataLoader(test_dataset, batch_size=batch_size, shuffle=True)
-
-    calibrator_data_hdf = f'calibrator_test_data_{timestamp}.hdf'
+    testset = CalibratorDataset(filepath=test_datapath, labels_mean=labels_mean, labels_std=labels_std)
+    testloader = CalibratorDataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=0)
+    indices = testset.group_names
 
     # Initialize dataframe to store mismatch results of whole test set!
     dfmm = pd.DataFrame(columns=[
@@ -1008,44 +1004,39 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     for i, databatch in tqdm(enumerate(testloader), total=len(testloader), desc='Testing Calibrator'):
         if dummyrun and i >= 5:  # just test on the first num_samples samples for now
             break
-        originals, _, labels, keys, strains, phases, indices, attr = databatch
-        originals.to(DEVICE)
-        labels.to(DEVICE)
 
-        calibrator_input, calibrator_target = get_calibrator_input(
-            wfmodel=wfmodel,
-            originals=originals.to(DEVICE),  # shape: (1, 2, n)
-            labels=labels.to(DEVICE),  # shape: (1, num_params)
-            data_hdf=calibrator_data_hdf,  # save this data group to the calibrator HDF file!
-            indices=indices,  # use the original sample index from the dataset!
-            params_mean=params_mean,
-            params_std=params_std,
-        )
-        orig_amp, orig_freq = originals[:, 0, :], originals[:, 1, :]
-        ml_amp, ml_freq = calibrator_input[:, 0, :], calibrator_input[:, 1, :]
-        target_amp_residual, target_freq_residual = calibrator_target
+        calibrator_input, target_residual_one, target_residual_two = databatch
+        calibrator_input = calibrator_input.to(device=DEVICE, dtype=getattr(torch, PRECISION))
+        target_residual_one = target_residual_one.to(device=DEVICE, dtype=getattr(torch, PRECISION))
+        target_residual_two = target_residual_two.to(device=DEVICE, dtype=getattr(torch, PRECISION))
 
         with torch.no_grad():
-            out = calmodel(calibrator_input)  # shape: (1, 2, n)
-            pred_amp_residual, pred_freq_residual = out[:, 0, :], out[:, 1, :]
-            calibrated_amp = calibrator_input[:, 0, :] + pred_amp_residual
-            calibrated_freq = calibrator_input[:, 1, :] + pred_freq_residual
+            predictions = calmodel(calibrator_input)  # shape: (1, 2, n)
+        
+        pred_residual_one, pred_residual_two = predictions[:, 0, :], predictions[:, 1, :]
+        ml_out_one, ml_out_two = calibrator_input[:, 0, :], calibrator_input[:, 1, :]
+        cal_out_one = ml_out_one + pred_residual_one
+        cal_out_two = ml_out_two + pred_residual_two
+
+        labels = calibrator_input[:, 2:6, 0]  # shape: (batch, 4)
+        print(labels)
 
         if i == 0:  # just plot the first batch for now, which is of shape (batch_size, 2, n)
             logger.info(f"Plotting calibration results for the first batch of test data with indices {indices.cpu().numpy()}...")
             plot_calibration_results(
-                original=originals,
-                calibrated=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
-                target_residual=torch.stack([target_amp_residual, target_freq_residual], dim=1),
-                output_residual=torch.stack([pred_amp_residual, pred_freq_residual], dim=1),
+                original=torch.stack([ml_out_one, ml_out_two], dim=1),  # shape: (batch, 2, n)
+                calibrated=torch.stack([cal_out_one, cal_out_two], dim=1),  # shape: (batch, 2, n)
+                target_residual=torch.stack([target_residual_one, target_residual_two], dim=1),
+                output_residual=torch.stack([pred_residual_one, pred_residual_two], dim=1),
                 title=f'$m_1 = {labels[0, 0].item():.2f}, m_2 = {labels[0, 1].item():.2f}, \\chi_1(z) = {labels[0, 2].item():.2f}, \\chi_2(z) = {labels[0, 3].item():.2f}$',
                 savename=f'wf{int(indices[0].item())}',
                 savedir=savedir,
             )
+        exit(0)
 
         mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios = plot_mismatch(
             original=originals,
-            reconst=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
+            reconst=torch.stack([cal_out_one, cal_out_two], dim=1),  # shape: (batch, 2, n)
             labels=labels,
             keys=keys,
             nobatchwiseplot=True,
@@ -1054,7 +1045,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
 
         mismatch_hplus, mismatch_hcross, _, _, _, chieffs, _ = plot_polarization_mismatch(
             original=originals,
-            reconst=torch.stack([calibrated_amp, calibrated_freq], dim=1),  # shape: (batch, 2, n)
+            reconst=torch.stack([cal_out_one, cal_out_two], dim=1),  # shape: (batch, 2, n)
             labels=labels,
             keys=keys,
             phases=phases,
