@@ -26,7 +26,7 @@ from optimize import load_flex_model, set_waveform_dataloaders
 from maincvae import plot_mismatch, plot_polarization_mismatch
 from plotutils import putils
 
-from utils.io import ensure_dirs_and_files
+from utils.io import ensure_dirs_and_files, ensure_dir
 from utils.gwutils import calc_time_array
 from utils.plotting import plot_twopanel
 
@@ -651,9 +651,10 @@ def train_calibrator(train_datapath, valid_datapath,
     labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION))
     labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION))
 
-    savename = f'../{PROJECT_DIR}/results/{TODAY}'
-    os.makedirs(savename, exist_ok=True)
-    os.makedirs(f'../{PROJECT_DIR}/trained-models', exist_ok=True)
+    resultdir = f'../{PROJECT_DIR}/results/{TODAY}/'
+    modeldir = f'../{PROJECT_DIR}/{TODAY}/trained-models/'
+    ensure_dir(resultdir)
+    ensure_dir(modeldir)
 
     calmodel = ResidualCalibrationCNN(
         input_channels=6,  # [ml_amp, ml_freq, param_m1, param_m2, param_s1z, param_s2z]
@@ -736,9 +737,9 @@ def train_calibrator(train_datapath, valid_datapath,
     else:
         raise ValueError("Invalid wftype. Please choose either 'amp_freq' or 'amp_phase'.")
     epoch_losses = pd.DataFrame(columns=losscols, index=range(num_epochs))
-    running_train_loss_file = open(f'{savename}/calibrator_running_train_losses_{NOW}.csv', 'w')
+    running_train_loss_file = open(os.path.join(resultdir, f'calibrator_running_train_losses_{NOW}.csv'), 'w')
     running_train_loss_file.write(','.join(losscols[1:3]) + '\n')
-    running_val_loss_file = open(f'{savename}/calibrator_running_val_losses_{NOW}.csv', 'w')
+    running_val_loss_file = open(os.path.join(resultdir, f'calibrator_running_val_losses_{NOW}.csv'), 'w')
     running_val_loss_file.write(','.join(losscols[3:5]) + '\n')
 
     logger.info(f"Training calibrator model for {num_epochs} epochs with batch size {batch_size}...")
@@ -850,14 +851,13 @@ def train_calibrator(train_datapath, valid_datapath,
         # -- save the best model checkpoint based on validation loss
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            outpath = f'../{PROJECT_DIR}/trained-models/calibrator_model_{NOW}_epoch{epoch+1}.pt'
+            outpath = os.path.join(modeldir, f'calibrator_model_{NOW}_epoch{epoch+1}.pt')
             torch.save(calmodel.state_dict(), outpath)
 
     # -- save the trained calibrator model
-    outpath = f'../{PROJECT_DIR}/trained-models/calibrator_model_{NOW}.pt'
-    torch.save(calmodel.state_dict(), outpath)
+    torch.save(calmodel.state_dict(), os.path.join(modeldir, f'calibrator_model_{NOW}.pt'))
     # -- save the epoch losses to a CSV file
-    epoch_losses.to_csv(f'{savename}/calibrator_epoch_losses_{NOW}.csv', index=False)
+    epoch_losses.to_csv(os.path.join(resultdir, f'calibrator_epoch_losses_{NOW}.csv'), index=False)
     # -- close the running loss files
     running_train_loss_file.close()
     running_val_loss_file.close()
@@ -872,7 +872,7 @@ def train_calibrator(train_datapath, valid_datapath,
         'wftype': wftype,
         'timestamp': timestamp,
     }
-    with open(f'{savename}/calibrator_training_metadata_{NOW}.json', 'w') as f:
+    with open(os.path.join(resultdir, f'calibrator_training_metadata_{NOW}.json'), 'w') as f:
         json.dump(calibrator_training_metadata, f, indent=4)
     print("Training complete!")
 
