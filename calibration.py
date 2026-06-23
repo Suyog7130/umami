@@ -1109,6 +1109,17 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             wflabels = wflabels.to(device=DEVICE, dtype=getattr(torch, PRECISION))
             assert torch.allclose(wflabels, labels[i], atol=1e-3), f"Mismatch between waveform dataset labels and calibrator input labels for sample {i} in batch {bidx}. Waveform dataset labels: {wflabels}, Calibrator input labels: {labels[i]}"
 
+            # -- plot two random examples of the original and reconstructed waveforms!
+            if (bidx==0 or bidx==10) and i == 0:
+                plot_reconstructions(
+                    orig_amp.cpu().numpy(), recon_amp.cpu().numpy(), 
+                    orig_phase.cpu().numpy(), recon_phase.cpu().numpy(), 
+                    orig_hp.cpu().numpy(), recon_hp.cpu().numpy(), 
+                    orig_hc.cpu().numpy(), recon_hc.cpu().numpy(),
+                    title=f'$m_1 = {labels[i, 0].item():.2f}, m_2 = {labels[i, 1].item():.2f}, \\chi_1(z) = {labels[i, 2].item():.2f}, \\chi_2(z) = {labels[i, 3].item():.2f}$',
+                    savedir=savedir, savename='calibration-results-'
+                    )
+
             mismatch_amp[i] = calculate_cosine_distance(recon_amp, orig_amp)
             mismatch_phase[i] = calculate_cosine_distance(recon_phase, orig_phase)
             mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
