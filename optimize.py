@@ -1213,7 +1213,7 @@ if __name__ == "__main__":
                      model_path=args.model_path,
                      epochs=args.epochs, datafrac=1.0, 
                      batch_size=args.batch_size, num_workers=args.num_workers,
-                     fname=args.model_type+'-'+args.label if args.label is not None else args.model_type+'-')
+                     fname=args.model_type+'-'+args.label if args.label is not None else args.model_type)
     elif args.save_data_from_dataset:
         logger.info("Saving input and target data from main datasets for easier loading during training!")
         save_data_from_dataset()
