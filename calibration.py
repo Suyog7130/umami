@@ -27,12 +27,11 @@ from maincvae import plot_mismatch, plot_polarization_mismatch
 from plotutils import putils
 
 from utils.io import ensure_dirs_and_files
-from utils.generic import init_logging, init_verbosity_args
 from utils.gwutils import calc_time_array
 from utils.plotting import plot_twopanel
 
 import logging
-# global logger
+from utils.generic import init_logging, init_verbosity_args
 logger = logging.getLogger(__name__)
 
 
@@ -66,8 +65,8 @@ params_fname = '../data/params-SEOBNRv4-train-100000-fcutoff-uniform-aligned-reg
 params_df = pd.read_csv(params_fname, index_col=0, sep=',')
 params_mean = params_df.mean().values
 params_std = params_df.std().values
-logging.info(f"Labels mean: {params_mean}")
-logging.info(f"Labels std: {params_std}")
+logger.info(f"Labels mean: {params_mean}")
+logger.info(f"Labels std: {params_std}")
 params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION))
 params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION))
 
@@ -499,6 +498,7 @@ class CalibratorDataset(torch.utils.data.Dataset):
         # -- open HDF file once to read number of groups
         with h5py.File(self.filepath, 'r') as f:
             self.num_samples = len(f.keys())
+            self.group_names = list(f.keys())
 
     def __len__(self):
         return self.num_samples  # number of groups in the HDF file, which corresponds to the number of data samples
@@ -541,7 +541,7 @@ class CalibratorDataset(torch.utils.data.Dataset):
             self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
 
         # -- read the calibrator input and target residuals from the HDF file for the given indices
-        group_name = f'sample{int(index)}'
+        group_name = self.group_names[index]
         ml_out_one = torch.tensor(self.data_file[group_name][self.inputnames[0]][:], dtype=getattr(torch, PRECISION))
         ml_out_two = torch.tensor(self.data_file[group_name][self.inputnames[1]][:], dtype=getattr(torch, PRECISION))
         target_residual_one = torch.tensor(self.data_file[group_name][self.targetnames[0]][:], dtype=getattr(torch, PRECISION))
@@ -550,17 +550,17 @@ class CalibratorDataset(torch.utils.data.Dataset):
 
         # -- parameter values are scalars for each data, so we don't convert them to tensors until we read them, and then we repeat them across the time dimension to match the shape of ml_amp/ml_freq, which is (n,)
         # -- Scalar values in HDF datasets are available via ellipsis indexing `[...]`
-        param_m1 = self.data_file[group_name]['param_m1'][...].astype(getattr(np, PRECISION)).item()
-        param_m2 = self.data_file[group_name]['param_m2'][...].astype(getattr(np, PRECISION)).item()
-        param_s1z = self.data_file[group_name]['param_s1z'][...].astype(getattr(np, PRECISION)).item()
-        param_s2z = self.data_file[group_name]['param_s2z'][...].astype(getattr(np, PRECISION)).item()
+        param_m1 = torch.tensor(self.data_file[group_name]['param_m1'][...], dtype=getattr(torch, PRECISION))
+        param_m2 = torch.tensor(self.data_file[group_name]['param_m2'][...], dtype=getattr(torch, PRECISION))
+        param_s1z = torch.tensor(self.data_file[group_name]['param_s1z'][...], dtype=getattr(torch, PRECISION))
+        param_s2z = torch.tensor(self.data_file[group_name]['param_s2z'][...], dtype=getattr(torch, PRECISION))
 
         if self.labels_mean is not None and self.labels_std is not None:
             # -- normalize the parameters using the mean and std from the model config
-            param_m1 = (param_m1 - self.labels_mean[0].item()) / self.labels_std[0].item()
-            param_m2 = (param_m2 - self.labels_mean[1].item()) / self.labels_std[1].item()
-            param_s1z = (param_s1z - self.labels_mean[2].item()) / self.labels_std[2].item()
-            param_s2z = (param_s2z - self.labels_mean[3].item()) / self.labels_std[3].item()
+            param_m1 = (param_m1 - self.labels_mean[0]) / self.labels_std[0]
+            param_m2 = (param_m2 - self.labels_mean[1]) / self.labels_std[1]
+            param_s1z = (param_s1z - self.labels_mean[2]) / self.labels_std[2]
+            param_s2z = (param_s2z - self.labels_mean[3]) / self.labels_std[3]
             logger.debug(f"Read calibrator input from HDF for group {group_name}: param_m1={param_m1}, param_m2={param_m2}, param_s1z={param_s1z}, param_s2z={param_s2z}")
         
         params = torch.tensor([param_m1, param_m2, param_s1z, param_s2z], dtype=getattr(torch, PRECISION))
@@ -1202,7 +1202,7 @@ if __name__ == "__main__":
                         help='Batch size for training the calibrator model.')
     trainparser.add_argument('--num-epochs', type=int, default=25, 
                         help='Number of epochs to train the calibrator model.')
-    trainparser.add_argument('--num-workers', type=int, default=4,
+    trainparser.add_argument('--num-workers', type=int, default=0,
                         help='Number of worker threads for data loading.')
     trainparser.add_argument('--dummy-run', action='store_true', 
                         help='If set, runs a quick dummy training loop for testing purposes.')
@@ -1225,7 +1225,7 @@ if __name__ == "__main__":
 
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
-    logger = init_logging(args)
+    init_logging(args)
 
     logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
