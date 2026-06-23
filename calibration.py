@@ -964,6 +964,13 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     calibrated output waveform. The plot the original waveform the dataset HDF and the calibrated
     output waveform on the same plot. Return the calibrated output waveform that we can use
     for mismatch calculation and comparison with the original waveform using other functions.
+
+    Arguments
+    ---------
+    calibrator_modelpath: str
+        The file path to the trained calibrator model checkpoint, which will be used to predict the residuals for the ML generated waveforms. This should be a .pt file containing the state_dict of the trained calibrator model.
+    test_datapath: str
+        The file path to the HDF file containing the test dataset, which includes the original waveforms and the corresponding parameters. This should be a .hdf file containing the test data groups.
     """
     savedir = os.path.join(savedir, f'calibration_results_{NOW}/')
     print(f"Saving calibrator testing results to {savedir}...")
@@ -982,8 +989,8 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
     with open(wfmodel_configpath, 'r') as f:
         model_config = json.load(f)
-    labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE)
-    labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE)
+    labels_mean = torch.tensor(model_config['labels_mean'], dtype=getattr(torch, PRECISION), device=DEVICE) # shape: (4,)
+    labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION), device=DEVICE) # shape: (4,)
 
     # -- init calibrator model
     calmodel = load_calibrator_model(calibrator_modelpath, device=DEVICE, precision=PRECISION)
@@ -1019,17 +1026,24 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         cal_out_two = ml_out_two + pred_residual_two
 
         labels = calibrator_input[:, 2:6, 0]  # shape: (batch, 4)
-        print(labels)
+        # -- denormalize labels for plotting and mismatch calculation
+        labels = labels * labels_std.unsqueeze(0) + labels_mean.unsqueeze(0)
+
+        # FIXME: For this model I did the labels normalization twice, since the calibration input data itself had normalized labels, and I applied the normalization again during dataloading.
+        if calibrator_modelpath == f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt':
+            logger.warning(f"Calibrator model {calibrator_modelpath} was trained with double-normalized labels, so we need to denormalize the labels again for plotting and mismatch calculation.")
+            labels = labels * labels_std.unsqueeze(0) + labels_mean.unsqueeze(0)
+        print(f"Batch {i+1}/{len(testloader)}, Labels (m1, m2, chi1z, chi2z): {labels.cpu().numpy()}")
 
         if i == 0:  # just plot the first batch for now, which is of shape (batch_size, 2, n)
-            logger.info(f"Plotting calibration results for the first batch of test data with indices {indices.cpu().numpy()}...")
+            logger.info(f"Plotting calibration results for the first batch of test data...")
             plot_calibration_results(
                 original=torch.stack([ml_out_one, ml_out_two], dim=1),  # shape: (batch, 2, n)
                 calibrated=torch.stack([cal_out_one, cal_out_two], dim=1),  # shape: (batch, 2, n)
                 target_residual=torch.stack([target_residual_one, target_residual_two], dim=1),
                 output_residual=torch.stack([pred_residual_one, pred_residual_two], dim=1),
                 title=f'$m_1 = {labels[0, 0].item():.2f}, m_2 = {labels[0, 1].item():.2f}, \\chi_1(z) = {labels[0, 2].item():.2f}, \\chi_2(z) = {labels[0, 3].item():.2f}$',
-                savename=f'wf{int(indices[0].item())}',
+                savename=f'wf{int(indices[0].item())}' if isinstance(indices, torch.Tensor) else f'wf{indices[0]}',
                 savedir=savedir,
             )
         exit(0)
@@ -1082,7 +1096,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         'wfmodel_modelpath': wfmodel_modelpath,
         'wfmodel_configpath': wfmodel_configpath,
         'calibrator_modelpath': calibrator_modelpath,
-        'dataset_path': dataset_path,
+        'test_datapath': test_datapath,
         'batch_size': batch_size,
         'timestamp': timestamp,
     }
@@ -1241,4 +1255,9 @@ if __name__ == "__main__":
     if args.plot_results is not None:
         plot_calibrated_mm_hist(args.plot_results, results_dir=args.results_dir)
     if args.test:
-        test_calibrator(batch_size=args.batch_size, dummyrun=args.dummy_run)
+        test_calibrator(
+            calibrator_modelpath=f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt',
+            test_datapath='../data/calibrator_data_test_with20260619-064140-epoch98model.hdf',
+            batch_size=args.batch_size,
+            dummyrun=args.dummy_run
+        )
