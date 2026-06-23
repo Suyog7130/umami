@@ -205,6 +205,7 @@ class WaveformDataset(torch.utils.data.Dataset):
         with h5py.File(self.hdf_fname, 'r') as f:
             # Store the length as a simple integer (safe to pickle!)
             self.length = len(f.keys()) 
+            self.group_names = list(f.keys())
 
     def _set_input_target_names(self):
         # -- labels for input and target data for different kinds of targets.
@@ -323,6 +324,17 @@ class WaveformDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         return self.read_data_from_hdf(idx)
+    
+    def get_data_by_groupname(self, grpname):
+        # -- read the input waveform and target residual from the HDF file for the given group name, and return them as tensors
+        if not hasattr(self, 'data_file') or self.data_file is None:
+            self.init_hdf()
+        if grpname not in self.group_names:
+            logger.error(f"Group {grpname} not found in HDF file {self.hdf_fname}. Cannot read data for group name {grpname}.")
+            raise KeyError(f"Group {grpname} not found in HDF file {self.hdf_fname}.")
+        idx = grpname.replace('sample', '')  # extract index from group name
+        return self.read_data_from_hdf(idx)
+
 
 class WaveformDataLoader(torch.utils.data.DataLoader):
     """

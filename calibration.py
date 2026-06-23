@@ -21,13 +21,25 @@ import matplotlib.ticker as tck
 from tqdm import tqdm
 
 from datacvae import CustomDataset, CustomDataLoader
-from optimize import load_flex_model, set_waveform_dataloaders
+from optimize import (
+    load_flex_model, 
+    set_waveform_dataloaders, 
+    WaveformDataset,
+    plot_reconstructions
+)
 
 from maincvae import plot_mismatch, plot_polarization_mismatch
 from plotutils import putils
 
 from utils.io import ensure_dirs_and_files, ensure_dir
-from utils.gwutils import calc_time_array
+from utils.gwutils import (
+    calculate_cosine_distance,
+    polarizations_from_amp_phase,
+    calc_polarization_mismatch,
+    calc_chirp_mass,
+    calc_chieff,
+    calc_time_array
+)
 from utils.plotting import plot_twopanel
 
 import logging
@@ -493,15 +505,17 @@ class CalibratorDataset(torch.utils.data.Dataset):
             logger.warning(f"It is usually recommended to have the calibrator input data to have already performed all pre-processing etc. to the data, including labels normalization. Since, the Dataset has been initialized with the labels_mean and labels_std, we will use them to normalize the parameters when reading the data from the HDF file. If the data has labels already normalized, then this means that we will have done double normalization, which is not recommended. Please check the data and the labels_mean and labels_std values to ensure that they are consistent.")
         self.labels_mean = labels_mean
         self.labels_std = labels_std
-        self.wftype = wftype
         assert self.labels_mean is None or self.labels_mean.shape == (4,), f"Expected labels_mean to be of shape (4,), but got {self.labels_mean.shape}"
         assert self.labels_std is None or self.labels_std.shape == (4,), f"Expected labels_std to be of shape (4,), but got {self.labels_std.shape}"
+
+        self.wftype = wftype
+
         # self.init_hdf()  # initialize the HDF file for reading the data in the `__getitem__` method
         self._set_input_target_names()
         # -- open HDF file once to read number of groups
         with h5py.File(self.filepath, 'r') as f:
             self.num_samples = len(f.keys())
-            self.group_names = list(f.keys())
+            self.group_names = list(f.keys())  # -- we use these instead of indices!
 
     def __len__(self):
         return self.num_samples  # number of groups in the HDF file, which corresponds to the number of data samples
@@ -958,10 +972,11 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                     wfmodel_configpath='modelconfig-cvae-paper-I.json',
                     calibrator_modelpath=f'trained-models/calibrator_model_20260605-011742_epoch20.pt',
                     test_datapath='../data/SEOBNRv4-test-100000-fcutoff-uniform-aligned-regen.hdf',
+                    wf_datapath='../data/SEOBNRv4-amp_phase-normIN-unnormOUT-test.hdf',
                     savedir=f'../{PROJECT_DIR}/results/{TODAY}/',
                     batch_size=128, 
-                    dummyrun=False,
-                    timestamp=NOW):
+                    wftype: {'amp_freq', 'amp_phase'} = 'amp_phase',
+                    dummyrun=False, timestamp=NOW):
     """
     Read parameters from some test dataset, generate the output waveform from the ML model,
     then use the calibrator model to the predict the residuals based on the output ML waveform.
@@ -995,6 +1010,11 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
     calmodel = load_calibrator_model(calibrator_modelpath, device=DEVICE, precision=PRECISION)
     logger.info(f"Loaded calibrator model from {calibrator_modelpath} for testing: {calmodel}")
 
+    # -- We need the waveforms data for to have the original [amp,freq/phase] and [hp,hc] values available to use for mismatch calculation. It is assumed that the group names match between the two datasets.
+    wf_dataset = WaveformDataset(hdf_fname=wf_datapath, 
+                                 target_type=wftype, 
+                                 return_indices=False)
+
     # NOTE: This model was trained with double-normalized labels, so we need to denormalize the labels again!
     if not calibrator_modelpath == f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt':
         # -- Load `labels_mean` and `labels_std` from model config file, since original CVAE model `state_dict` doesn't have them!
@@ -1007,8 +1027,8 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         labels_std = None
 
     testset = CalibratorDataset(filepath=test_datapath, labels_mean=labels_mean, labels_std=labels_std)
-    testloader = CalibratorDataLoader(testset, batch_size=batch_size, shuffle=True, num_workers=0)
-    indices = testset.group_names
+    testloader = CalibratorDataLoader(testset, batch_size=batch_size, shuffle=False, num_workers=0)
+    grpnames = testset.group_names
 
     # Initialize dataframe to store mismatch results of whole test set!
     dfmm = pd.DataFrame(columns=[
@@ -1018,8 +1038,8 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         'mismatch_hplus', 'mismatch_hcross',],
         dtype=float)
 
-    for i, databatch in tqdm(enumerate(testloader), total=len(testloader), desc='Testing Calibrator'):
-        if dummyrun and i >= 5:  # just test on the first num_samples samples for now
+    for bidx, databatch in tqdm(enumerate(testloader), total=len(testloader), desc='Testing Calibrator'):
+        if dummyrun and bidx >= 5:  # just test on the first num_samples samples for now
             break
 
         calibrator_input, target_residual_one, target_residual_two = databatch
@@ -1043,9 +1063,9 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         if calibrator_modelpath == f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt':
             logger.warning(f"Calibrator model {calibrator_modelpath} was trained with double-normalized labels, so we need to denormalize the labels again for plotting and mismatch calculation.")
             labels = labels * labels_std.unsqueeze(0) + labels_mean.unsqueeze(0)
-        print(f"Batch {i+1}/{len(testloader)}, Labels (m1, m2, chi1z, chi2z): {labels.cpu().numpy()}")
+        print(f"Batch {bidx+1}/{len(testloader)}, Labels (m1, m2, chi1z, chi2z): {labels.cpu().numpy()}")
 
-        if i == 0:  # just plot the first batch for now, which is of shape (batch_size, 2, n)
+        if bidx == 0:  # just plot the first batch for now, which is of shape (batch_size, 2, n)
             logger.info(f"Plotting calibration results for the first batch of test data...")
             plot_calibration_results(
                 original=torch.stack([ml_out_one, ml_out_two], dim=1),  # shape: (batch, 2, n)
@@ -1053,32 +1073,32 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                 target_residual=torch.stack([target_residual_one, target_residual_two], dim=1),
                 output_residual=torch.stack([pred_residual_one, pred_residual_two], dim=1),
                 title=f'$m_1 = {labels[0, 0].item():.2f}, m_2 = {labels[0, 1].item():.2f}, \\chi_1(z) = {labels[0, 2].item():.2f}, \\chi_2(z) = {labels[0, 3].item():.2f}$',
-                savename=f'wf{int(indices[0].item())}' if isinstance(indices, torch.Tensor) else f'wf{indices[0]}',
+                savename=f'wf{int(grpnames[0])}' if isinstance(grpnames, list) else f'wf{grpnames[0].item()}',
                 savedir=savedir,
             )
-        exit(0)
 
-        mismatch_amp, mismatch_freq, chirpmasses, totalmasses, massratios = plot_mismatch(
-            original=originals,
-            reconst=torch.stack([cal_out_one, cal_out_two], dim=1),  # shape: (batch, 2, n)
-            labels=labels,
-            keys=keys,
-            nobatchwiseplot=True,
-            savedir=savedir,
-        )
+        mismatch_amp = np.zeros(calibrator_input.shape[0])
+        mismatch_phase = np.zeros(calibrator_input.shape[0])
+        mismatch_hplus = np.zeros(calibrator_input.shape[0])
+        mismatch_hcross = np.zeros(calibrator_input.shape[0])
 
-        mismatch_hplus, mismatch_hcross, _, _, _, chieffs, _ = plot_polarization_mismatch(
-            original=originals,
-            reconst=torch.stack([cal_out_one, cal_out_two], dim=1),  # shape: (batch, 2, n)
-            labels=labels,
-            keys=keys,
-            phases=phases,
-            strains=strains,
-            attr=attr,
-            savedir=savedir,
-            nobatchwiseplot=True,
-            num_saved_overplots=2000,
-        )
+        # -- iterate over all waveforms in the batch
+        for i in range(calibrator_input.shape[0]):
+        
+            input, target, wflabels, keys, strains, attr = wf_dataset.get_data_by_groupname(grpnames[bidx*batch_size:(bidx+1)*batch_size])
+            # -- Check wflabels with calibrator_input labels to make sure they match!
+            assert torch.allclose(wflabels[i], labels[i]), f"Mismatch between waveform dataset labels and calibrator input labels for sample {i} in batch {bidx}. Waveform dataset labels: {wflabels[i]}, Calibrator input labels: {labels[i]}"
+            exit(0)
+
+            delta_t = attr['delta_t'][i]
+            f_lower = attr['f_lower'][i]
+
+            mismatch_amp[i] = calculate_cosine_distance(recon_amp, orig_amp)
+            mismatch_phase[i] = calculate_cosine_distance(recon_phase, orig_phase)
+            mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
+            mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
+
+            logger.debug(f"Test batch {idx+1}, sample {i+1}/{input.shape[0]}: m1={m1s[i].item():.2f}, m2={m2s[i].item():.2f}, chi1z={chi1zs[i].item():.2f}, chi2z={chi2zs[i].item():.2f}, chirp_mass={chirpmasses[i].item():.2f}, total_mass={totalmasses[i].item():.2f}, mass_ratio={massratios[i].item():.2f}, chieff={chieffs[i].item():.2f}, mismatch_amp={mismatch_amp[i]:.4e}, mismatch_phase={mismatch_phase[i]:.4e}, mismatch_hplus={mismatch_hplus[i]:.4e}, mismatch_hcross={mismatch_hcross[i]:.4e}")
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
             'dataindex': indices.cpu().numpy(),
