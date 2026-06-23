@@ -669,7 +669,7 @@ def train_calibrator(train_datapath, valid_datapath,
     # labels_std = torch.tensor(model_config['labels_std'], dtype=getattr(torch, PRECISION))
 
     resultdir = f'../{PROJECT_DIR}/results/{TODAY}/'
-    modeldir = f'../{PROJECT_DIR}/{TODAY}/trained-models/'
+    modeldir = f'../{PROJECT_DIR}/trained-models/{TODAY}/'
     ensure_dir(resultdir)
     ensure_dir(modeldir)
 
