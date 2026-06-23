@@ -1064,7 +1064,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
 
         # NOTE: This model was trained with double-normalized labels, so we need to denormalize the labels again!
         if calibrator_modelpath == f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt':
-            logger.warning(f"Calibrator model {calibrator_modelpath} was trained with double-normalized labels, so we need to denormalize the labels again for plotting and mismatch calculation.")
+            logger.debug(f"Calibrator model {calibrator_modelpath} was trained with double-normalized labels, so we need to denormalize the labels again for plotting and mismatch calculation.")
             labels = labels * labels_std.unsqueeze(0) + labels_mean.unsqueeze(0)
         # print(f"Batch {bidx+1}/{len(testloader)}, Labels (m1, m2, chi1z, chi2z): {labels.cpu().numpy()}")
 
@@ -1095,8 +1095,9 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         for i in range(calibrator_input.shape[0]):
             recon_amp, recon_phase = cal_out_one[i, :], cal_out_two[i, :]
             recon_hp, recon_hc = polarizations_from_amp_phase(recon_amp, recon_phase, scale_factor=10**20)
-        
-            input, target, wflabels, keys, strains, attr = wf_dataset.get_data_by_groupname(grpnames[i])
+
+            grpidx = bidx * batch_size + i
+            input, target, wflabels, keys, strains, attr = wf_dataset.get_data_by_groupname(grpnames[grpidx])
             orig_amp, orig_phase = target[0, :], target[1, :]
             orig_hp, orig_hc = strains[0, :], strains[1, :]
             delta_t = attr['delta_t']
@@ -1127,7 +1128,6 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             'mismatch_hcross': mismatch_hcross.flatten(),
         })], ignore_index=True)
         logger.info(f"Processed batch {bidx+1}/{len(testloader)}, appended mismatch results to dataframe. Average mismatch for this batch: Amp: {mismatch_amp.mean():.4e}, Phase: {mismatch_phase.mean():.4e}, hplus: {mismatch_hplus.mean():.4e}, hcross: {mismatch_hcross.mean():.4e}")
-        exit(0)
 
     savename = os.path.join(savedir, f'calibrator_test_mismatch_results_{timestamp}')
     savename += '-dummy' if dummyrun else ''
@@ -1146,7 +1146,6 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         test_results_config['dummyrun'] = True
     with open(savename+'_config.json', 'w') as f:
         json.dump(test_results_config, f, indent=4)
-
     logger.info(f"Saved calibrator test mismatch results for all test samples to {savename}")
     return None
 

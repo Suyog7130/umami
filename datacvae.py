@@ -1609,7 +1609,6 @@ class CustomDataset(Dataset):
         #outputs = outputs.reshape((1,outputs.shape[0],outputs.shape[1]))
         return inputs, outputs
 
-
     def set_masses(self, forwhat='train', labelsonly=False):
         """
         TODO: Make this more efficient ~
