@@ -1280,6 +1280,10 @@ if __name__ == "__main__":
     savedataparser.add_argument('--wfmodel-configpath', type=str, default=None, 
                         help='Path to the waveform model config file for generating calibrator input data.')
     
+    testparser = parser.add_argument_group('Calibrator Testing')
+    testparser.add_argument('--calibrator-modelpath', type=str, default='calibrator_model_20260622-225329_epoch9.pt',
+                        help='Path to the trained calibrator model checkpoint for testing.')
+    
     methodargs = parser.add_mutually_exclusive_group(required=True)
     methodargs.add_argument('--save-calibrator-data', action='store_true',
                         help='Generate and save the calibrator input and target data to HDF files, without training the model. This is useful for pre-generating the data for faster training later.')
@@ -1318,7 +1322,7 @@ if __name__ == "__main__":
         plot_calibrated_mm_hist(args.plot_results, results_dir=args.results_dir)
     if args.test:
         test_calibrator(
-            calibrator_modelpath=f'../{PROJECT_DIR}/trained-models/calibrator_model_20260622-225329_epoch9.pt',
+            calibrator_modelpath=f'../{PROJECT_DIR}/trained-models/'+args.calibrator_modelpath,
             test_datapath='../data/calibrator_data_test_with20260619-064140-epoch98model.hdf',
             batch_size=args.batch_size,
             dummyrun=args.dummy_run
