@@ -415,7 +415,6 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
         savemodel: Whether to save the trained model (default False)
         savelosses: Whether to save training and validation losses (default False)
     """
-    os.makedirs(savedir, exist_ok=True)
     if train_loader is None or val_loader is None:
         logger.info("Setting up dataloaders since they were not provided.")
         train_loader, val_loader = set_dataloaders(target=model.MODEL_CONFIG.get('target', BASE_MODEL_CONFIG['target']))
