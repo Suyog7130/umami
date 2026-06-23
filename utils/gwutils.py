@@ -225,7 +225,7 @@ def calculate_cosine_distance(target, reconstructed):
     return cos_dist
 
 def polarizations_from_amp_phase(amp, phase, scale_factor=None,
-                                 scale_polarizations_instead=True, phase_zero=None):
+                                 scale_polarizations_instead=False, phase_zero=None):
     """
     Convert amplitude and phase to hplus and hcross polarizations.
 
@@ -237,6 +237,10 @@ def polarizations_from_amp_phase(amp, phase, scale_factor=None,
         The phase time series (radians).
     scale_factor: float, optional
         A factor to scale down the amplitude, if the target amplitude was scaled up!
+    scale_polarizations_instead: bool, optional
+        If True, scale down the polarizations instead of the amplitude. This may be useful for numerical accuracy, however, floats are already in 32-bit precision, so it may not make a difference. Default is False.
+    phase_zero: float, optional
+        Replace the starting value of the phase with this value (radians), to perhaps account for the starting phase in the original phase series been put to zero. However, again, we would assume that the training input data, e.g. the 'regen.hdf' files, would have already correctly this by regenerating the phase series. So, it is recommended to set this to None!
 
     Returns
     -------
@@ -249,7 +253,7 @@ def polarizations_from_amp_phase(amp, phase, scale_factor=None,
         logger.info(f"Scaling down amplitude by factor {scale_factor}, current max amp: {amp.max().item()}")
         amp = amp / float(scale_factor)
     if phase_zero is not None:
-        phase[0] = phase_zero
+        phase[0] = torch.tensor(phase_zero)
         logger.info(f"Setting phase[0] to phase_zero: {phase_zero}")
     hp = amp * torch.cos(phase)
     hc = amp * torch.sin(phase)
