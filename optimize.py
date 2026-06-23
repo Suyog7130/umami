@@ -985,7 +985,7 @@ def run_training(configpath=None, model_path=None, fname=None,
     """
     Runs training with specified hyperparameters for a single model configuration!
     """
-    savedir = '../trained-models/{NOW}/'
+    savedir = f'../trained-models/{NOW}/'
     ensure_dir(savedir)
     if fname is not None:
         savedir += fname+'-'  # add fname to every file name

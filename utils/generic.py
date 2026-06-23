@@ -12,6 +12,10 @@ def init_logging(args, log_dir='logs', write_to_file=True):
     and applies hierarchical verbosity scaling.
 
     This sets-up the `logging` module, so no return `logger` object is necessary!
+
+    NOTE: Do not use the returned logger, instead use `logging.getLogger(__name__)` 
+    in your modules to get the correct logger for that module, and then simply call
+    this function from `__main__` to initialize the logging system.
     
     Levels:
     --trace   : DEBUG everywhere (Current file + Imports + Transitive deps)
