@@ -163,13 +163,15 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
         hcross /= luminosity_distance
     logger.info(f"Applied distance scaling to waveforms with distance_scale_factor: {distance_scale_factor} and luminosity_distance: {luminosity_distance}")
 
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(np.arange(len(hplus)), hplus, label='hp')
-    ax.plot(np.arange(len(hcross)), hcross, label='hc')
-    ax.legend()
-    plt.savefig(f'check-global-denorming-outputs_{NOW}.png', dpi=300)
-    plt.show()
+    # fig, ax = plt.subplots(figsize=(12, 5))
+    # ax.plot(np.arange(len(hplus)), hplus, label='hp')
+    # ax.plot(np.arange(len(hcross)), hcross, label='hc')
+    # ax.legend()
+    # plt.savefig(f'check-global-denorming-outputs_{NOW}.png', dpi=300)
+    # plt.show()
+    # plt.close('all')
     return {'plus': hplus, 'cross': hcross}
+
 
 def convert_to_ml_parameters(parameters):
     """

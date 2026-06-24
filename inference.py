@@ -346,7 +346,6 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
     logger.debug(f"Injection parameters for run {run_idx}: {injection_parameters}")
 
     # -- Save IFOs with injected signal and noise to file
-    print(outdir, this_label)
     save_pickle(ifos, os.path.join(outdir, f"{this_label}_ifos.pkl"))
     save_json(injection_parameters, os.path.join(outdir, f"{this_label}_injection_parameters.json"))
 
