@@ -397,7 +397,7 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
     return results
 
 
-def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = None):
+def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = {}) -> WaveformGenerator:
     if type=='eob':
         return WaveformGenerator(
             duration=DURATION,
@@ -414,14 +414,14 @@ def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = None):
             )
         )
     elif type=='ml':
+        wfkwargs.update({'distance_scale_factor': LUMINOSITY_DISTANCE})
+        logger.info(f"Waveform generator kwargs for ML model: {wfkwargs}")
         return MLWaveformGenerator(
             duration=DURATION,
             sampling_frequency=SAMPLE_RATE,
             time_domain_source_model=None,   # We will load ML model at initialization!
             parameter_conversion=convert_to_ml_parameters,
-            waveform_arguments={'model_path': wfkwargs.get('model_path'), 
-                                'config_path': wfkwargs.get('config_path'),
-                                'distance_scale_factor': LUMINOSITY_DISTANCE},
+            waveform_arguments=wfkwargs,
         )
     logger.error(f"Invalid waveform generator type: {type}. Must be 'eob' or 'ml'.")
 
@@ -475,12 +475,26 @@ def main(args, label='umamipe',
         os.makedirs(outdir)
 
     model_path = os.path.join(project_dir, 'trained-models', args.model_name)
+    config_path = os.path.join(project_dir, 'trained-models', args.model_config)
+    calmodel_path = os.path.join(project_dir, 'trained-models', args.calmodel_name)
     if not os.path.isfile(model_path):
         model_path = os.path.join('../', 'trained-models', args.model_name)
         if not os.path.isfile(model_path):
             logger.error(f"Provided MODEL_PATH does not exist: {model_path}")
             raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
     logger.info(f"Using MODEL_PATH: {model_path}")
+    if not os.path.isfile(config_path):
+        config_path = os.path.join('../', 'trained-models', args.model_config)
+        if not os.path.isfile(config_path):
+            logger.error(f"Provided MODEL_CONFIG_PATH does not exist: {config_path}")
+            raise FileNotFoundError(f"MODEL_CONFIG_PATH file not found at {config_path}")
+    logger.info(f"Using MODEL_CONFIG_PATH: {config_path}")
+    if not os.path.isfile(calmodel_path):
+        calmodel_path = os.path.join('../', 'trained-models', args.calmodel_name)
+        if not os.path.isfile(calmodel_path):
+            logger.error(f"Provided CALMODEL_PATH does not exist: {calmodel_path}")
+            raise FileNotFoundError(f"CALMODEL_PATH file not found at {calmodel_path}")
+    logger.info(f"Using CALMODEL_PATH: {calmodel_path}")
 
     # TODO: For EOB waveforms, priors should be [m_1, m_2, a_1, a_2, tilt_1, tilt_2], since otherwise the "spin1z" and "spin2z" parameters will be ignored by the EOB waveform generator, since internally Bilby requires aforementioned parameter names, and then uses its the `bilby_to_lal_bbh_...` function to convert them to LAL parameters, before calling the waveform model.
 
@@ -500,16 +514,17 @@ def main(args, label='umamipe',
         injection_generator = make_wf_generator('eob')
         waveform_generator = make_wf_generator('eob')
         logger.info("Initialized EOB waveform generator for both injection and recovery.")
-    elif pe_run_type == 'ml2ml':
-        wfkwargs={'model_path': model_path, 'config_path': args.model_config}
-        injection_generator = make_wf_generator('ml', wfkwargs=wfkwargs)
+    else:
+        wfkwargs={'wfmodel_modelpath': model_path, 
+                  'wfmodel_configpath': config_path,
+                  'calibrator_modelpath': calmodel_path}
         waveform_generator = make_wf_generator('ml', wfkwargs=wfkwargs)
-        logger.info("Initialized ML waveform generator for both injection and recovery.")
-    elif pe_run_type == 'eob2ml':
-        injection_generator = make_wf_generator('eob')
-        waveform_generator = make_wf_generator('ml', wfkwargs={'model_path': model_path, 
-                                                               'config_path': args.model_config})
-        logger.info("Initialized EOB waveform generator for injection and ML waveform generator for recovery.")
+        if pe_run_type == 'ml2ml':
+            injection_generator = make_wf_generator('ml', wfkwargs=wfkwargs)
+            logger.info("Initialized ML waveform generator for both injection and recovery.")
+        if pe_run_type == 'eob2ml':
+            injection_generator = make_wf_generator('eob')
+            logger.info("Initialized EOB waveform generator for injection and ML waveform generator for recovery.")
 
     sampler_kwargs = set_sampler_kwargs(args, sampler)
 
@@ -610,6 +625,8 @@ if __name__ == "__main__":
                         help="Name of the model configuration JSON file (default: %(default)s)")
     parser.add_argument('--model-name', type=str, default='model-20251004_072338-10',
                         help="Name of the trained model checkpoint (default: %(default)s)")
+    parser.add_argument('--calmodel-name', type=str, default='calibrator_model_20260623-010953_epoch74.pt',
+                        help="Name of the trained calibration model checkpoint (default: %(default)s)")
     
     parser.add_argument('--results-fname', type=str, default=None,
                         help="Filename of the results JSON file to analyze in analyze-only mode (default: None, required if --analyze-only is set)")
