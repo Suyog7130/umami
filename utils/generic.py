@@ -142,13 +142,17 @@ def init_verbosity_args(parser: argparse.ArgumentParser = None) -> argparse.Argu
     Attaches a mutually exclusive logging verbosity group to an existing parser instance.
     Import this from your utils module across projects.
 
-    The allowed flags are:
-    --trace   : DEBUG everywhere (Current file + Imports + Transitive deps)
-    --debug   : DEBUG current file + Direct Imports. INFO for Transitive.
-    --verbose : INFO current file + Direct Imports. WARNING for others.
-    --describe: DEBUG current file + INFO on imports. WARNING for others.
-    Default   : INFO current file. WARNING for imports.
-    --quiet   : WARNING/ERROR only everywhere.
+    Allowed verbosity levels:
+        ### trace
+            Ultra-deep debugging (Current file + Imports + Transitive deps)
+        ### debug
+            Standard debugging (Current file + Direct internal imports)
+        ### describe
+            Standard debugging (Current file + INFO on imports)
+        ### verbose
+            Surface level runtime details (Root script & 1st tier imports)
+        ### quiet
+            Suppress normal outputs; display warnings and errors only
     """
     if parser is None:
         parser = argparse.ArgumentParser(description="Parser with mutually exclusive verbosity arguments.")
