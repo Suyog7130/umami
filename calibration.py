@@ -920,16 +920,16 @@ class CalibrationModel:
     A wrapper class to use a trained calibrator model for residual prediction.
     This will allow easy 
     """
-    def __init__(self, calibrator_model_path, 
+    def __init__(self, calibrator_modelpath, 
                  wftype: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_freq',
                  labels_mean=None, labels_std=None,
                  device=DEVICE, precision=PRECISION):
-        self.calibrator_model = load_calibrator_model(calibrator_model_path, 
+        self.calibrator_model = load_calibrator_model(calibrator_modelpath, 
                                                       device=device, precision=precision)
         self.wftype = wftype
         self.labels_mean = labels_mean
         self.labels_std = labels_std
-        logger.info(f"Initialized CalibrationModel with calibrator model loaded from {calibrator_model_path}")
+        logger.info(f"Initialized CalibrationModel with calibrator model loaded from {calibrator_modelpath}")
 
     def preprocess_params(self, params, repeat_length):
         """
@@ -960,14 +960,39 @@ class CalibrationModel:
             pred_residual = self.calibrator_model(cal_input)  # shape: (batch, 2, n)
         return (pred_residual[:, 0, :], pred_residual[:, 1, :])
 
-    def calibrate_waveform(self, ml_out_one, ml_out_two, labels, convert_to_hphc=True):
+    def calibrate_waveform(self, mloutput, labels, convert_to_hphc=True):
         """
         Calibrate the ML generated amplitude and frequency by adding the predicted residuals to them.
+
+        Arguments
+        ---------
+        mloutput: torch.Tensor
+            The ML generated waveform output, which should have shape (batch, 2, n), where the first channel is the amplitude and the second channel is the frequency (or phase).
+        labels: torch.Tensor
+            The parameters corresponding to the ML generated waveform, which should have shape (batch, 4), where the columns are [m1, m2, s1z, s2z].
+        convert_to_hphc: bool
+            If True, convert the calibrated amplitude and frequency (or phase) to the corresponding hplus and hcross polarizations using the appropriate conversion function based on the waveform type. If False, return the calibrated amplitude and frequency (or phase) as is.
+
+        Returns
+        -------
+        If convert_to_hphc is True
+
+            hplus: torch.Tensor
+                The calibrated hplus polarization waveform, which has shape (batch, n).
+            hcross: torch.Tensor
+                The calibrated hcross polarization waveform, which has shape (batch, n).
+
+        If convert_to_hphc is False
+
+            cal_out_one: torch.Tensor
+                The calibrated amplitude waveform, which has shape (batch, n).
+            cal_out_two: torch.Tensor
+                The calibrated frequency (or phase) waveform, which has shape (batch, n).
         """
-        inputs = torch.stack([ml_out_one, ml_out_two], dim=1)  # shape: (batch, 2, n)
+        inputs = torch.stack([mloutput[:, 0], mloutput[:, 1]], dim=1)  # shape: (batch, 2, n)
         pred_residual_one, pred_residual_two = self.predict_residuals(inputs, labels)
-        cal_out_one = ml_out_one + pred_residual_one
-        cal_out_two = ml_out_two + pred_residual_two
+        cal_out_one = mloutput[:, 0] + pred_residual_one
+        cal_out_two = mloutput[:, 1] + pred_residual_two
         if convert_to_hphc:
             if self.wftype == 'amp_freq':
                 return polarizations_from_ampfreq(cal_out_one, cal_out_two)

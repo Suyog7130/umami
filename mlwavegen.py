@@ -31,6 +31,7 @@ import torch.multiprocessing as mp
 
 from flexcvae import FlexTwoC2E1D, FlexCAE, FlexCAEPhase
 from optimize import load_flex_model
+from calibration import CalibrationModel
 from cvae import CVAE
 
 logger = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ def set_cached_mlmodel(model):
     logger.info("ML model cached successfully for future use in waveform generation.")
 
 def get_cached_mlmodel():
-    return CACHED_MLMODEL
+    return (CACHED_MLMODEL['wfgenerator'], CACHED_MLMODEL['calibrator'])
 
 
 def get_td_SEOBNRv4ml(time_array, **kwargs):
@@ -110,30 +111,41 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     which we will use to load the model and generate the waveform!
     """
     logger.info(f"Received parameters for waveform generation: {kwargs}")
-    model = get_cached_mlmodel()
-    if model is None:
+    wfgenerator, calibrator = get_cached_mlmodel()
+    if wfgenerator is None:
         logger.warning("No ML model provided to get_td_SEOBNRv4ml. We will initialize the model using the provided model_path and config_path in kwargs!")
         # mlmodel=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
-        if any(key not in kwargs for key in ['model_path', 'config_path']):
-            raise ValueError("Missing 'model_path' or 'config_path' in kwargs for waveform generation.")
-        model = load_flex_model(model_path=kwargs['model_path'], 
-                                configpath=kwargs['config_path'], 
+        if any(key not in kwargs for key in ['wfmodel_modelpath', 'wfmodel_configpath']):
+            raise ValueError("Missing 'wfmodel_modelpath' or 'wfmodel_configpath' in kwargs for waveform generation.")
+        wfgenerator = load_flex_model(model_path=kwargs['wfmodel_modelpath'], 
+                                configpath=kwargs['wfmodel_configpath'], 
                                 device=DEVICE, precision=PRECISION)
-        set_cached_mlmodel(model)
+        calibrator = CalibrationModel(calibrator_modelpath=kwargs.get('calibrator_modelpath', None),
+                                   device=DEVICE, precision=PRECISION)
+        set_cached_mlmodel({'wfgenerator': wfgenerator, 'calibrator': calibrator})
     
     parameters = {model_param: kwargs[model_param] for model_param in ['mass_1', 'mass_2', 'spin_1z', 'spin_2z']}
     labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
                             dtype=torch.float32).unsqueeze(0).to(DEVICE)
     
-    generated_waveform = model.generate(labels)  # has shape (1, 2=[hp,hc], sequence_length)!
-    logger.info(f"Generated waveform from ML model with shape: {generated_waveform.shape}")
+    mloutput = wfgenerator.generate(labels, convert_to_hphc=False)  # has shape (1, 2=[amp,phase], seq_len)!
+    logger.info(f"Generated waveform from ML model with shape: {mloutput.shape}")
+    hplus, hcross = calibrator.calibrate_waveform(mloutput, labels, convert_to_hphc=True)
 
-    # FIXME: We shouldn't actually be doing this augmentation by hand!
-    # -- add two dummy repeated value at the start to makeup for length req by Bilby Interferometer.
-    hplus, hcross = generated_waveform[0][0], generated_waveform[0][1]
-    hplus = np.concatenate([[hplus[0],hplus[1]], hplus])
-    hcross = np.concatenate([[hcross[0],hcross[1]], hcross])
-    logger.info(f"Waveform shapes after adding dummy element at the start: {hplus.shape}, {hcross.shape}")
+    # # FIXME: We shouldn't actually be doing this augmentation by hand!
+    # # -- add two dummy repeated value at the start to makeup for length req by Bilby Interferometer.
+    # hplus, hcross = mloutput[0][0], mloutput[0][1]
+    # hplus = np.concatenate([[hplus[0],hplus[1]], hplus])
+    # hcross = np.concatenate([[hcross[0],hcross[1]], hcross])
+    # logger.info(f"Waveform shapes after adding dummy element at the start: {hplus.shape}, {hcross.shape}")
+
+    # -- pad the waveform to the required length of 8192 samples for Bilby Interferometer.
+    required_length = 8192
+    if len(hplus) < required_length:
+        pad_length = required_length - len(hplus)
+        hplus = np.pad(hplus, (0, pad_length), mode='constant')
+        hcross = np.pad(hcross, (0, pad_length), mode='constant')
+        logger.info(f"Padded waveform to required length of {required_length} samples. New shapes: {hplus.shape}, {hcross.shape}")
 
     distance_scale_factor = kwargs.get('distance_scale_factor', None)
     luminosity_distance = kwargs.get('luminosity_distance', 1.0)
@@ -227,28 +239,34 @@ class MLWaveformGenerator(WaveformGenerator):
     def __init__(self, **kwargs):
         time_domain_source_model = kwargs.get('time_domain_source_model', None)
         frequency_domain_source_model = kwargs.get('frequency_domain_source_model', None)
-        model_path = kwargs['waveform_arguments'].get('model_path', None) if 'waveform_arguments' in kwargs else None
-        config_path = kwargs['waveform_arguments'].get('config_path', None) if 'waveform_arguments' in kwargs else None
+        model_path = kwargs['waveform_arguments'].get('wfmodel_modelpath', None) if 'waveform_arguments' in kwargs else None
+        config_path = kwargs['waveform_arguments'].get('wfmodel_configpath', None) if 'waveform_arguments' in kwargs else None
+        calmodel_path = kwargs['waveform_arguments'].get('calibrator_modelpath', None) if 'waveform_arguments' in kwargs else None
 
         if time_domain_source_model is None and frequency_domain_source_model is None:
             logger.warning("No source model provided to MLWaveformGenerator. We will initialize our ML model!")
             if model_path is None or config_path is None:
                 raise ValueError("Missing 'model_path' or 'config_path' in waveform_arguments for ML model initialization.")
-            self.init_mlmodel(model_path=model_path, config_path=config_path)
+            self.init_mlmodels(wfmodel_modelpath=model_path, wfmodel_configpath=config_path, calibrator_modelpath=calmodel_path)
 
         # -- add `time_domain_source_model` to kwargs so that they can be used in the super class!
         kwargs['time_domain_source_model'] = self.time_domain_source_model
         # -- init __super__ class after initializing the ML model, so that the model can be used in the time_domain_strain method!
         super().__init__(**kwargs)
 
-    def init_mlmodel(self, model_path, config_path):
+    def init_mlmodels(self, wfmodel_modelpath, wfmodel_configpath, calibrator_modelpath=None):
         """
         Initialize the ML model for waveform generation. This method can be called to load the model after the generator is initialized.
         """
-        logger.info(f"Initializing ML model with model_path: {model_path} and config_path: {config_path}")
-        self.loaded_mlmodel = load_flex_model(model_path=model_path, configpath=config_path, 
+        logger.info(f"Initializing ML model with model_path: {wfmodel_modelpath} and config_path: {wfmodel_configpath}")
+        self.ml_wfmodel = load_flex_model(model_path=wfmodel_modelpath, configpath=wfmodel_configpath, 
                                               device=None, precision=None)
-        set_cached_mlmodel(self.loaded_mlmodel)
+        if calibrator_modelpath is not None:
+            logger.info(f"Initializing calibrator model with model_path: {calibrator_modelpath}")
+            self.ml_calmodel = CalibrationModel(calibrator_modelpath, 
+                                                     device=DEVICE, precision=PRECISION)
+        set_cached_mlmodel({'wfgenerator': self.ml_wfmodel, 
+                            'calibrator': self.ml_calmodel})
         self.time_domain_source_model = get_td_SEOBNRv4ml
         self.frequency_domain_source_model = None  # We will only use the time-domain model for now!
         logger.info("ML model initialized for waveform generation in MLWaveformGenerator.")
