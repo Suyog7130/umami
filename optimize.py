@@ -855,6 +855,13 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
     Load the trained FlexTwoC2E1D model from the specified path.
     """
     logger.info("Starting training with specified hyperparameters")
+
+    # -- load model to CPU first, if device is not specified!
+    if device is None:
+        device = torch.device("cpu")
+    if precision is None:
+        precision = "float32"
+
     if configpath is not None:
         if not configpath.endswith('.json'):
             configpath += '.json'
@@ -975,6 +982,7 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
         # -- Check if model weights loaded are of the same precision as our initialized model.
         # -- If not, then convert loaded model to the correct precision before moving to device.
         for name, param in model.named_parameters():
+            logger.debug(f"Checking parameter '{name}' of dtype {param.dtype} against desired precision {precision}")
             if param.dtype != getattr(torch, precision):
                 logger.info(f"Converting model parameter '{name}' from {param.dtype} to {getattr(torch, precision)} for consistency with initialized model precision.")
                 param.data = param.data.to(getattr(torch, precision))

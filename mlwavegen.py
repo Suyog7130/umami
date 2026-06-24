@@ -67,16 +67,16 @@ logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 bilby.core.utils.random.seed(42)
 
 
-CACHED_MLMODEL = {'wfgenerator': None, 'calibrator': None}
+CACHED_MLMODEL = {'ml_wfmodel': None, 'ml_calmodel': None}
 
 
-def set_cached_mlmodel(model):
+def set_cached_mlmodel(ml_wfmodel, ml_calmodel):
     global CACHED_MLMODEL
-    CACHED_MLMODEL = model
+    CACHED_MLMODEL = {'ml_wfmodel': ml_wfmodel, 'ml_calmodel': ml_calmodel}
     logger.info("ML model cached successfully for future use in waveform generation.")
 
 def get_cached_mlmodel():
-    return (CACHED_MLMODEL['wfgenerator'], CACHED_MLMODEL['calibrator'])
+    return (CACHED_MLMODEL['ml_wfmodel'], CACHED_MLMODEL['ml_calmodel'])
 
 
 def get_td_SEOBNRv4ml(time_array, **kwargs):
@@ -111,26 +111,32 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     which we will use to load the model and generate the waveform!
     """
     logger.info(f"Received parameters for waveform generation: {kwargs}")
-    wfgenerator, calibrator = get_cached_mlmodel()
-    if wfgenerator is None:
+    ml_wfmodel, ml_calmodel = get_cached_mlmodel()
+    if ml_wfmodel is None:
         logger.warning("No ML model provided to get_td_SEOBNRv4ml. We will initialize the model using the provided model_path and config_path in kwargs!")
         # mlmodel=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
         if any(key not in kwargs for key in ['wfmodel_modelpath', 'wfmodel_configpath']):
             raise ValueError("Missing 'wfmodel_modelpath' or 'wfmodel_configpath' in kwargs for waveform generation.")
-        wfgenerator = load_flex_model(model_path=kwargs['wfmodel_modelpath'], 
+        ml_wfmodel = load_flex_model(model_path=kwargs['wfmodel_modelpath'], 
                                 configpath=kwargs['wfmodel_configpath'], 
-                                device=DEVICE, precision=PRECISION)
-        calibrator = CalibrationModel(calibrator_modelpath=kwargs.get('calibrator_modelpath', None),
-                                   device=DEVICE, precision=PRECISION)
-        set_cached_mlmodel({'wfgenerator': wfgenerator, 'calibrator': calibrator})
+                                device=None, precision=None)
+        ml_calmodel = CalibrationModel(calibrator_modelpath=kwargs.get('calibrator_modelpath', None),
+                                   device=None, precision=None)
+        set_cached_mlmodel({'ml_wfmodel': ml_wfmodel, 'ml_calmodel': ml_calmodel})
     
     parameters = {model_param: kwargs[model_param] for model_param in ['mass_1', 'mass_2', 'spin_1z', 'spin_2z']}
-    labels = torch.tensor([parameters[key] for key in sorted(parameters.keys())], 
-                            dtype=torch.float32).unsqueeze(0).to(DEVICE)
+    labels = [parameters[key] for key in sorted(parameters.keys())]
+    labels = torch.tensor(labels, dtype=torch.float32).unsqueeze(0)  # shape: (1, 4, 1)
+    logger.debug(f"Converted parameters to tensor labels for ML model: {labels}")
     
-    mloutput = wfgenerator.generate(labels, convert_to_hphc=False)  # has shape (1, 2=[amp,phase], seq_len)!
-    logger.info(f"Generated waveform from ML model with shape: {mloutput.shape}")
-    hplus, hcross = calibrator.calibrate_waveform(mloutput, labels, convert_to_hphc=True)
+    outwaves = ml_wfmodel.generate(labels, convert_to_hphc=False)  # has shape (1, 2=[amp,phase], seq_len)!
+    logger.info(f"Generated waveform from ML model with shape: {outwaves.shape}")
+
+    hplus, hcross = ml_calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=True)
+    logger.info(f"Calibrated waveform from ML model with shape: {hplus.shape}, {hcross.shape}")
+    hplus = hplus.squeeze().cpu().numpy()
+    hcross = hcross.squeeze().cpu().numpy()
+    logger.info(f"Calibrated waveform shapes: hplus={hplus.shape}, hcross={hcross.shape}")
 
     # # FIXME: We shouldn't actually be doing this augmentation by hand!
     # # -- add two dummy repeated value at the start to makeup for length req by Bilby Interferometer.
@@ -260,34 +266,32 @@ class MLWaveformGenerator(WaveformGenerator):
         """
         logger.info(f"Initializing ML model with model_path: {wfmodel_modelpath} and config_path: {wfmodel_configpath}")
         self.ml_wfmodel = load_flex_model(model_path=wfmodel_modelpath, configpath=wfmodel_configpath, 
-                                              device=None, precision=None)
+                                          device=None, precision=None)
         if calibrator_modelpath is not None:
             logger.info(f"Initializing calibrator model with model_path: {calibrator_modelpath}")
-            self.ml_calmodel = CalibrationModel(calibrator_modelpath, 
-                                                     device=DEVICE, precision=PRECISION)
-        set_cached_mlmodel({'wfgenerator': self.ml_wfmodel, 
-                            'calibrator': self.ml_calmodel})
+            self.ml_calmodel = CalibrationModel(calibrator_modelpath, device=None, precision=None)
+        set_cached_mlmodel(self.ml_wfmodel,self.ml_calmodel)
         self.time_domain_source_model = get_td_SEOBNRv4ml
         self.frequency_domain_source_model = None  # We will only use the time-domain model for now!
         logger.info("ML model initialized for waveform generation in MLWaveformGenerator.")
 
     def check_model_weights_on_device(self, device=DEVICE, precision=PRECISION):
-        if self.loaded_mlmodel is None:
+        if self.ml_wfmodel is None:
             logger.warning("ML model not initialized yet. Please call init_mlmodel() first.")
             return
-        # -- Check if model weights loaded are of the same precision as our initialized model.
-        # -- If not, then convert loaded model to the correct precision before moving to device.
-        for name, param in self.loaded_mlmodel.named_parameters():
-            if param.dtype != precision:
-                logger.info(f"Converting model parameter '{name}' from {param.dtype} to {precision} for consistency with initialized model precision.")
-                param.data = param.data.to(getattr(torch, precision))
-        # -- Check if model weights are already on the correct device before moving.
-        for name, param in self.loaded_mlmodel.named_parameters():
-            if param.device != device:
-                logger.info(f"Moving model parameter '{name}' from {param.device} to {device}.")
-                param.data = param.data.to(device)
-            else:
-                logger.info(f"Model parameter '{name}' is already on the correct device: {device}.")
+        for model in [self.ml_wfmodel, self.ml_calmodel.model]:
+            for name, param in model.named_parameters():
+                # -- Check if model weights loaded are of the same precision as our initialized model.
+                # -- If not, then convert loaded model to the correct precision before moving to device.
+                if param.dtype != precision:
+                    logger.info(f"Converting model parameter '{name}' from {param.dtype} to {precision} for consistency with initialized model precision.")
+                    param.data = param.data.to(getattr(torch, precision))
+                # -- Check if model weights are already on the correct device before moving.
+                if param.device != device:
+                    logger.info(f"Moving model parameter '{name}' from {param.device} to {device}.")
+                    param.data = param.data.to(device)
+                else:
+                    logger.info(f"Model parameter '{name}' is already on the correct device: {device}.")
 
     # TODO: Saving `results` obj fails because `time_domain_source_model` is a method and cannot be serialized.
     # NOTE: I can `bilby.core.utils.io.BilbyJSONEncoder` to accept `method` type, using:
@@ -296,8 +300,8 @@ class MLWaveformGenerator(WaveformGenerator):
         """ DEPRECATED!
         This method is now replaced by `get_td_SEOBNRv4ml` function and CACHED_MODEL global variable.
         """
-        return get_td_SEOBNRv4ml(time_array, model=self.loaded_mlmodel, **kwargs)
-    
+        return get_td_SEOBNRv4ml(time_array, model=self.ml_wfmodel, **kwargs)
+
     def time_domain_strain(self, parameters=None):
         """
         Override the time_domain_strain method to use the ML model for waveform generation.

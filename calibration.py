@@ -918,17 +918,25 @@ def load_calibrator_model(model_path, device=DEVICE, precision=PRECISION):
 class CalibrationModel:
     """
     A wrapper class to use a trained calibrator model for residual prediction.
-    This will allow easy 
+    This allows direct use for parameter inference!
     """
     def __init__(self, calibrator_modelpath, 
-                 wftype: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_freq',
+                 wftype: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_phase',
                  labels_mean=None, labels_std=None,
                  device=DEVICE, precision=PRECISION):
+        self.wftype = wftype
+        if labels_mean is not None and labels_std is not None:
+            self.labels_mean = labels_mean
+            self.labels_std = labels_std
+        else:
+            logging.info("No labels normalization parameters provided. We will use global values, since this is required for properly prediction of the calibration residuals. Please ensure that the calibrator model was trained with the same normalization parameters, otherwise the predictions may be incorrect.")
+            self.labels_mean = params_mean  # global mean values for [m1, m2, s1z, s2z]
+            self.labels_std = params_std  # global std values for [m1, m2, s1z, s2z]
+        device = torch.device("cpu") if device is None else device
+        precision = 'float32' if precision is None else precision
         self.calibrator_model = load_calibrator_model(calibrator_modelpath, 
                                                       device=device, precision=precision)
-        self.wftype = wftype
-        self.labels_mean = labels_mean
-        self.labels_std = labels_std
+        self.model = self.calibrator_model  # for compatibility with other code that expects a `model` attribute
         logger.info(f"Initialized CalibrationModel with calibrator model loaded from {calibrator_modelpath}")
 
     def preprocess_params(self, params, repeat_length):
@@ -936,15 +944,24 @@ class CalibrationModel:
         Preprocess the parameters by normalizing them and repeating them across the time 
         dimension to match the shape of the ML generated waveform inputs.
         """
+        if params.shape[1] != 4:
+            raise ValueError(f"Expected params to have shape (batch, 4), but got {params.shape}")
+        if params.shape[-1] == 1:
+            params = params.squeeze(-1)  # shape: (batch, 4)
+            
+        logger.debug(f"Preprocessing parameters: {params} with repeat_length={repeat_length}")
         param_m1, param_m2, param_s1z, param_s2z = params[:, 0], params[:, 1], params[:, 2], params[:, 3]
-        if self.labels_mean is not None and self.labels_std is not None:
-            param_m1 = (param_m1 - self.labels_mean[0]) / self.labels_std[0]
-            param_m2 = (param_m2 - self.labels_mean[1]) / self.labels_std[1]
-            param_s1z = (param_s1z - self.labels_mean[2]) / self.labels_std[2]
-            param_s2z = (param_s2z - self.labels_mean[3]) / self.labels_std[3]
-            logger.debug(f"Preprocessed parameters: param_m1={param_m1}, param_m2={param_m2}, param_s1z={param_s1z}, param_s2z={param_s2z}")
+
+        param_m1 = (param_m1 - self.labels_mean[0]) / self.labels_std[0]
+        param_m2 = (param_m2 - self.labels_mean[1]) / self.labels_std[1]
+        param_s1z = (param_s1z - self.labels_mean[2]) / self.labels_std[2]
+        param_s2z = (param_s2z - self.labels_mean[3]) / self.labels_std[3]
+        logger.debug(f"Preprocessed parameters: param_m1={param_m1}, param_m2={param_m2}, param_s1z={param_s1z}, param_s2z={param_s2z}")
+
         params = torch.stack([param_m1, param_m2, param_s1z, param_s2z], dim=1)  # shape: (batch, 4)
-        params = params.unsqueeze(-1).expand(-1, repeat_length)  # shape: (batch, 4, n)
+        logger.debug(f"Stacked parameters shape: {params.shape}, repeat_length: {repeat_length}")
+        params = params.unsqueeze(-1).expand(-1, -1, repeat_length)  # shape: (batch, 4, n)
+        logger.debug(f"Expanded parameters shape after unsqueeze and expand: {params.shape}")
         return params
 
     def predict_residuals(self, inputs, params):
@@ -953,7 +970,11 @@ class CalibrationModel:
         """
         assert inputs.shape[1] == 2, f"Expected inputs to have shape (batch, 2, n), but got {inputs.shape}"
         assert params.shape[1] == 4, f"Expected params to have shape (batch, 4), but got {params.shape}"
+        logger.debug(f"Provided parameters for residual prediction: {params}")
+        logger.debug(f"Inputs shape: {inputs.shape}, Params shape after unsqueeze: {params.shape}")
         params = self.preprocess_params(params, repeat_length=inputs.shape[-1])  # shape: (batch, 4, n)
+        # -- Send params to the same device and dtype as inputs
+        params = params.to(device=inputs.device, dtype=inputs.dtype)
         self.calibrator_model.eval()
         with torch.no_grad():
             cal_input = torch.stack([inputs[:, 0], inputs[:, 1], params[:, 0], params[:, 1], params[:, 2], params[:, 3]], dim=1)  # shape: (batch, 6, n)
@@ -989,6 +1010,7 @@ class CalibrationModel:
             cal_out_two: torch.Tensor
                 The calibrated frequency (or phase) waveform, which has shape (batch, n).
         """
+        logger.debug(f"Calibrating ML generated waveform with shape {mloutput.shape} using parameters with shape {labels.shape}")
         inputs = torch.stack([mloutput[:, 0], mloutput[:, 1]], dim=1)  # shape: (batch, 2, n)
         pred_residual_one, pred_residual_two = self.predict_residuals(inputs, labels)
         cal_out_one = mloutput[:, 0] + pred_residual_one
