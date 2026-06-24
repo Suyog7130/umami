@@ -66,7 +66,7 @@ logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 bilby.core.utils.random.seed(42)
 
 
-CACHED_MLMODEL = None
+CACHED_MLMODEL = {'wfgenerator': None, 'calibrator': None}
 
 
 def set_cached_mlmodel(model):
@@ -135,25 +135,23 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     hcross = np.concatenate([[hcross[0],hcross[1]], hcross])
     logger.info(f"Waveform shapes after adding dummy element at the start: {hplus.shape}, {hcross.shape}")
 
-    waveforms = {'plus': hplus, 'cross': hcross}
-
     distance_scale_factor = kwargs.get('distance_scale_factor', None)
     luminosity_distance = kwargs.get('luminosity_distance', 1.0)
     if distance_scale_factor is not None:
-        waveforms['plus'] /= distance_scale_factor
-        waveforms['cross'] /= distance_scale_factor
+        hplus /= distance_scale_factor
+        hcross /= distance_scale_factor
     elif luminosity_distance != 1.0:
-        waveforms['plus'] /= luminosity_distance
-        waveforms['cross'] /= luminosity_distance
+        hplus /= luminosity_distance
+        hcross /= luminosity_distance
     logger.info(f"Applied distance scaling to waveforms with distance_scale_factor: {distance_scale_factor} and luminosity_distance: {luminosity_distance}")
 
-    # fig, ax = plt.subplots(figsize=(12, 5))
-    # ax.plot(np.arange(len(waveforms['plus'])), waveforms['plus'], label='hp')
-    # ax.plot(np.arange(len(waveforms['cross'])), waveforms['cross'], label='hc')
-    # ax.legend()
-    # plt.savefig(f'check-global-denorming-outputs_{NOW}.png', dpi=300)
-    # plt.show()
-    return waveforms
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(np.arange(len(hplus)), hplus, label='hp')
+    ax.plot(np.arange(len(hcross)), hcross, label='hc')
+    ax.legend()
+    plt.savefig(f'check-global-denorming-outputs_{NOW}.png', dpi=300)
+    plt.show()
+    return {'plus': hplus, 'cross': hcross}
 
 def convert_to_ml_parameters(parameters):
     """

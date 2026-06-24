@@ -34,6 +34,7 @@ from plotutils import putils
 from utils.io import ensure_dirs_and_files, ensure_dir
 from utils.gwutils import (
     calculate_cosine_distance,
+    polarizations_from_ampfreq,
     polarizations_from_amp_phase,
     calc_polarization_mismatch,
     calc_chirp_mass,
@@ -916,16 +917,18 @@ def load_calibrator_model(model_path, device=DEVICE, precision=PRECISION):
 
 class CalibrationModel:
     """
-    NOT-IMPLEMENTED YET!
-
     A wrapper class to use a trained calibrator model for residual prediction.
     This will allow easy 
     """
     def __init__(self, calibrator_model_path, 
-                 input_type: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_freq',
-                 params_mean=None, params_std=None,
+                 wftype: {'amp_freq', 'logamp_freq', 'amp_phase', 'logamp_phase'} = 'amp_freq',
+                 labels_mean=None, labels_std=None,
                  device=DEVICE, precision=PRECISION):
-        self.calibrator_model = load_calibrator_model(calibrator_model_path, device=device, precision=precision)
+        self.calibrator_model = load_calibrator_model(calibrator_model_path, 
+                                                      device=device, precision=precision)
+        self.wftype = wftype
+        self.labels_mean = labels_mean
+        self.labels_std = labels_std
         logger.info(f"Initialized CalibrationModel with calibrator model loaded from {calibrator_model_path}")
 
     def preprocess_params(self, params, repeat_length):
@@ -934,11 +937,11 @@ class CalibrationModel:
         dimension to match the shape of the ML generated waveform inputs.
         """
         param_m1, param_m2, param_s1z, param_s2z = params[:, 0], params[:, 1], params[:, 2], params[:, 3]
-        if self.params_mean is not None and self.params_std is not None:
-            param_m1 = (param_m1 - self.params_mean[0].item()) / self.params_std[0].item()
-            param_m2 = (param_m2 - self.params_mean[1].item()) / self.params_std[1].item()
-            param_s1z = (param_s1z - self.params_mean[2].item()) / self.params_std[2].item()
-            param_s2z = (param_s2z - self.params_mean[3].item()) / self.params_std[3].item()
+        if self.labels_mean is not None and self.labels_std is not None:
+            param_m1 = (param_m1 - self.labels_mean[0]) / self.labels_std[0]
+            param_m2 = (param_m2 - self.labels_mean[1]) / self.labels_std[1]
+            param_s1z = (param_s1z - self.labels_mean[2]) / self.labels_std[2]
+            param_s2z = (param_s2z - self.labels_mean[3]) / self.labels_std[3]
             logger.debug(f"Preprocessed parameters: param_m1={param_m1}, param_m2={param_m2}, param_s1z={param_s1z}, param_s2z={param_s2z}")
         params = torch.stack([param_m1, param_m2, param_s1z, param_s2z], dim=1)  # shape: (batch, 4)
         params = params.unsqueeze(-1).expand(-1, repeat_length)  # shape: (batch, 4, n)
@@ -953,18 +956,24 @@ class CalibrationModel:
         params = self.preprocess_params(params, repeat_length=inputs.shape[-1])  # shape: (batch, 4, n)
         self.calibrator_model.eval()
         with torch.no_grad():
-            input_tensor = torch.stack([inputs[:, 0], inputs[:, 1], params[:, 0], params[:, 1], params[:, 2], params[:, 3]], dim=1)  # shape: (batch, 6, n)
-            pred_input_residual = self.calibrator_model(input_tensor)  # shape: (batch, 2, n)
-        return (pred_input_residual[:, 0, :], pred_input_residual[:, 1, :])
+            cal_input = torch.stack([inputs[:, 0], inputs[:, 1], params[:, 0], params[:, 1], params[:, 2], params[:, 3]], dim=1)  # shape: (batch, 6, n)
+            pred_residual = self.calibrator_model(cal_input)  # shape: (batch, 2, n)
+        return (pred_residual[:, 0, :], pred_residual[:, 1, :])
 
-    def calibrate_waveform(self, ml_amp, ml_freq, params):
+    def calibrate_waveform(self, ml_out_one, ml_out_two, labels, convert_to_hphc=True):
         """
         Calibrate the ML generated amplitude and frequency by adding the predicted residuals to them.
         """
-        pred_amp_residual, pred_freq_residual = self.predict_residuals(ml_amp, ml_freq, params)
-        calibrated_amp = ml_amp + pred_amp_residual
-        calibrated_freq = ml_freq + pred_freq_residual
-        return calibrated_amp, calibrated_freq
+        inputs = torch.stack([ml_out_one, ml_out_two], dim=1)  # shape: (batch, 2, n)
+        pred_residual_one, pred_residual_two = self.predict_residuals(inputs, labels)
+        cal_out_one = ml_out_one + pred_residual_one
+        cal_out_two = ml_out_two + pred_residual_two
+        if convert_to_hphc:
+            if self.wftype == 'amp_freq':
+                return polarizations_from_ampfreq(cal_out_one, cal_out_two)
+            if self.wftype == 'amp_phase':
+                return polarizations_from_amp_phase(cal_out_one, cal_out_two, scale_factor=10**20)
+        return cal_out_one, cal_out_two
 
 
 
