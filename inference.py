@@ -273,6 +273,42 @@ def aligned_chi_to_lal_parameters(parameters,
     return converted, []
 
 
+def lal_binary_black_hole_aligned_chi(
+    frequency_array,
+    mass_1,
+    mass_2,
+    luminosity_distance,
+    chi_1,
+    chi_2,
+    theta_jn,
+    phase,
+    **kwargs,
+):
+    a_1 = abs(float(chi_1))
+    tilt_1 = 0.0 if chi_1 >= 0 else np.pi
+
+    a_2 = abs(float(chi_2))
+    tilt_2 = 0.0 if chi_2 >= 0 else np.pi
+
+    return bilby.gw.source.lal_binary_black_hole(
+        frequency_array=frequency_array,
+        mass_1=mass_1,
+        mass_2=mass_2,
+        luminosity_distance=luminosity_distance,
+        a_1=a_1,
+        tilt_1=tilt_1,
+        phi_12=0.0,
+        a_2=a_2,
+        tilt_2=tilt_2,
+        phi_jl=0.0,
+        theta_jn=theta_jn,
+        phase=phase,
+        **kwargs,
+    )
+
+def identity_parameter_conversion(parameters):
+    return parameters.copy(), []
+
 
 # priors = BBHPriorDict(aligned_spin=True)
 # print("Default priors for BBH parameters:")
@@ -399,14 +435,21 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
     return results
 
 
-def make_wf_generator(type: {'eob', 'ml'}, wfkwargs: Dict = {}) -> WaveformGenerator:
+def make_wf_generator(type: {'eob', 'ml'}, 
+                      wfkwargs: Dict = {},
+                      wf_source_model = None,
+                      param_converter = None) -> WaveformGenerator:
     if type=='eob':
+        if wf_source_model is None:
+            wf_source_model = bilby.gw.source.lal_binary_black_hole
+        if param_converter is None:
+            parameter_conversion = aligned_chi_to_lal_parameters
         return WaveformGenerator(
             duration=DURATION,
             sampling_frequency=SAMPLE_RATE,
             # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
-            frequency_domain_source_model=bilby.gw.source.lal_binary_black_hole,
-            parameter_conversion=aligned_chi_to_lal_parameters,
+            frequency_domain_source_model=wf_source_model,
+            parameter_conversion=param_converter,
             waveform_arguments=dict(
                 waveform_approximant="SEOBNRv4",      #"IMRPhenomPv2",
                 reference_frequency=FREF,
@@ -638,7 +681,7 @@ def add_fixed_parameters_to_result_posterior(result, fixed_parameters):
 def imp_reweight_posteriors(fname: str, 
                             outdir: str = f'../{PROJECT_DIR}/results/',
                             use_old_likelihood_from_file: bool = True,
-                            use_nested_samples: bool = True,
+                            use_nested_samples: bool = False,
                             npool: int = 8):
     """
     Do importance reweighting for a posterior using built-in `bilby.gw.core.result.reweight`
@@ -668,15 +711,28 @@ def imp_reweight_posteriors(fname: str,
     result = add_fixed_parameters_to_result_posterior(result, fixed_parameters)
     logger.info(f"Updated result posterior columns after adding fixed parameters: {result.posterior.columns}")
 
+    if use_nested_samples:
+        # Update parameters in result.nested_samples as well, if available
+        for key, value in fixed_parameters.items():
+            if key not in result.nested_samples.columns:
+                result.nested_samples[key] = value
+        logger.info(f"Updated result nested_samples columns after adding fixed parameters: {result.nested_samples.columns}")
+
     ifos = read_ifos_from_file(fname=fname.replace('_result.json', '_ifos.pkl'), outdir=outdir)
     logger.info(f"Interferometer injection parameters are: {ifos[0].__dict__}")
 
-    waveform_generator = make_wf_generator('eob')
+    waveform_generator = make_wf_generator('eob', 
+                                           wf_source_model=lal_binary_black_hole_aligned_chi,param_converter=identity_parameter_conversion,)
 
     eob_likelihood = GravitationalWaveTransient(
         interferometers=ifos,
         waveform_generator=waveform_generator,
     )
+
+    # sample = result.posterior.iloc[0].to_dict()
+    # print("sample keys:", sorted(sample.keys()))
+    # eob_likelihood.parameters.update(sample)
+    # print("new EOB logL:", eob_likelihood.log_likelihood())
 
     new_result = bilby.core.result.reweight(
         result=result,
@@ -767,9 +823,7 @@ if __name__ == "__main__":
     
     elif args.imp_reweight:
         logger.info("Running in importance reweighting mode. Will reweight results from a previous run using the provided JSON file.")
-        imp_reweight_posteriors(fname=args.results_fname, outdir=args.results_dir, 
-                                use_old_likelihood_from_file=True, use_nested_samples=True, 
-                                npool=args.npool)
+        imp_reweight_posteriors(fname=args.results_fname, outdir=args.results_dir, npool=args.npool)
     
     else:
         main(args, label=args.label, 
