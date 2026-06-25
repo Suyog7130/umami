@@ -804,12 +804,14 @@ def imp_reweight_posteriors(fname: str,
 
 
 if __name__ == "__main__":
+
     parser = argparse.ArgumentParser(description="Train a CVAE model on GW waveforms")
+    
     parser.add_argument('--label', type=str, default='umamipe',
                         help="Label for the analysis (default: umamipe)")
-    
     parser.add_argument('--project-dir', type=str, choices=['cvae@taiwan', 'v0p1', '@alvin', '@korea'], 
                         default=PROJECT_DIR, help="Base directory for the project (default: %(default)s)")
+    
     parser.add_argument('--model-config', type=str, default='modelconfig-cvae-paper-I',
                         help="Name of the model configuration JSON file (default: %(default)s)")
     parser.add_argument('--model-name', type=str, default='model-20251004_072338-10',

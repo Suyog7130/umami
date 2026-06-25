@@ -6,7 +6,7 @@ executable = condor-run-inference.sh
 if defined label
     arg_label = $(label)
 else
-    arg_label = ml2ml-paper-1
+    arg_label = p2m-cal-pe
 endif
 # injection_index, supplied by $(Process)
 if defined injection_index_start

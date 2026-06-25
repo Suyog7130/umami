@@ -83,6 +83,9 @@ echo "Running inference.py..."
     --threshold "${THRESHOLD}" \
     --npool "${NPOOL}" \
     --pytorch-threads "${PYTORCH_THREADS}" \
+    --model-name flexcvae-model-backup-20260619-064140-epoch98.pt \
+    --model-config modelconfig-flexcvae-20260619-064140.json \
+    --calmodel-name calibrator_model_20260623-010953_epoch74.pt 
     --quiet
 
 EXIT_CODE=$?
