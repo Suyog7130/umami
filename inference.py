@@ -612,6 +612,57 @@ def analyze_results(fname: str = None,
 
 
 
+def read_ifos_from_file(fname: str, outdir: str = f'../{PROJECT_DIR}/results/'):
+    if not fname.endswith('.pkl'):
+        fname += '.pkl'
+    ifos = bilby.gw.detector.InterferometerList.from_pickle(f"{outdir}/{fname}")
+    logger.info(f"Loaded interferometers from {outdir}/{fname} for analysis...")
+    return ifos
+
+def imp_reweight_posteriors(fname: str, 
+                            outdir: str = f'../{PROJECT_DIR}/results/',
+                            use_old_likelihood_from_file: bool = True,
+                            use_nested_samples: bool = True,
+                            npool: int = 8):
+    """
+    Do importance reweighting for a posterior using built-in `bilby.gw.core.result.reweight`
+    function, to correct EOB2ML case posterior samples by appling rejection sampling using the
+    log likelihood ratio between EOB and ML waveforms.
+    """
+    if not fname.endswith('_result.json'):
+        fname = fname.replace('.json', '_result.json')
+    result = bilby.core.result.read_in_result(f"{outdir}/{fname}")
+    logger.info(f"Loaded result from {outdir}/{fname} for importance reweighting...")
+
+    # if use_old_likelihood_from_file:
+    #     old_likelihood = result.likelihood
+    print(result)
+
+    ifos = read_ifos_from_file(fname=fname.replace('_result.json', '_ifos.pkl'), outdir=outdir)
+    waveform_generator = make_wf_generator('eob')    
+    
+    eob_likelihood = GravitationalWaveTransient(
+        interferometers=ifos,
+        waveform_generator=waveform_generator,
+    )
+
+    new_result = bilby.core.result.reweight(
+        result=result,
+        label="imp-reweighted",
+        new_likelihood=eob_likelihood,
+        npool=npool,
+        verbose_output=True,
+        resume_file="reweight_resume.pkl",
+        n_checkpoint=5000,
+        use_nested_samples=use_nested_samples,
+    )
+    new_result.plot_corner(save=True, filename=f"{outdir}/{fname.replace('_result.json', '_corner_imp-reweighted.png')}")
+    savename = f"{outdir}/{fname.replace('_result.json', '_result_imp-reweighted.json')}"
+    new_result.to_json(savename)
+    logger.info(f"Saved importance reweighted result to {savename}")
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train a CVAE model on GW waveforms")
     parser.add_argument('--label', type=str, default='umamipe',
@@ -628,6 +679,8 @@ if __name__ == "__main__":
     
     parser.add_argument('--results-fname', type=str, default=None,
                         help="Filename of the results JSON file to analyze in analyze-only mode (default: None, required if --analyze-only is set)")
+    parser.add_argument('--results-dir', type=str, default=f'../{PROJECT_DIR}/results/',
+                        help="Directory where the results JSON file is located (default: %(default)s)")
     
     parser.add_argument('--num-injections', type=int, default=None,
                         help="Number of injections to run in the campaign (default: %(default)s)")
@@ -666,6 +719,8 @@ if __name__ == "__main__":
                               help="Whether to run the full PE campaign (default: False)")
     methodargs.add_argument('--analyze-only', action='store_true', 
                               help="Whether to only analyze results from a previous run, using the provided JSON file (default: False)")
+    methodargs.add_argument('--imp-reweight', action='store_true',
+                              help="Whether to perform importance reweighting on a previous result, using the provided JSON file (default: False)")
     
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
@@ -677,6 +732,13 @@ if __name__ == "__main__":
     if args.analyze_only:
         logger.info("Running in analyze-only mode. Will analyze results from a previous run using the provided JSON file.")
         analyze_results(fname=args.results_fname, label=args.label, outdir=f'../{PROJECT_DIR}/results/{TODAY}')
+    
+    elif args.imp_reweight:
+        logger.info("Running in importance reweighting mode. Will reweight results from a previous run using the provided JSON file.")
+        imp_reweight_posteriors(fname=args.results_fname, outdir=args.results_dir, 
+                                use_old_likelihood_from_file=True, use_nested_samples=True, 
+                                npool=args.npool)
+    
     else:
         main(args, label=args.label, 
             pe_run_type=args.pe_run_type,
