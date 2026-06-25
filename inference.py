@@ -231,7 +231,8 @@ def sample_injection_from_priors(
 
 
 
-def aligned_chi_to_lal_parameters(parameters):
+def aligned_chi_to_lal_parameters(parameters, 
+                                  return_with_bilby_converter=False):
     """
     Convert aligned-spin chi_1, chi_2 parameters into LAL-style
     spin magnitude and tilt parameters for non-precessing approximants.
@@ -245,6 +246,7 @@ def aligned_chi_to_lal_parameters(parameters):
         phi_12 = 0
         phi_jl = 0
     """
+    logger.debug(f"Converting aligned-spin parameters to LAL parameters: {parameters}")
     converted = parameters.copy()
 
     if "chi_1" in converted:
@@ -260,13 +262,15 @@ def aligned_chi_to_lal_parameters(parameters):
     converted["phi_12"] = 0.0
     converted["phi_jl"] = 0.0
 
-    # Also keep these for your ML model if useful.
-    if "chi_1" in converted:
-        converted["spin_1z"] = converted["chi_1"]
-    if "chi_2" in converted:
-        converted["spin_2z"] = converted["chi_2"]
-
-    return bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters(converted)
+    # # Also keep these for the ML model if useful.
+    # if "chi_1" in converted:
+    #     converted["spin_1z"] = converted["chi_1"]
+    # if "chi_2" in converted:
+    #     converted["spin_2z"] = converted["chi_2"]
+    logger.debug(f"Converted LAL parameters: {converted}")
+    if return_with_bilby_converter:
+        return bilby.gw.conversion.convert_to_lal_binary_black_hole_parameters(converted)
+    return converted, []
 
 
 
@@ -619,6 +623,18 @@ def read_ifos_from_file(fname: str, outdir: str = f'../{PROJECT_DIR}/results/'):
     logger.info(f"Loaded interferometers from {outdir}/{fname} for analysis...")
     return ifos
 
+def add_fixed_parameters_to_result_posterior(result, fixed_parameters):
+    """
+    Bilby reweight evaluates likelihoods using rows from result.posterior.
+    If fixed parameters are not columns in result.posterior, the waveform
+    generator can fail with KeyError, e.g. KeyError: 'phase'.
+    """
+    for key, value in fixed_parameters.items():
+        if key not in result.posterior.columns:
+            result.posterior[key] = value
+    return result
+
+
 def imp_reweight_posteriors(fname: str, 
                             outdir: str = f'../{PROJECT_DIR}/results/',
                             use_old_likelihood_from_file: bool = True,
@@ -636,11 +652,27 @@ def imp_reweight_posteriors(fname: str,
 
     # if use_old_likelihood_from_file:
     #     old_likelihood = result.likelihood
-    print(result)
+    logger.info(f"Read results object is: {result}")
+    logger.info(f"Result injection parameters are: {result.injection_parameters}")
+    logger.info(f"Result posterior columns are: {result.posterior.columns}")
+
+    fixed_parameters = {
+        "luminosity_distance": result.injection_parameters["luminosity_distance"],
+        "theta_jn": result.injection_parameters["theta_jn"],
+        "psi": result.injection_parameters["psi"],
+        "phase": result.injection_parameters["phase"],
+        "geocent_time": result.injection_parameters["geocent_time"],
+        "ra": result.injection_parameters["ra"],
+        "dec": result.injection_parameters["dec"],
+    }
+    result = add_fixed_parameters_to_result_posterior(result, fixed_parameters)
+    logger.info(f"Updated result posterior columns after adding fixed parameters: {result.posterior.columns}")
 
     ifos = read_ifos_from_file(fname=fname.replace('_result.json', '_ifos.pkl'), outdir=outdir)
-    waveform_generator = make_wf_generator('eob')    
-    
+    logger.info(f"Interferometer injection parameters are: {ifos[0].__dict__}")
+
+    waveform_generator = make_wf_generator('eob')
+
     eob_likelihood = GravitationalWaveTransient(
         interferometers=ifos,
         waveform_generator=waveform_generator,
