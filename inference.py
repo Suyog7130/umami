@@ -677,6 +677,51 @@ def add_fixed_parameters_to_result_posterior(result, fixed_parameters):
             result.posterior[key] = value
     return result
 
+import numpy as np
+import pandas as pd
+from scipy.special import logsumexp
+
+def debug_reweight_samples(result, new_likelihood, nsamp=100):
+    logger.info(f"Debugging reweighting of posterior samples using new likelihood: {new_likelihood}")
+    df = result.posterior.iloc[:nsamp].copy()
+
+    logl_old = df["log_likelihood"].to_numpy()
+    logl_new = []
+
+    for _, row in df.iterrows():
+        params = row.to_dict()
+        ll = new_likelihood.log_likelihood(parameters=params)
+        logl_new.append(ll)
+
+    logl_new = np.asarray(logl_new)
+    logw = logl_new - logl_old
+
+    print("old logL finite:", np.isfinite(logl_old).sum(), "/", len(logl_old))
+    print("new logL finite:", np.isfinite(logl_new).sum(), "/", len(logl_new))
+    print("logw finite:", np.isfinite(logw).sum(), "/", len(logw))
+
+    print("old logL min/median/max:", np.nanmin(logl_old), np.nanmedian(logl_old), np.nanmax(logl_old))
+    print("new logL min/median/max:", np.nanmin(logl_new), np.nanmedian(logl_new), np.nanmax(logl_new))
+    print("logw min/median/max:", np.nanmin(logw), np.nanmedian(logw), np.nanmax(logw))
+    print("logw std:", np.nanstd(logw))
+
+    finite = np.isfinite(logw)
+    if finite.sum() == 0:
+        print("ALL LOG WEIGHTS ARE NON-FINITE. Reweighting cannot work.")
+        return df, logl_new, logw, None, 0.0
+
+    logw_finite = logw[finite]
+    logw_norm = logw_finite - logsumexp(logw_finite)
+    w = np.exp(logw_norm)
+
+    n_eff = 1.0 / np.sum(w**2)
+    eff_frac = n_eff / len(w)
+
+    print("N_eff:", n_eff)
+    print("N_eff fraction:", eff_frac)
+    print("max normalized weight:", np.max(w))
+    print("top 5 weights:", np.sort(w)[-5:])
+    return df, logl_new, logw, w, n_eff
 
 def imp_reweight_posteriors(fname: str, 
                             outdir: str = f'../{PROJECT_DIR}/results/',
@@ -688,6 +733,8 @@ def imp_reweight_posteriors(fname: str,
     function, to correct EOB2ML case posterior samples by appling rejection sampling using the
     log likelihood ratio between EOB and ML waveforms.
     """
+    logger.info(f"Starting importance reweighting for posterior samples in {outdir}/{fname}...")
+    logger.info(f"Supplied arguments: use_old_likelihood_from_file={use_old_likelihood_from_file}, use_nested_samples={use_nested_samples}, npool={npool}")
     if not fname.endswith('_result.json'):
         fname = fname.replace('.json', '_result.json')
     result = bilby.core.result.read_in_result(f"{outdir}/{fname}")
@@ -729,18 +776,23 @@ def imp_reweight_posteriors(fname: str,
         waveform_generator=waveform_generator,
     )
 
+    df_dbg, logl_eob_dbg, logw_dbg, w_dbg, neff_dbg = debug_reweight_samples(
+        result,
+        eob_likelihood,
+        nsamp=200,
+    )
+
     # sample = result.posterior.iloc[0].to_dict()
     # print("sample keys:", sorted(sample.keys()))
     # eob_likelihood.parameters.update(sample)
     # print("new EOB logL:", eob_likelihood.log_likelihood())
 
-    new_result = bilby.core.result.reweight(
+    new_result, new_logl, new_logpriors, _, _ = bilby.core.result.reweight(
         result=result,
         label="imp-reweighted",
         new_likelihood=eob_likelihood,
         npool=npool,
         verbose_output=True,
-        resume_file="reweight_resume.pkl",
         n_checkpoint=5000,
         use_nested_samples=use_nested_samples,
     )
@@ -823,7 +875,8 @@ if __name__ == "__main__":
     
     elif args.imp_reweight:
         logger.info("Running in importance reweighting mode. Will reweight results from a previous run using the provided JSON file.")
-        imp_reweight_posteriors(fname=args.results_fname, outdir=args.results_dir, npool=args.npool)
+        imp_reweight_posteriors(fname=args.results_fname, outdir=args.results_dir, npool=args.npool,
+                                use_nested_samples=True)
     
     else:
         main(args, label=args.label, 
