@@ -218,6 +218,31 @@ def print_injection_snr(ifos) -> Dict[str, Any]:
     return out
 
 
+def perform_1d_likelihood_scan(args, likelihood, priors, injection_parameters, n_points=20):
+    m1_grid = np.linspace(priors["mass_1"].minimum, priors["mass_1"].maximum, n_points)
+    logls = []
+    for m1 in m1_grid:
+        p = injection_parameters.copy()
+        p["mass_1"] = float(m1)
+        logls.append(likelihood.log_likelihood(parameters=p))
+    logls = np.array(logls)
+    print("\n========== 1D LIKELIHOOD SCAN ==========")
+    print("best m1:", m1_grid[np.argmax(logls)])
+    print("injected m1:", injection_parameters["mass_1"])
+    print("max log likelihood:", np.max(logls))
+    print("=========================================\n")
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(m1_grid, logls, label="ML2ML log likelihood")
+    ax.axvline(injection_parameters["mass_1"], linestyle="--", label="injected m1")
+    ax.set_xlabel("mass_1")
+    ax.set_ylabel("ML2ML log likelihood")
+    ax.legend()
+    scan_plot_file = os.path.join(args.outdir, f"{args.label}_1d_likelihood_scan_mass1.png")
+    plt.savefig(scan_plot_file, bbox_inches="tight", dpi=200)
+    plt.show()
+    print(f"Saved 1D likelihood scan plot: {scan_plot_file}")
+    plt.close()
+    return {"m1_grid": m1_grid.tolist(), "log_likelihoods": logls.tolist()}
 
 def test_ml_likelihood(likelihood, injection_parameters):
     truth = injection_parameters.copy()
@@ -291,7 +316,7 @@ def compare_inj_recover_at_same_params(args, injection_generator, recovery_gener
             ax[i].set_title(f"{pol} polarization")
             ax[i].legend()
         waveform_plot_file = os.path.join(args.outdir, f"{args.label}_injection_vs_recovery_waveforms.png")
-        plt.savefig(waveform_plot_file)
+        plt.savefig(waveform_plot_file, bbox_inches="tight", dpi=200)
         plt.show()
         print(f"Saved injection vs recovery waveform plot: {waveform_plot_file}")
         plt.close()
@@ -339,6 +364,8 @@ def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, l
         print_dict("DETERMINISM TEST", debug["determinism"])
     debug["ifo_metadata"] = print_injection_snr(ifos)
     debug["likelihood_test"] = test_ml_likelihood(likelihood, injection_parameters)
+    debug["likelihood_scan"] = perform_1d_likelihood_scan(args, likelihood, priors, injection_parameters, 
+                                                          n_points=args.n_debug_random)
     debug["likelihood"] = debug_likelihood(likelihood, priors, injection_parameters, n_random=args.n_debug_random)
     compare_inj_recover_at_same_params(args, injection_generator, recovery_generator, injection_parameters)
     debug["wf_interferometer_compatibility"] = check_wf_interferometer_compatibility(injection_generator, recovery_generator, ifos)
