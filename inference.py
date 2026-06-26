@@ -589,8 +589,11 @@ def main(args, label='umamipe',
         injection_index = args.injection_index + args.injection_index_start
 
         if check_DONE_file_exists(outdir, label=label, injection_index=injection_index, check_all_subdirs=False):
-            logger.info(f"PE results for injection index {injection_index} already exist. Skipping this injection.")
-            return
+            if not args.force:
+                logger.info(f"PE results for injection index {injection_index} already exist. Skipping this injection.")
+                return
+            else:
+                logger.info(f"PE results for injection index {injection_index} already exist. Overwriting due to --force flag.")
 
         outdir = os.path.join(outdir, f'{label}_inj_{injection_index}_{NOW}/')
         ensure_dir(outdir)
@@ -841,6 +844,8 @@ if __name__ == "__main__":
                         help="Starting index of the injection runs to analyze (default: %(default)s)")
     parser.add_argument('--injection-index-end', type=int, default=None,
                         help="Ending index of the injection runs to analyze (default: %(default)s)")
+    parser.add_argument('--force', action='store_true',
+                        help="Force overwrite of existing results for the given injection (default: False)")
     
     parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml'], default='ml2ml',
                         help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
