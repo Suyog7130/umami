@@ -21,6 +21,7 @@ import importlib
 from typing import Any, Dict
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 import bilby
 from bilby.gw.detector import InterferometerList
@@ -217,6 +218,26 @@ def print_injection_snr(ifos) -> Dict[str, Any]:
     return out
 
 
+
+def test_ml_likelihood(likelihood, injection_parameters):
+    truth = injection_parameters.copy()
+    wrong = injection_parameters.copy()
+    wrong["mass_1"] = 43.0  # deliberately wrong mass_1
+    print("\n========== LIKELIHOOD TEST ==========")
+    print("truth:", truth)
+    ll_truth = likelihood.log_likelihood(parameters=truth)
+    ll_wrong = likelihood.log_likelihood(parameters=wrong)
+    print("ML2ML logL at truth:", ll_truth)
+    print("ML2ML logL at wrong m1=43:", ll_wrong)
+    print("truth - wrong:", ll_truth - ll_wrong)
+    print("======================================\n")
+    return {
+        "truth": {"parameters": truth, "log_likelihood": float(ll_truth)},
+        "wrong": {"parameters": wrong, "log_likelihood": float(ll_wrong)},
+        "delta_log_likelihood": float(ll_truth - ll_wrong),
+    }
+
+
 def debug_likelihood(likelihood, priors, injection_parameters, n_random=8) -> Dict[str, Any]:
     out = {"random_points": []}
     print("\n========== LIKELIHOOD DEBUG ==========")
@@ -244,6 +265,61 @@ def debug_likelihood(likelihood, priors, injection_parameters, n_random=8) -> Di
     return out
 
 
+def compare_inj_recover_at_same_params(args, injection_generator, recovery_generator, injection_parameters,
+                                       plot_waveforms=True) -> None:
+    h_inj = injection_generator.frequency_domain_strain(injection_parameters)
+    h_rec = recovery_generator.frequency_domain_strain(injection_parameters)
+    print("\n========== INJECTION VS RECOVERY AT SAME PARAMETERS ==========")
+    for pol in ["plus", "cross"]:
+        print(f"\n{pol} polarization:")
+        print(f"  injection max abs: {np.max(np.abs(h_inj[pol])):.6e}")
+        print(f"  recovery max abs: {np.max(np.abs(h_rec[pol])):.6e}")
+        diff = h_inj[pol] - h_rec[pol]
+        rel = np.max(np.abs(diff)) / np.max(np.abs(h_inj[pol]))
+        print(pol, "relative max difference:", rel)
+        print(pol, "all finite in injection:", np.all(np.isfinite(h_inj[pol])))
+        print(pol, "all finite in recovery:", np.all(np.isfinite(h_rec[pol])))
+    # -- plot of injection vs recovery waveforms
+    if plot_waveforms:
+        freqs = injection_generator.frequency_array
+        fig, ax = plt.subplots(2, 1, figsize=(10, 6))
+        for i, pol in enumerate(["plus", "cross"]):
+            ax[i].plot(freqs, np.abs(h_inj[pol]), label=f"inj {pol}")
+            ax[i].plot(freqs, np.abs(h_rec[pol]), label=f"rec {pol}", linestyle="--")
+            ax[i].set_xlabel("Frequency [Hz]")
+            ax[i].set_ylabel("Strain amplitude")
+            ax[i].set_title(f"{pol} polarization")
+            ax[i].legend()
+        waveform_plot_file = os.path.join(args.outdir, f"{args.label}_injection_vs_recovery_waveforms.png")
+        plt.savefig(waveform_plot_file)
+        plt.show()
+        print(f"Saved injection vs recovery waveform plot: {waveform_plot_file}")
+        plt.close()
+    print("==============================================================\n")
+
+
+def check_wf_interferometer_compatibility(injection_generator, recovery_generator, ifos) -> dict:
+    out = {}
+    for wfg in [injection_generator, recovery_generator]:
+        wfg_name = "injection" if wfg == injection_generator else "recovery"
+        out[wfg_name] = {
+            'duration': wfg.duration,
+            'sampling_frequency': wfg.sampling_frequency,
+            'start_time': wfg.start_time,
+            'N frequency_array': len(wfg.frequency_array),
+            'df': wfg.frequency_array[1] - wfg.frequency_array[0],
+            'fmin': wfg.frequency_array[0],
+            'fmax': wfg.frequency_array[-1]
+        }
+    for ifo in ifos:
+        out[ifo.name] = {
+            'duration': ifo.strain_data.duration,
+            'sampling_frequency': ifo.strain_data.sampling_frequency,
+            'start_time': ifo.strain_data.start_time
+        }
+    return out
+
+
 def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, likelihood, priors, injection_parameters):
     debug = {"run_config": vars(args), "injection_parameters": injection_parameters, "priors": {k: str(v) for k, v in priors.items()}}
     print_dict("INJECTION PARAMETERS", injection_parameters)
@@ -262,7 +338,11 @@ def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, l
         debug["determinism"] = test_ml_determinism(factory, injection_parameters, n_trials=args.determinism_trials)
         print_dict("DETERMINISM TEST", debug["determinism"])
     debug["ifo_metadata"] = print_injection_snr(ifos)
+    debug["likelihood_test"] = test_ml_likelihood(likelihood, injection_parameters)
     debug["likelihood"] = debug_likelihood(likelihood, priors, injection_parameters, n_random=args.n_debug_random)
+    compare_inj_recover_at_same_params(args, injection_generator, recovery_generator, injection_parameters)
+    debug["wf_interferometer_compatibility"] = check_wf_interferometer_compatibility(injection_generator, recovery_generator, ifos)
+    print_dict("WAVEFORM GENERATOR AND INTERFEROMETER COMPATIBILITY", debug["wf_interferometer_compatibility"])
     # -- convert any non-JSON-serializable objects to JSON-serializable forms and save debug report
     for key, value in debug.items():
         debug[key] = to_jsonable(value)
