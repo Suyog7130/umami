@@ -26,12 +26,15 @@ import bilby
 from bilby.gw.detector import InterferometerList
 from bilby.gw.likelihood import GravitationalWaveTransient
 
-try:
-    import torch
-    import torch.multiprocessing as mp
-except Exception:
-    torch = None
-    mp = None
+import torch
+import torch.multiprocessing as mp
+
+from inference import (
+    base_injection,
+    make_wf_generator,
+    make_analysis_priors,
+    sample_injection_from_priors,
+)
 
 NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
@@ -39,8 +42,8 @@ DEFAULT_DURATION = 1.0
 DEFAULT_SAMPLING_FREQUENCY = 8192.0
 DEFAULT_FMIN = 20.0
 DEFAULT_FREF = 50.0
-DEFAULT_OUTDIR = f"out_ml_4d_debug_{NOW}"
-DEFAULT_LABEL = "ml_4d_debug"
+DEFAULT_OUTDIR = f"out_ml2ml_pe_debug_{NOW}"
+DEFAULT_LABEL = "ml2ml_pe_debug"
 
 
 def import_symbol(path: str) -> Any:
@@ -107,78 +110,14 @@ def print_dict(title: str, data: Dict[str, Any]) -> None:
     print("=" * (22 + len(title)) + "\n")
 
 
-def make_injection_parameters(args) -> Dict[str, float]:
-    return dict(
-        mass_1=args.inject_mass_1,
-        mass_2=args.inject_mass_2,
-        spin_1z=args.inject_spin_1z,
-        spin_2z=args.inject_spin_2z,
-        luminosity_distance=args.luminosity_distance,
-        theta_jn=args.theta_jn,
-        phase=args.phase,
-        geocent_time=args.geocent_time,
-        ra=args.ra,
-        dec=args.dec,
-        psi=args.psi,
-    )
 
 
-def make_4d_priors(args, injection_parameters: Dict[str, float]) -> bilby.core.prior.PriorDict:
-    priors = bilby.core.prior.PriorDict()
-    priors["mass_1"] = bilby.core.prior.Uniform(args.m1_min, args.m1_max, name="mass_1", latex_label="$m_1$")
-    priors["mass_2"] = bilby.core.prior.Uniform(args.m2_min, args.m2_max, name="mass_2", latex_label="$m_2$")
-    priors["spin_1z"] = bilby.core.prior.Uniform(args.chi1_min, args.chi1_max, name="spin_1z", latex_label="$\\chi_{1z}$")
-    priors["spin_2z"] = bilby.core.prior.Uniform(args.chi2_min, args.chi2_max, name="spin_2z", latex_label="$\\chi_{2z}$")
-    for key in ["luminosity_distance", "theta_jn", "phase", "geocent_time", "ra", "dec", "psi"]:
-        priors[key] = injection_parameters[key]
-    return priors
-
-
-def assert_injection_inside_priors(priors, injection_parameters, keys=("mass_1", "mass_2", "spin_1z", "spin_2z")):
+def assert_injection_inside_priors(priors, injection_parameters, keys=("mass_1", "mass_2", "chi_1", "chi_2")):
     for key in keys:
         p = priors[key].prob(injection_parameters[key])
         if not np.isfinite(p) or p <= 0:
             raise ValueError(f"Injected value {key}={injection_parameters[key]} is outside prior {priors[key]}")
 
-
-def build_ml_waveform_generator(args):
-    MLWaveformGenerator = import_symbol(args.ml_generator)
-    parameter_conversion = import_symbol(args.parameter_conversion)
-    waveform_arguments = {"model_path": args.model_path, 
-                          "config_path": args.model_config,}
-    if args.scale_amplitude:
-        waveform_arguments["distance_scale_factor"] = args.luminosity_distance  # scale amplitude by 1/D_L
-    generator = MLWaveformGenerator(
-        duration=args.duration,
-        sampling_frequency=args.sampling_frequency,
-        time_domain_source_model=None,
-        parameter_conversion=parameter_conversion,
-        waveform_arguments=waveform_arguments,
-    )
-    maybe_prepare_torch_model(generator, args)
-    return generator
-
-
-def maybe_prepare_torch_model(generator, args) -> None:
-    model = getattr(generator, "loaded_mlmodel", None)
-    if model is None or torch is None:
-        return
-    model.eval()
-    if args.torch_threads is not None and args.torch_threads > 0:
-        torch.set_num_threads(args.torch_threads)
-    if args.device is not None:
-        device = torch.device(args.device)
-        dtype = getattr(torch, args.precision)
-        try:
-            model.to(device=device, dtype=dtype)
-        except TypeError:
-            model.to(device)
-            model.to(dtype)
-    if hasattr(generator, "check_model_weights_on_device") and args.device is not None:
-        try:
-            generator.check_model_weights_on_device(device=torch.device(args.device), precision=getattr(torch, args.precision))
-        except Exception as exc:
-            print(f"WARNING: check_model_weights_on_device failed: {exc}")
 
 
 def clear_waveform_cache(generator) -> None:
@@ -317,7 +256,9 @@ def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, l
     print_dict("INJECTION VS RECOVERY GENERATOR COMPARISON", debug["generator_comparison"])
     if args.check_determinism:
         def factory():
-            return build_ml_waveform_generator(args)
+            return make_wf_generator("ml", wfkwargs={'wfmodel_modelpath': args.model_path, 
+                                                     'wfmodel_configpath': args.config_path,
+                                                     'calibrator_modelpath': args.calmodel_path})
         debug["determinism"] = test_ml_determinism(factory, injection_parameters, n_trials=args.determinism_trials)
         print_dict("DETERMINISM TEST", debug["determinism"])
     debug["ifo_metadata"] = print_injection_snr(ifos)
@@ -413,10 +354,9 @@ def make_plots(args, result):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="4D ML waveform Bilby PE debug script: ML injection -> ML recovery.")
-    parser.add_argument("--ml-generator", default="mlwavegen:MLWaveformGenerator", help="Import path for MLWaveformGenerator.")
-    parser.add_argument("--parameter-conversion", default="mlwavegen:convert_to_ml_parameters", help="Import path for parameter conversion function.")
-    parser.add_argument("--model-path", required=True)
-    parser.add_argument("--model-config", required=True)
+    parser.add_argument("--model-path", required=True, help="Path to the ML waveform model file.")
+    parser.add_argument("--config-path", required=True, help="Path to the ML waveform model configuration file.")
+    parser.add_argument("--calmodel-path", required=True, help="Path to the ML calibrator model file.")
     parser.add_argument("--outdir", default=DEFAULT_OUTDIR)
     parser.add_argument("--label", default=DEFAULT_LABEL)
     parser.add_argument("--duration", type=float, default=DEFAULT_DURATION)
@@ -492,11 +432,18 @@ def main():
             mp.set_start_method("spawn", force=True)
         except RuntimeError:
             pass
-    injection_parameters = make_injection_parameters(args)
-    priors = make_4d_priors(args, injection_parameters)
+    priors = make_analysis_priors(injection_parameters=base_injection)
+    injection_parameters = sample_injection_from_priors(
+        base_injection=base_injection, active_priors=priors
+    )
     assert_injection_inside_priors(priors, injection_parameters)
-    injection_generator = build_ml_waveform_generator(args)
-    recovery_generator = build_ml_waveform_generator(args)
+
+    wfkwargs={'wfmodel_modelpath': args.model_path, 
+                'wfmodel_configpath': args.config_path,
+                'calibrator_modelpath': args.calmodel_path}
+    injection_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
+    recovery_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
+
     ifos = make_interferometers(args, injection_parameters, injection_generator)
     likelihood = make_likelihood(ifos, recovery_generator)
     run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, likelihood, priors, injection_parameters)
