@@ -63,9 +63,6 @@ logger.info(f"Using device: {DEVICE}, with precision: {PRECISION}")
 
 # bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="INFO")
 
-# Set up a random seed for result reproducibility.  This is optional!
-bilby.core.utils.random.seed(42)
-
 
 CACHED_MLMODEL = {'ml_wfmodel': None, 'ml_calmodel': None}
 

@@ -12,6 +12,7 @@ import logging
 import datetime
 import numpy as np
 import pandas as pd
+from scipy.special import logsumexp
 import matplotlib.pyplot as plt
 
 import torch
@@ -72,6 +73,18 @@ else:
 
 
 # bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="INFO")
+
+
+def set_random_seed(seed: int):
+    """
+    Set random seed for reproducibility.
+    """
+    bilby.core.utils.random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    logger.info(f"Random seed set to {seed} for reproducibility.")
 
 
 # Set up interferometers.  In this case we'll use two interferometers
@@ -213,17 +226,16 @@ def sample_injection_from_priors(
     base_injection: Dict[str, float],
     active_priors: bilby.core.prior.PriorDict,
     active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "chi_1", "chi_2"),
-    rng_seed: Optional[int] = None,
 ) -> Dict[str, float]:
     """
     Samples only active parameters, copies all other values from base_injection.
     """
-    if rng_seed is not None:
-        np.random.seed(rng_seed)
-
     injection = copy.deepcopy(base_injection)
 
+    # logger.debug(f"Active priors for injection sampling: {active_priors}")
     sampled = active_priors.sample()
+    logger.debug(f"Sampled injection parameters from priors: {sampled}")
+
     for key in active_keys:
         injection[key] = sampled[key]
 
@@ -351,16 +363,14 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
                          injection_generator=None, waveform_generator=None, 
                          sampler=None, **sampler_kwargs):
     if seed is not None:
-        np.random.seed(seed + run_idx)
+        rng_seed = seed + run_idx
+    set_random_seed(rng_seed)
     this_label = f"{label_base}_inj_{run_idx:04d}"
     logger.info(f"Running sampler for injection {run_idx} with label {this_label} using sampler {sampler}...")
-
-    # injection_parameters = priors.sample()
 
     injection_parameters = sample_injection_from_priors(
         base_injection=base_injection,
         active_priors=active_priors,
-        rng_seed=seed + run_idx if seed is not None else None
     )
     logger.debug(f"Sampled injection parameters for run {run_idx}: {injection_parameters}")
 
@@ -393,6 +403,7 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
         interferometers=ifos,
         waveform_generator=waveform_generator,
     )
+    exit(0)
 
     time_start = time.time()
     result = bilby.run_sampler(
@@ -578,7 +589,7 @@ def main(args, label='umamipe',
         # Allow injection index start to wary, so that new runs can be performed via HTCondor.
         injection_index = args.injection_index + args.injection_index_start
 
-        if check_DONE_file_exists(outdir, label=label, injection_index=injection_index, check_all_subdirs=True):
+        if check_DONE_file_exists(outdir, label=label, injection_index=injection_index, check_all_subdirs=False):
             logger.info(f"PE results for injection index {injection_index} already exist. Skipping this injection.")
             return
 
@@ -677,10 +688,6 @@ def add_fixed_parameters_to_result_posterior(result, fixed_parameters):
             result.posterior[key] = value
     return result
 
-import numpy as np
-import pandas as pd
-from scipy.special import logsumexp
-
 def debug_reweight_samples(result, new_likelihood, nsamp=100):
     logger.info(f"Debugging reweighting of posterior samples using new likelihood: {new_likelihood}")
     df = result.posterior.iloc[:nsamp].copy()
@@ -775,6 +782,9 @@ def imp_reweight_posteriors(fname: str,
         interferometers=ifos,
         waveform_generator=waveform_generator,
     )
+
+    # Set wfgenerator start_time to that of interferometer geocent_time
+    waveform_generator.start_time = ifos[0].meta_data['geocent_time']
 
     df_dbg, logl_eob_dbg, logw_dbg, w_dbg, neff_dbg = debug_reweight_samples(
         result,

@@ -929,7 +929,7 @@ class CalibrationModel:
             self.labels_mean = labels_mean
             self.labels_std = labels_std
         else:
-            logging.info("No labels normalization parameters provided. We will use global values, since this is required for properly prediction of the calibration residuals. Please ensure that the calibrator model was trained with the same normalization parameters, otherwise the predictions may be incorrect.")
+            logger.info("No labels normalization parameters provided. We will use global values, since this is required for properly prediction of the calibration residuals. Please ensure that the calibrator model was trained with the same normalization parameters, otherwise the predictions may be incorrect.")
             self.labels_mean = params_mean  # global mean values for [m1, m2, s1z, s2z]
             self.labels_std = params_std  # global std values for [m1, m2, s1z, s2z]
         device = torch.device("cpu") if device is None else device
