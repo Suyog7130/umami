@@ -60,6 +60,10 @@ FMIN = 20.0  # Hz
 FREF = 50.0  # Hz
 LUMINOSITY_DISTANCE = 400.0  # Mpc, should be same as for the ML waveform training data, to avoid bias in amplitudes!
 
+# -- Constants for all waveform generators and IFOs.
+MERGER_TIME = 1126259642.413
+START_TIME = MERGER_TIME - DURATION / 2  # Start time of the data 
+
 
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
@@ -107,7 +111,7 @@ def make_default_base_injection() -> Dict[str, float]:
         theta_jn=0.4,
         psi=2.659,
         phase=1.3,
-        geocent_time=1126259642.413,
+        geocent_time=MERGER_TIME,
         ra=1.375,
         dec=-1.2108,
         chi_1=0.4,   # for ML waveform generator, equivalent to spin1z
@@ -377,7 +381,7 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
     ifos.set_strain_data_from_power_spectral_densities(
         sampling_frequency=SAMPLE_RATE,
         duration=DURATION,
-        start_time=injection_parameters["geocent_time"] - DURATION / 2,   # NOTE: Injection signal should be within data segment!
+        start_time=START_TIME,   # NOTE: Injection signal should be within data segment!
     )
 
     # -- Send model to device only here! We will keep the model on CPU until we need to generate the waveform, to save GPU memory and avoid potential issues with multiprocessing in Bilby!
@@ -454,7 +458,7 @@ def make_wf_generator(type: {'eob', 'ml'},
             wf_source_model = bilby.gw.source.lal_binary_black_hole
         if param_converter is None:
             parameter_conversion = aligned_chi_to_lal_parameters
-        return WaveformGenerator(
+        wfgen = WaveformGenerator(
             duration=DURATION,
             sampling_frequency=SAMPLE_RATE,
             # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
@@ -468,16 +472,21 @@ def make_wf_generator(type: {'eob', 'ml'},
                 catch_waveform_errors=True, 
             )
         )
+        wfgen.start_time = START_TIME
+        return wfgen
     elif type=='ml':
         wfkwargs.update({'distance_scale_factor': LUMINOSITY_DISTANCE})
         logger.info(f"Waveform generator kwargs for ML model: {wfkwargs}")
-        return MLWaveformGenerator(
+        wfgen = MLWaveformGenerator(
             duration=DURATION,
             sampling_frequency=SAMPLE_RATE,
             time_domain_source_model=None,   # We will load ML model at initialization!
             parameter_conversion=convert_to_ml_parameters,
             waveform_arguments=wfkwargs,
         )
+        # -- Set wfgenerator start time!
+        wfgen.start_time = START_TIME
+        return wfgen
     logger.error(f"Invalid waveform generator type: {type}. Must be 'eob' or 'ml'.")
 
 
