@@ -74,7 +74,7 @@ echo "Checking core imports..."
 
 echo "Running inference.py..."
 
-"${PYTHON_EXE}" inference.py --run-one-injection \
+"${PYTHON_EXE}" inference.py --run-one-injection --quiet \
     --label "${LABEL}" \
     --injection-index "${INJECTION_INDEX}" \
     --sampler "${SAMPLER}" \
@@ -85,8 +85,7 @@ echo "Running inference.py..."
     --pytorch-threads "${PYTORCH_THREADS}" \
     --model-name flexcvae-model-backup-20260619-064140-epoch98.pt \
     --model-config modelconfig-flexcvae-20260619-064140.json \
-    --calmodel-name calibrator_model_20260623-010953_epoch74.pt 
-    --quiet
+    --calmodel-name calibrator_model_20260623-010953_epoch74.pt
 
 EXIT_CODE=$?
 

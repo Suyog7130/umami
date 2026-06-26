@@ -403,7 +403,6 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
         interferometers=ifos,
         waveform_generator=waveform_generator,
     )
-    exit(0)
 
     time_start = time.time()
     result = bilby.run_sampler(
