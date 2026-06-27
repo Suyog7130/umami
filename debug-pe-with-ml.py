@@ -218,9 +218,19 @@ def print_injection_snr(ifos) -> Dict[str, Any]:
     return out
 
 
-def perform_1d_likelihood_scan(args, likelihood, priors, injection_parameters, n_points=20):
+def perform_1d_likelihood_scan(args, likelihood, injection_parameters, n_points=200):
     print("\n========== 1D LIKELIHOOD SCAN ==========")
-    m1_grid = np.linspace(priors["mass_1"].minimum, priors["mass_1"].maximum, n_points)
+    # m1_min = priors["mass_1"].minimum
+    # m1_max = priors["mass_1"].maximum
+    # m1_grid = np.linspace(m1_min, m1_max, n_points)
+
+    truth = injection_parameters.copy()
+    truth_logl_direct = likelihood.log_likelihood(parameters=truth)
+    print("truth logL direct:", truth_logl_direct)
+    # -- Make grid around the injection value
+    m1_inj = injection_parameters["mass_1"]
+    m2_inj = injection_parameters["mass_2"]
+    m1_grid = np.linspace(max(m2_inj, m1_inj * 0.8), m1_inj * 1.2, n_points)
     logls = []
     for m1 in m1_grid:
         p = injection_parameters.copy()
@@ -229,9 +239,10 @@ def perform_1d_likelihood_scan(args, likelihood, priors, injection_parameters, n
     logls = np.array(logls)
     print("best m1:", m1_grid[np.argmax(logls)])
     print("injected m1:", injection_parameters["mass_1"])
-    print("max log likelihood:", np.max(logls))
+    print("log likelihood at best m1:", logls[np.argmax(logls)])
+
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(m1_grid, logls, label="ML2ML log likelihood")
+    ax.plot(np.sort(m1_grid), logls[np.argsort(m1_grid)], label="ML2ML log likelihood")
     ax.axvline(injection_parameters["mass_1"], linestyle="--", label="injected m1")
     ax.set_xlabel("mass_1")
     ax.set_ylabel("ML2ML log likelihood")
@@ -239,7 +250,6 @@ def perform_1d_likelihood_scan(args, likelihood, priors, injection_parameters, n
     scan_plot_file = os.path.join(args.outdir, f"{args.label}_1d_likelihood_scan_mass1.png")
     if not args.no_save:
         plt.savefig(scan_plot_file, bbox_inches="tight", dpi=200)
-        
         print(f"Saved 1D likelihood scan plot: {scan_plot_file}")
     if not args.no_show:
         plt.show()
@@ -247,12 +257,15 @@ def perform_1d_likelihood_scan(args, likelihood, priors, injection_parameters, n
     plt.close()
     return {"m1_grid": m1_grid.tolist(), "log_likelihoods": logls.tolist()}
 
-def perform_2d_likelihood_scan(args, likelihood, priors, injection_parameters, n_points=20):
+def perform_2d_likelihood_scan(args, likelihood, injection_parameters, n_points=200):
     print("\n========== 2D LIKELIHOOD SCAN ==========")
     print("injected m1:", injection_parameters["mass_1"])
     print("injected m2:", injection_parameters["mass_2"])
-    m1_grid = np.linspace(priors["mass_1"].minimum, priors["mass_1"].maximum, n_points)
-    m2_grid = np.linspace(priors["mass_2"].minimum, priors["mass_2"].maximum, n_points)
+    # -- Make grids around the injection values
+    m1_inj = injection_parameters["mass_1"]
+    m2_inj = injection_parameters["mass_2"]
+    m1_grid = np.linspace(max(m2_inj, m1_inj * 0.8), m1_inj * 1.2, n_points)
+    m2_grid = np.linspace(m2_inj * 0.8, min(m2_inj * 1.2, m1_inj), n_points)
     logls = np.zeros((n_points, n_points))
     for i, m1 in enumerate(m1_grid):
         for j, m2 in enumerate(m2_grid):
@@ -264,7 +277,7 @@ def perform_2d_likelihood_scan(args, likelihood, priors, injection_parameters, n
     print("best m2:", m2_grid[np.unravel_index(np.argmax(logls), logls.shape)[1]])
     print("max log likelihood:", np.max(logls))
     fig, ax = plt.subplots(figsize=(8, 5))
-    im = ax.imshow(logls, extent=[priors["mass_1"].minimum, priors["mass_1"].maximum, priors["mass_2"].minimum, priors["mass_2"].maximum], origin="lower")
+    im = ax.imshow(logls, extent=[m1_grid[0], m1_grid[-1], m2_grid[0], m2_grid[-1]], origin="lower")
     ax.set_xlabel("mass_1")
     ax.set_ylabel("mass_2")
     plt.colorbar(im, ax=ax, label="ML2ML log likelihood")
@@ -426,9 +439,9 @@ def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, l
         print_dict("DETERMINISM TEST", debug["determinism"])
     debug["ifo_metadata"] = print_injection_snr(ifos)
     debug["likelihood_test"] = test_ml_likelihood(likelihood, injection_parameters)
-    debug["likelihood_scan"] = perform_1d_likelihood_scan(args, likelihood, priors, injection_parameters, 
+    debug["likelihood_scan"] = perform_1d_likelihood_scan(args, likelihood, injection_parameters, 
                                                           n_points=args.n_debug_random)
-    debug["likelihood_scan_2d"] = perform_2d_likelihood_scan(args, likelihood, priors, injection_parameters, 
+    debug["likelihood_scan_2d"] = perform_2d_likelihood_scan(args, likelihood, injection_parameters, 
                                                           n_points=args.n_debug_random)
     debug["likelihood"] = debug_likelihood(likelihood, priors, injection_parameters, n_random=args.n_debug_random)
     compare_inj_recover_at_same_params(args, injection_generator, recovery_generator, injection_parameters)
