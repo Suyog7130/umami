@@ -1,0 +1,647 @@
+{
+  "generator_comparison": {
+    "frequency_domain": {
+      "cross": {
+        "all_finite_a": true,
+        "all_finite_b": true,
+        "max_abs_a": 2.270069559768207e-22,
+        "max_abs_b": 2.270069559768207e-22,
+        "max_abs_diff": 0.0,
+        "relative_diff": 0.0,
+        "shape_a": [
+          4097
+        ],
+        "shape_b": [
+          4097
+        ]
+      },
+      "plus": {
+        "all_finite_a": true,
+        "all_finite_b": true,
+        "max_abs_a": 2.35652088948025e-22,
+        "max_abs_b": 2.35652088948025e-22,
+        "max_abs_diff": 0.0,
+        "relative_diff": 0.0,
+        "shape_a": [
+          4097
+        ],
+        "shape_b": [
+          4097
+        ]
+      }
+    },
+    "name_a": "injection",
+    "name_b": "recovery",
+    "time_domain": {
+      "cross": {
+        "all_finite_a": true,
+        "all_finite_b": true,
+        "max_abs_a": 3.365165208166959e-21,
+        "max_abs_b": 3.365165208166959e-21,
+        "max_abs_diff": 0.0,
+        "relative_diff": 0.0,
+        "shape_a": [
+          8192
+        ],
+        "shape_b": [
+          8192
+        ]
+      },
+      "plus": {
+        "all_finite_a": true,
+        "all_finite_b": true,
+        "max_abs_a": 3.278517433156854e-21,
+        "max_abs_b": 3.278517433156854e-21,
+        "max_abs_diff": 0.0,
+        "relative_diff": 0.0,
+        "shape_a": [
+          8192
+        ],
+        "shape_b": [
+          8192
+        ]
+      }
+    }
+  },
+  "ifo_metadata": {
+    "H1": {
+      "matched_filter_SNR": {
+        "imag": 0.834052285410033,
+        "real": 175.57032763639495
+      },
+      "name": "H1",
+      "optimal_SNR": 39.471098355408095,
+      "parameters": {
+        "chi_1": -0.5950181877191266,
+        "chi_2": -0.07938249936709263,
+        "dec": -1.2108,
+        "geocent_time": 1126259642.413,
+        "luminosity_distance": 400.0,
+        "mass_1": 64.82802218501834,
+        "mass_2": 49.74952978884235,
+        "phase": 1.3,
+        "psi": 2.659,
+        "ra": 1.375,
+        "theta_jn": 0.4
+      }
+    },
+    "L1": {
+      "matched_filter_SNR": {
+        "imag": 2.9888185939478213,
+        "real": 176.51303490321646
+      },
+      "name": "L1",
+      "optimal_SNR": 26.72988828877835,
+      "parameters": {
+        "chi_1": -0.5950181877191266,
+        "chi_2": -0.07938249936709263,
+        "dec": -1.2108,
+        "geocent_time": 1126259642.413,
+        "luminosity_distance": 400.0,
+        "mass_1": 64.82802218501834,
+        "mass_2": 49.74952978884235,
+        "phase": 1.3,
+        "psi": 2.659,
+        "ra": 1.375,
+        "theta_jn": 0.4
+      }
+    }
+  },
+  "injection_generator_summary": {
+    "frequency_domain": {
+      "cross": {
+        "all_finite": true,
+        "dtype": "complex64",
+        "max": 1.3621129983996582e-22,
+        "max_abs": 2.270069559768207e-22,
+        "min": -2.269382682800813e-22,
+        "rms": 0.0,
+        "shape": [
+          4097
+        ]
+      },
+      "plus": {
+        "all_finite": true,
+        "dtype": "complex64",
+        "max": 1.9054707973672837e-22,
+        "max_abs": 2.35652088948025e-22,
+        "min": -1.0759287770261312e-22,
+        "rms": 0.0,
+        "shape": [
+          4097
+        ]
+      }
+    },
+    "name": "injection_generator",
+    "time_domain": {
+      "cross": {
+        "all_finite": true,
+        "dtype": "float32",
+        "max": 3.107411003703069e-21,
+        "max_abs": 3.365165208166959e-21,
+        "min": -3.365165208166959e-21,
+        "rms": 9.230327913617023e-22,
+        "shape": [
+          8192
+        ]
+      },
+      "plus": {
+        "all_finite": true,
+        "dtype": "float32",
+        "max": 3.2394791934470394e-21,
+        "max_abs": 3.278517433156854e-21,
+        "min": -3.278517433156854e-21,
+        "rms": 9.215133316622763e-22,
+        "shape": [
+          8192
+        ]
+      }
+    }
+  },
+  "injection_parameters": {
+    "chi_1": -0.5950181877191266,
+    "chi_2": -0.07938249936709263,
+    "dec": -1.2108,
+    "geocent_time": 1126259642.413,
+    "luminosity_distance": 400.0,
+    "mass_1": 64.82802218501834,
+    "mass_2": 49.74952978884235,
+    "phase": 1.3,
+    "psi": 2.659,
+    "ra": 1.375,
+    "theta_jn": 0.4
+  },
+  "likelihood": {
+    "injection": {
+      "log_likelihood": 504.85047361700344,
+      "log_likelihood_ratio": 10511.900108247144
+    },
+    "random_points": [
+      {
+        "i": 0,
+        "log_likelihood": -19353.082287277284,
+        "log_likelihood_ratio": -9346.032652647142,
+        "sample": {
+          "chi_1": 0.2543979195972066,
+          "chi_2": -0.2215771815906925,
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 50.34350604702179,
+          "mass_2": 49.756106293815634,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 1,
+        "log_likelihood": -16026.12742132202,
+        "log_likelihood_ratio": -6019.07778669188,
+        "sample": {
+          "chi_1": 0.2585451113047479,
+          "chi_2": -0.31476172297804317,
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 72.12339689203685,
+          "mass_2": 68.0667771833781,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 2,
+        "log_likelihood": -11907.683369385893,
+        "log_likelihood_ratio": -1900.633734755752,
+        "sample": {
+          "chi_1": -0.7147579553805387,
+          "chi_2": 0.2001387994943653,
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 66.63982490002121,
+          "mass_2": 37.39511221248636,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 3,
+        "log_likelihood": -11350.716744052781,
+        "log_likelihood_ratio": -1343.66710942264,
+        "sample": {
+          "chi_1": -0.6275864289526002,
+          "chi_2": 0.5964045182834297,
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 47.706051070945335,
+          "mass_2": 41.025567061747495,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 4,
+        "log_likelihood": -10808.140231205522,
+        "log_likelihood_ratio": -801.0905965753814,
+        "sample": {
+          "chi_1": 0.6296524815235749,
+          "chi_2": -0.07732186916728856,
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 49.558909052317006,
+          "mass_2": 36.002460654379796,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 5,
+        "log_likelihood": -10914.91756561524,
+        "log_likelihood_ratio": -907.8679309850991,
+        "sample": {
+          "chi_1": -0.7978084889996293,
+          "chi_2": -0.6187878670827365,
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 50.8136794578612,
+          "mass_2": 46.78314966493249,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 6,
+        "log_likelihood": -16087.515519729968,
+        "log_likelihood_ratio": -6080.4658850998285,
+        "sample": {
+          "chi_1": 0.5226101582417388,
+          "chi_2": 0.7695014133358999,
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 73.998443491404,
+          "mass_2": 72.28804231779733,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "theta_jn": 0.4
+        }
+      },
+      {
+        "i": 7,
+        "log_likelihood": -5299.758488512398,
+        "log_likelihood_ratio": 4707.291146117743,
+        "sample": {
+          "chi_1": -0.3003054552857288,
+          "chi_2": 0.6172153474568804,
+          "dec": -1.2108,
+          "geocent_time": 1126259642.413,
+          "luminosity_distance": 400.0,
+          "mass_1": 58.456466126692064,
+          "mass_2": 36.40267878921975,
+          "phase": 1.3,
+          "psi": 2.659,
+          "ra": 1.375,
+          "theta_jn": 0.4
+        }
+      }
+    ]
+  },
+  "likelihood_scan": {
+    "log_likelihoods": [
+      -8185.45766620161,
+      -8737.76017102716,
+      -7696.930364959964,
+      -8983.928436073656,
+      -16385.116136484045,
+      -5829.535130544866,
+      -6766.562536623211,
+      -18502.929029832187
+    ],
+    "m1_grid": [
+      30.0,
+      36.42857142857143,
+      42.85714285714286,
+      49.285714285714285,
+      55.714285714285715,
+      62.142857142857146,
+      68.57142857142857,
+      75.0
+    ]
+  },
+  "likelihood_scan_2d": {
+    "log_likelihoods": [
+      [
+        -10324.229941580581,
+        -8358.844040561107,
+        -7932.846718518977,
+        -8616.300066394791,
+        -11398.066572815924,
+        -11863.236926497568,
+        -7443.959772842121,
+        -7694.520036373555
+      ],
+      [
+        -9958.423236143608,
+        -11588.784932776483,
+        -10897.839140445785,
+        -8523.369027868335,
+        -10789.012674049465,
+        -13154.846073688233,
+        -10482.451440156572,
+        -994.152724141848
+      ],
+      [
+        -12303.178381953123,
+        -12605.084744140804,
+        -10409.85137852059,
+        -7572.506349699444,
+        -16686.770921930318,
+        -1272.6175285259196,
+        -18665.689425679568,
+        -16710.282364380437
+      ],
+      [
+        -12709.800034335252,
+        -11137.117432266325,
+        -8441.23521078658,
+        -10355.866874820249,
+        -8856.398039809743,
+        -22202.157654573348,
+        -6474.039090720753,
+        -7381.165503219438
+      ],
+      [
+        -10346.514434605193,
+        -8806.818984020287,
+        -8162.683430771209,
+        -15037.385254388817,
+        -14124.024718327566,
+        -1338.6576149641314,
+        -11374.146699988978,
+        -13331.87958557588
+      ],
+      [
+        -8515.295025319801,
+        -8852.436433333392,
+        -16092.076945832303,
+        -7484.618952236482,
+        -3640.1149447397056,
+        -16541.9686851979,
+        -12504.694818982563,
+        -10496.125279193522
+      ],
+      [
+        -11026.548231866895,
+        -15069.603574754323,
+        -5284.900717657051,
+        -5602.416882868207,
+        -18313.371414792855,
+        -9886.036820319618,
+        -11452.920096407153,
+        -14779.935574036039
+      ],
+      [
+        -11277.143392624086,
+        -4796.472006305589,
+        -8156.941511841727,
+        -18684.371058601177,
+        -11163.54096020023,
+        -10979.959379173011,
+        -14180.167188627096,
+        -15157.949494727376
+      ]
+    ],
+    "m1_grid": [
+      30.0,
+      36.42857142857143,
+      42.85714285714286,
+      49.285714285714285,
+      55.714285714285715,
+      62.142857142857146,
+      68.57142857142857,
+      75.0
+    ],
+    "m2_grid": [
+      30.0,
+      36.42857142857143,
+      42.85714285714286,
+      49.285714285714285,
+      55.714285714285715,
+      62.142857142857146,
+      68.57142857142857,
+      75.0
+    ]
+  },
+  "likelihood_test": {
+    "delta_log_likelihood": 8340.914746680572,
+    "truth": {
+      "log_likelihood": 504.85047361700344,
+      "parameters": {
+        "chi_1": -0.5950181877191266,
+        "chi_2": -0.07938249936709263,
+        "dec": -1.2108,
+        "geocent_time": 1126259642.413,
+        "luminosity_distance": 400.0,
+        "mass_1": 64.82802218501834,
+        "mass_2": 49.74952978884235,
+        "phase": 1.3,
+        "psi": 2.659,
+        "ra": 1.375,
+        "theta_jn": 0.4
+      }
+    },
+    "wrong": {
+      "log_likelihood": -7836.064273063568,
+      "parameters": {
+        "chi_1": -0.5950181877191266,
+        "chi_2": -0.07938249936709263,
+        "dec": -1.2108,
+        "geocent_time": 1126259642.413,
+        "luminosity_distance": 400.0,
+        "mass_1": 43.0,
+        "mass_2": 49.74952978884235,
+        "phase": 1.3,
+        "psi": 2.659,
+        "ra": 1.375,
+        "theta_jn": 0.4
+      }
+    }
+  },
+  "priors": {
+    "chi_1": "Uniform(minimum=-0.8, maximum=0.8, name='chi_1', latex_label='$\\\\chi_1$', unit=None, boundary=None)",
+    "chi_2": "Uniform(minimum=-0.8, maximum=0.8, name='chi_2', latex_label='$\\\\chi_2$', unit=None, boundary=None)",
+    "dec": "DeltaFunction(peak=-1.2108, name=None, latex_label=None, unit=None)",
+    "geocent_time": "DeltaFunction(peak=1126259642.413, name=None, latex_label=None, unit=None)",
+    "luminosity_distance": "DeltaFunction(peak=400.0, name=None, latex_label=None, unit=None)",
+    "mass_1": "Uniform(minimum=30, maximum=75, name='mass_1', latex_label='$m_1$', unit=None, boundary=None)",
+    "mass_2": "Uniform(minimum=30, maximum=75, name='mass_2', latex_label='$m_2$', unit=None, boundary=None)",
+    "mass_ratio": "Constraint(minimum=0.1, maximum=1.0, name='mass_ratio', latex_label='$q$', unit=None)",
+    "phase": "DeltaFunction(peak=1.3, name=None, latex_label=None, unit=None)",
+    "psi": "DeltaFunction(peak=2.659, name=None, latex_label=None, unit=None)",
+    "ra": "DeltaFunction(peak=1.375, name=None, latex_label=None, unit=None)",
+    "theta_jn": "DeltaFunction(peak=0.4, name=None, latex_label=None, unit=None)"
+  },
+  "recovery_generator_summary": {
+    "frequency_domain": {
+      "cross": {
+        "all_finite": true,
+        "dtype": "complex64",
+        "max": 1.3621129983996582e-22,
+        "max_abs": 2.270069559768207e-22,
+        "min": -2.269382682800813e-22,
+        "rms": 0.0,
+        "shape": [
+          4097
+        ]
+      },
+      "plus": {
+        "all_finite": true,
+        "dtype": "complex64",
+        "max": 1.9054707973672837e-22,
+        "max_abs": 2.35652088948025e-22,
+        "min": -1.0759287770261312e-22,
+        "rms": 0.0,
+        "shape": [
+          4097
+        ]
+      }
+    },
+    "name": "recovery_generator",
+    "time_domain": {
+      "cross": {
+        "all_finite": true,
+        "dtype": "float32",
+        "max": 3.107411003703069e-21,
+        "max_abs": 3.365165208166959e-21,
+        "min": -3.365165208166959e-21,
+        "rms": 9.230327913617023e-22,
+        "shape": [
+          8192
+        ]
+      },
+      "plus": {
+        "all_finite": true,
+        "dtype": "float32",
+        "max": 3.2394791934470394e-21,
+        "max_abs": 3.278517433156854e-21,
+        "min": -3.278517433156854e-21,
+        "rms": 9.215133316622763e-22,
+        "shape": [
+          8192
+        ]
+      }
+    }
+  },
+  "run_config": {
+    "calmodel_path": "../v0p1/trained-models/calibrator_model_20260623-010953_epoch74.pt",
+    "check_determinism": false,
+    "chi1_max": 0.8,
+    "chi1_min": -0.8,
+    "chi2_max": 0.8,
+    "chi2_min": -0.8,
+    "clean": false,
+    "config_path": "../trained-models/modelconfig-flexcvae-20260619-064140.json",
+    "debug_only": true,
+    "dec": -1.2108,
+    "determinism_trials": 2,
+    "device": null,
+    "dlogz": 1.0,
+    "duration": 1.0,
+    "dynesty_sample": "acceptance-walk",
+    "flow_proposal_class": "gwflowproposal",
+    "fmin": 20.0,
+    "fref": 50.0,
+    "geocent_time": 1126259642.413,
+    "ifos": [
+      "H1",
+      "L1"
+    ],
+    "inject_mass_1": 36.0,
+    "inject_mass_2": 32.0,
+    "inject_spin_1z": 0.3,
+    "inject_spin_2z": -0.2,
+    "label": "ml2ml_pe_debug",
+    "log_level": "INFO",
+    "luminosity_distance": 400.0,
+    "m1_max": 75.0,
+    "m1_min": 30.0,
+    "m2_max": 75.0,
+    "m2_min": 30.0,
+    "max_abs_log_likelihood_ratio": 1000000.0,
+    "max_relative_generator_diff": 1e-10,
+    "max_td_abs": 1e-18,
+    "model_path": "../trained-models/flexcvae-model-backup-20260619-064140-epoch98.pt",
+    "n_debug_random": 8,
+    "n_pool": 1,
+    "naccept": 10,
+    "nlive": 100,
+    "no_save": false,
+    "no_show": false,
+    "npool": 1,
+    "outdir": "out_ml2ml_pe_debug_20260627-221832",
+    "phase": 1.3,
+    "plot_only": false,
+    "plot_waveform_posterior": false,
+    "precision": "float32",
+    "psi": 2.659,
+    "pytorch_threads": 1,
+    "ra": 1.375,
+    "resume": false,
+    "sampler": "nessai",
+    "sampling_frequency": 8192.0,
+    "scale_amplitude": false,
+    "seed": 42,
+    "strict_debug": false,
+    "theta_jn": 0.4,
+    "torch_threads": 1,
+    "waveform_plot_samples": 50,
+    "zero_noise": false
+  },
+  "wf_interferometer_compatibility": {
+    "H1": {
+      "duration": 1.0,
+      "sampling_frequency": 8192.0,
+      "start_time": 1126259641.913
+    },
+    "L1": {
+      "duration": 1.0,
+      "sampling_frequency": 8192.0,
+      "start_time": 1126259641.913
+    },
+    "injection": {
+      "N frequency_array": 4097,
+      "df": 1.0,
+      "duration": 1.0,
+      "fmax": 4096.0,
+      "fmin": 0.0,
+      "sampling_frequency": 8192,
+      "start_time": 1126259641.913
+    },
+    "recovery": {
+      "N frequency_array": 4097,
+      "df": 1.0,
+      "duration": 1.0,
+      "fmax": 4096.0,
+      "fmin": 0.0,
+      "sampling_frequency": 8192.0,
+      "start_time": 1126259641.913
+    }
+  }
+}
