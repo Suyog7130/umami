@@ -219,15 +219,26 @@ def make_analysis_priors(
         priors["chi_2"] = injection_parameters["chi_2"]
 
     priors["mass_ratio"] = bilby.gw.prior.Constraint(
-        minimum=1.0,  # NOTE: m_1>m_2, and m_1/m_2<10.0
-        maximum=10.0,
+        minimum=1.0/10.0,  # NOTE: m_1>m_2, and m_1/m_2<10.0, but Bilby convention is m2/m1!
+        maximum=1.0,
         name="mass_ratio",
     )
     priors.pop("chirp_mass", None)
     print("Updated priors for BBH parameters:")
     for key, prior in priors.items():
         print(f"  {key}: {prior}")
+
+    # -- Add the "mass_ratio" parameter to check for constraints
+    priors.conversion_function = add_mass_ratio
+
     return priors
+
+
+def add_mass_ratio(parameters):
+    converted = parameters.copy()
+    if "mass_1" in converted and "mass_2" in converted:
+        converted["mass_ratio"] = converted["mass_2"] / converted["mass_1"]
+    return converted
 
 
 def sample_injection_from_priors(

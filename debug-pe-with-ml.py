@@ -238,8 +238,10 @@ def perform_1d_likelihood_scan(args, likelihood, priors, injection_parameters, n
     ax.set_ylabel("ML2ML log likelihood")
     ax.legend()
     scan_plot_file = os.path.join(args.outdir, f"{args.label}_1d_likelihood_scan_mass1.png")
-    plt.savefig(scan_plot_file, bbox_inches="tight", dpi=200)
-    plt.show()
+    if not args.no_save:
+        plt.savefig(scan_plot_file, bbox_inches="tight", dpi=200)
+    if not args.no_show:
+        plt.show()
     print(f"Saved 1D likelihood scan plot: {scan_plot_file}")
     plt.close()
     return {"m1_grid": m1_grid.tolist(), "log_likelihoods": logls.tolist()}
@@ -316,8 +318,10 @@ def compare_inj_recover_at_same_params(args, injection_generator, recovery_gener
             ax[i].set_title(f"{pol} polarization")
             ax[i].legend()
         waveform_plot_file = os.path.join(args.outdir, f"{args.label}_injection_vs_recovery_waveforms.png")
-        plt.savefig(waveform_plot_file, bbox_inches="tight", dpi=200)
-        plt.show()
+        if not args.no_save:
+            plt.savefig(waveform_plot_file, bbox_inches="tight", dpi=200)
+        if not args.no_show:
+            plt.show()
         print(f"Saved injection vs recovery waveform plot: {waveform_plot_file}")
         plt.close()
     print("==============================================================\n")
@@ -345,6 +349,32 @@ def check_wf_interferometer_compatibility(injection_generator, recovery_generato
     return out
 
 
+def check_sampled_params_follow_constraints(priors, n_samples=100, constraints=("mass_ratio",)):
+    print("\n========== CHECKING SAMPLED PARAMETERS AGAINST CONSTRAINTS ==========")
+    print(f"Checking {n_samples} random samples from priors {list(priors.keys())} against constraints: {constraints}")
+    samples = priors.sample(n_samples)
+    for constraint in constraints:
+        if constraint not in priors:
+            print(f"Warning: constraint {constraint} not in priors, skipping check.")
+            continue
+        prior_constraint = priors[constraint]
+        if not isinstance(prior_constraint, bilby.gw.prior.Constraint):
+            continue
+        min_val = prior_constraint.minimum
+        max_val = prior_constraint.maximum
+        print(f"Checking constraint {constraint}: min={min_val}, max={max_val}")
+        m1s = samples["mass_1"]
+        m2s = samples["mass_2"]
+        if constraint == "mass_ratio":
+            mass_ratios = m2s / m1s  # Bilby convention: mass_ratio = m2/m1, whereas my convention is m1/m2<10.0, so m2/m1>0.1!
+            for i, mr in enumerate(mass_ratios):
+                if not (min_val <= mr <= max_val):
+                    print(f"[BAD] Sample {i}: mass_1={m1s[i]:.3f}, mass_2={m2s[i]:.3f}, mass_ratio={mr:.3f} violates constraint!")
+                else:
+                    print(f"[GOOD] Sample {i}: mass_1={m1s[i]:.3f}, mass_2={m2s[i]:.3f}, mass_ratio={mr:.3f} satisfies constraint.")
+    print("====================================================================\n")
+
+
 def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, likelihood, priors, injection_parameters):
     debug = {"run_config": vars(args), "injection_parameters": injection_parameters, "priors": {k: str(v) for k, v in priors.items()}}
     print_dict("INJECTION PARAMETERS", injection_parameters)
@@ -368,14 +398,16 @@ def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, l
                                                           n_points=args.n_debug_random)
     debug["likelihood"] = debug_likelihood(likelihood, priors, injection_parameters, n_random=args.n_debug_random)
     compare_inj_recover_at_same_params(args, injection_generator, recovery_generator, injection_parameters)
+    check_sampled_params_follow_constraints(priors, n_samples=args.n_debug_random, constraints=("mass_ratio",))
     debug["wf_interferometer_compatibility"] = check_wf_interferometer_compatibility(injection_generator, recovery_generator, ifos)
     print_dict("WAVEFORM GENERATOR AND INTERFEROMETER COMPATIBILITY", debug["wf_interferometer_compatibility"])
     # -- convert any non-JSON-serializable objects to JSON-serializable forms and save debug report
     for key, value in debug.items():
         debug[key] = to_jsonable(value)
     debug_path = os.path.join(args.outdir, f"{args.label}_debug.json")
-    save_json(debug, debug_path)
-    print(f"Saved debug report: {debug_path}")
+    if not args.no_save:
+        save_json(debug, debug_path)
+        print(f"Saved debug report: {debug_path}")
     if args.strict_debug:
         enforce_strict_debug(debug, args)
     return debug
@@ -455,7 +487,8 @@ def make_plots(args, result):
         injection_parameters["chi_2"],
     ]
     result.plot_corner(parameters=["mass_1", "mass_2", "chi_1", "chi_2"],
-                       save=True, filename=corner_file, truths=truths)
+                       save=True is not args.no_save, 
+                       filename=corner_file, truths=truths)
     print(f"Saved corner plot: {corner_file}")
     if args.plot_waveform_posterior:
         try:
@@ -522,6 +555,8 @@ def parse_args():
     parser.add_argument("--flow-proposal-class", default="gwflowproposal", choices=["gwflowproposal", "flowproposal"], help="Nessai flow proposal class to use.")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--clean", action="store_true")
+    parser.add_argument("--no-save", action="store_true")
+    parser.add_argument("--no-show", action="store_true")
     parser.add_argument("--plot-waveform-posterior", action="store_true")
     parser.add_argument("--waveform-plot-samples", type=int, default=50)
     parser.add_argument("--seed", type=int, default=1234)
@@ -534,8 +569,9 @@ def parse_args():
 
 def main():
     args = parse_args()
-    os.makedirs(args.outdir, exist_ok=True)
-    setup_logger(args.outdir, args.label, args.log_level)
+    if not args.no_save:
+        os.makedirs(args.outdir, exist_ok=True)
+        setup_logger(args.outdir, args.label, args.log_level)
     np.random.seed(args.seed)
     bilby.core.utils.random.seed(args.seed)
     if torch is not None:
@@ -575,9 +611,10 @@ def main():
         return
     
     result = run_sampler(args, likelihood, priors, injection_parameters)
-    posterior_csv = os.path.join(args.outdir, f"{args.label}_posterior.csv")
-    result.posterior.to_csv(posterior_csv, index=False)
-    print(f"Saved posterior CSV: {posterior_csv}")
+    if not args.no_save:
+        posterior_csv = os.path.join(args.outdir, f"{args.label}_posterior.csv")
+        result.posterior.to_csv(posterior_csv, index=False)
+        print(f"Saved posterior CSV: {posterior_csv}")
     make_plots(args, result)
 
 
