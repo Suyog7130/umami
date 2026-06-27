@@ -218,7 +218,11 @@ def make_analysis_priors(
     else:        
         priors["chi_2"] = injection_parameters["chi_2"]
 
-    priors.pop("mass_ratio", None)
+    priors["mass_ratio"] = bilby.gw.prior.Constraint(
+        minimum=1.0,  # NOTE: m_1>m_2, and m_1/m_2<10.0
+        maximum=10.0,
+        name="mass_ratio",
+    )
     priors.pop("chirp_mass", None)
     print("Updated priors for BBH parameters:")
     for key, prior in priors.items():
@@ -428,8 +432,15 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
     # Write total sampling time to TXT file
     save_txt(f"{time_end - time_start:.2f}", os.path.join(outdir, f"{this_label}_sampling_time.txt"))
 
-    # Make a corner plot.
-    result.plot_corner(save=True, filename=outdir+f'{this_label}_corner.png')
+    # Make a corner plot
+    truths = [
+        injection_parameters["mass_1"],
+        injection_parameters["mass_2"],
+        injection_parameters["chi_1"],
+        injection_parameters["chi_2"],
+    ]
+    result.plot_corner(save=True, truths=truths,
+                       filename=outdir+f'{this_label}_corner.png')
     return result
 
 

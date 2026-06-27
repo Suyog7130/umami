@@ -447,8 +447,15 @@ def run_sampler(args, likelihood, priors, injection_parameters):
 
 def make_plots(args, result):
     corner_file = os.path.join(args.outdir, f"{args.label}_corner.png")
-    result.plot_corner(parameters=["mass_1", "mass_2", "spin_1z", "spin_2z"], 
-    save=True, filename=corner_file)
+    injection_parameters = result.injection_parameters
+    truths = [
+        injection_parameters["mass_1"],
+        injection_parameters["mass_2"],
+        injection_parameters["chi_1"],
+        injection_parameters["chi_2"],
+    ]
+    result.plot_corner(parameters=["mass_1", "mass_2", "chi_1", "chi_2"],
+                       save=True, filename=corner_file, truths=truths)
     print(f"Saved corner plot: {corner_file}")
     if args.plot_waveform_posterior:
         try:
@@ -496,6 +503,7 @@ def parse_args():
     parser.add_argument("--torch-threads", type=int, default=1)
     parser.add_argument("--scale-amplitude", action="store_true", help="Whether to apply an overall amplitude scaling to the ML waveforms. This can be useful for debugging when the ML model was trained on whitened waveforms or waveforms with a different distance convention.")
     parser.add_argument("--debug-only", action="store_true")
+    parser.add_argument("--plot-only", action="store_true")
     parser.add_argument("--strict-debug", action="store_true")
     parser.add_argument("--n-debug-random", type=int, default=8)
     parser.add_argument("--check-determinism", action="store_true")
@@ -539,6 +547,13 @@ def main():
             mp.set_start_method("spawn", force=True)
         except RuntimeError:
             pass
+
+    if args.plot_only:
+        result = bilby.result.read_in_result(os.path.join(args.outdir, 
+                                            f"{args.label}_result.json"))
+        make_plots(args, result)
+        return
+
     priors = make_analysis_priors(injection_parameters=base_injection)
     injection_parameters = sample_injection_from_priors(
         base_injection=base_injection, active_priors=priors
@@ -554,14 +569,16 @@ def main():
     ifos = make_interferometers(args, injection_parameters, injection_generator)
     likelihood = make_likelihood(ifos, recovery_generator)
     run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, likelihood, priors, injection_parameters)
+
     if args.debug_only:
         print("Debug-only mode requested. Not running sampler.")
         return
+    
     result = run_sampler(args, likelihood, priors, injection_parameters)
-    make_plots(args, result)
     posterior_csv = os.path.join(args.outdir, f"{args.label}_posterior.csv")
     result.posterior.to_csv(posterior_csv, index=False)
     print(f"Saved posterior CSV: {posterior_csv}")
+    make_plots(args, result)
 
 
 if __name__ == "__main__":
