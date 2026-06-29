@@ -489,13 +489,14 @@ def make_wf_generator(type: {'eob', 'ml'},
                 reference_frequency=FREF,
                 minimum_frequency=FMIN,
                 mode_array=[[2,2]],
-                catch_waveform_errors=True, 
+                catch_waveform_errors=True,
             )
         )
         wfgen.start_time = START_TIME
         return wfgen
     elif type=='ml':
-        wfkwargs.update({'distance_scale_factor': LUMINOSITY_DISTANCE})
+        if 'distance_scale_factor' not in wfkwargs:
+            wfkwargs['distance_scale_factor'] = LUMINOSITY_DISTANCE
         logger.info(f"Waveform generator kwargs for ML model: {wfkwargs}")
         wfgen = MLWaveformGenerator(
             duration=DURATION,

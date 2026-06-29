@@ -552,6 +552,7 @@ def parse_args():
     parser.add_argument("--config-path", required=True, help="Path to the ML waveform model configuration file.")
     parser.add_argument("--calmodel-path", required=True, help="Path to the ML calibrator model file.")
     parser.add_argument("--pe-run-type", default="ml2ml", choices=["ml2ml", "eob2ml"], help="Type of PE run to perform.")
+    parser.add_argument("--distance-factor", type=float, default=None, help="Factor to scale the injected luminosity distance by.")
     parser.add_argument("--outdir", default=DEFAULT_OUTDIR)
     parser.add_argument("--label", default=DEFAULT_LABEL)
     parser.add_argument("--duration", type=float, default=DEFAULT_DURATION)
@@ -652,9 +653,13 @@ def main():
     )
     assert_injection_inside_priors(priors, injection_parameters)
 
-    wfkwargs={'wfmodel_modelpath': args.model_path, 
+    wfkwargs = {'wfmodel_modelpath': args.model_path, 
                 'wfmodel_configpath': args.config_path,
                 'calibrator_modelpath': args.calmodel_path}
+    if args.distance_factor is not None:
+        print(f"Scaling injected luminosity distance by factor {args.distance_factor}, which is also the luminosity distance for injection!")
+        injection_parameters['luminosity_distance'] = args.distance_factor
+        wfkwargs['distance_scale_factor'] = args.distance_factor
     if args.pe_run_type == "eob2ml":
         injection_generator = make_wf_generator("eob")
         recovery_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
