@@ -551,6 +551,7 @@ def parse_args():
     parser.add_argument("--model-path", required=True, help="Path to the ML waveform model file.")
     parser.add_argument("--config-path", required=True, help="Path to the ML waveform model configuration file.")
     parser.add_argument("--calmodel-path", required=True, help="Path to the ML calibrator model file.")
+    parser.add_argument("--pe-run-type", default="ml2ml", choices=["ml2ml", "eob2ml"], help="Type of PE run to perform.")
     parser.add_argument("--outdir", default=DEFAULT_OUTDIR)
     parser.add_argument("--label", default=DEFAULT_LABEL)
     parser.add_argument("--duration", type=float, default=DEFAULT_DURATION)
@@ -616,6 +617,10 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.debug_only:
+        print("Debug-only mode requested. Not running sampler.")
+        args.no_save = True
+
     if not args.no_save:
         os.makedirs(args.outdir, exist_ok=True)
         setup_logger(args.outdir, args.label, args.log_level)
@@ -646,15 +651,19 @@ def main():
     wfkwargs={'wfmodel_modelpath': args.model_path, 
                 'wfmodel_configpath': args.config_path,
                 'calibrator_modelpath': args.calmodel_path}
-    injection_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
-    recovery_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
+    if args.pe_run_type == "eob2ml":
+        injection_generator = make_wf_generator("eob")
+        recovery_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
+    else:
+        injection_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
+        recovery_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
 
     ifos = make_interferometers(args, injection_parameters, injection_generator)
     likelihood = make_likelihood(ifos, recovery_generator)
     run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, likelihood, priors, injection_parameters)
 
     if args.debug_only:
-        print("Debug-only mode requested. Not running sampler.")
+        print("Debug-only mode was requested. Exiting.")
         return
     
     result = run_sampler(args, likelihood, priors, injection_parameters)
