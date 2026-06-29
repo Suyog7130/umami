@@ -245,7 +245,7 @@ def perform_1d_likelihood_scan(args, likelihood, injection_parameters, n_points=
     ax.plot(np.sort(m1_grid), logls[np.argsort(m1_grid)], label="ML2ML log likelihood")
     ax.axvline(injection_parameters["mass_1"], linestyle="--", label="injected m1")
     ax.set_xlabel("mass_1")
-    ax.set_ylabel("ML2ML log likelihood")
+    ax.set_ylabel(f"{args.pe_run_type} log likelihood")
     ax.legend()
     scan_plot_file = os.path.join(args.outdir, f"{args.label}_1d_likelihood_scan_mass1.png")
     if not args.no_save:
@@ -280,7 +280,7 @@ def perform_2d_likelihood_scan(args, likelihood, injection_parameters, n_points=
     im = ax.imshow(logls, extent=[m1_grid[0], m1_grid[-1], m2_grid[0], m2_grid[-1]], origin="lower")
     ax.set_xlabel("mass_1")
     ax.set_ylabel("mass_2")
-    plt.colorbar(im, ax=ax, label="ML2ML log likelihood")
+    plt.colorbar(im, ax=ax, label=f"{args.pe_run_type} log likelihood")
     scan_plot_file = os.path.join(args.outdir, f"{args.label}_2d_likelihood_scan.png")
     if not args.no_save:
         plt.savefig(scan_plot_file, bbox_inches="tight", dpi=200)
@@ -291,7 +291,7 @@ def perform_2d_likelihood_scan(args, likelihood, injection_parameters, n_points=
     plt.close()
     return {"m1_grid": m1_grid.tolist(), "m2_grid": m2_grid.tolist(), "log_likelihoods": logls.tolist()}
 
-def test_ml_likelihood(likelihood, injection_parameters):
+def test_ml_likelihood(args, likelihood, injection_parameters):
     truth = injection_parameters.copy()
     wrong = injection_parameters.copy()
     wrong["mass_1"] = 43.0  # deliberately wrong mass_1
@@ -299,8 +299,8 @@ def test_ml_likelihood(likelihood, injection_parameters):
     print("truth:", truth)
     ll_truth = likelihood.log_likelihood(parameters=truth)
     ll_wrong = likelihood.log_likelihood(parameters=wrong)
-    print("ML2ML logL at truth:", ll_truth)
-    print("ML2ML logL at wrong m1=43:", ll_wrong)
+    print(f"{args.pe_run_type} logL at truth:", ll_truth)
+    print(f"{args.pe_run_type} logL at wrong m1=43:", ll_wrong)
     print("truth - wrong:", ll_truth - ll_wrong)
     print("======================================\n")
     return {
@@ -438,7 +438,7 @@ def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, l
         debug["determinism"] = test_ml_determinism(factory, injection_parameters, n_trials=args.determinism_trials)
         print_dict("DETERMINISM TEST", debug["determinism"])
     debug["ifo_metadata"] = print_injection_snr(ifos)
-    debug["likelihood_test"] = test_ml_likelihood(likelihood, injection_parameters)
+    debug["likelihood_test"] = test_ml_likelihood(args, likelihood, injection_parameters)
     debug["likelihood_scan"] = perform_1d_likelihood_scan(args, likelihood, injection_parameters, 
                                                           n_points=args.n_debug_random)
     debug["likelihood_scan_2d"] = perform_2d_likelihood_scan(args, likelihood, injection_parameters, 
@@ -617,9 +617,13 @@ def parse_args():
 
 def main():
     args = parse_args()
-    if args.debug_only:
-        print("Debug-only mode requested. Not running sampler.")
-        args.no_save = True
+    # if args.debug_only:
+    #     print("Debug-only mode requested. Not running sampler.")
+    #     args.no_save = True
+    if args.pe_run_type == "eob2ml":
+        print("PE run type is eob2ml: injection will be EOB, recovery will be ML.")
+        args.outdir = args.outdir.replace("ml2ml", "eob2ml")
+        args.label = args.label.replace("ml2ml", "eob2ml")
 
     if not args.no_save:
         os.makedirs(args.outdir, exist_ok=True)
