@@ -30,6 +30,8 @@ from bilby.gw.likelihood import GravitationalWaveTransient
 import torch
 import torch.multiprocessing as mp
 
+from plotutils import putils
+
 from inference import (
     base_injection,
     make_wf_generator,
@@ -218,7 +220,8 @@ def print_injection_snr(ifos) -> Dict[str, Any]:
     return out
 
 
-def perform_1d_likelihood_scan(args, likelihood, injection_parameters, n_points=200):
+def perform_1d_likelihood_scan(args, likelihood, injection_parameters, n_points=200,
+                               fontsize=15, labelsize=12):
     print("\n========== 1D LIKELIHOOD SCAN ==========")
     # m1_min = priors["mass_1"].minimum
     # m1_max = priors["mass_1"].maximum
@@ -242,11 +245,13 @@ def perform_1d_likelihood_scan(args, likelihood, injection_parameters, n_points=
     print("log likelihood at best m1:", logls[np.argmax(logls)])
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(np.sort(m1_grid), logls[np.argsort(m1_grid)], label="ML2ML log likelihood")
-    ax.axvline(injection_parameters["mass_1"], linestyle="--", label="injected m1")
-    ax.set_xlabel("mass_1")
+    ax.plot(np.sort(m1_grid), logls[np.argsort(m1_grid)], label=f"{args.pe_run_type} log likelihood")
+    ax.axvline(injection_parameters["mass_1"], linestyle="--", label="injected $m_1$", color="red")
+    ax.set_xlabel("$m_1$", fontsize=fontsize)
     ax.set_ylabel(f"{args.pe_run_type} log likelihood")
     ax.legend()
+    plt.tight_layout()
+    putils.beautifyPlot(ax, labelsize=labelsize, minor=True, tickDirection="in", top=True, right=True)
     scan_plot_file = os.path.join(args.outdir, f"{args.label}_1d_likelihood_scan_mass1.png")
     if not args.no_save:
         plt.savefig(scan_plot_file, bbox_inches="tight", dpi=200)
@@ -257,7 +262,7 @@ def perform_1d_likelihood_scan(args, likelihood, injection_parameters, n_points=
     plt.close()
     return {"m1_grid": m1_grid.tolist(), "log_likelihoods": logls.tolist()}
 
-def perform_2d_likelihood_scan(args, likelihood, injection_parameters, n_points=200):
+def perform_2d_likelihood_scan(args, likelihood, injection_parameters, n_points=200, fontsize=15, labelsize=12):
     print("\n========== 2D LIKELIHOOD SCAN ==========")
     print("injected m1:", injection_parameters["mass_1"])
     print("injected m2:", injection_parameters["mass_2"])
@@ -278,12 +283,13 @@ def perform_2d_likelihood_scan(args, likelihood, injection_parameters, n_points=
     print("max log likelihood:", np.max(logls))
     fig, ax = plt.subplots(figsize=(8, 5))
     im = ax.imshow(logls, extent=[m1_grid[0], m1_grid[-1], m2_grid[0], m2_grid[-1]], origin="lower")
-    ax.set_xlabel("mass_1")
-    ax.set_ylabel("mass_2")
+    ax.set_xlabel("$m_1$", fontsize=fontsize)
+    ax.set_ylabel("$m_2$", fontsize=fontsize)
     plt.colorbar(im, ax=ax, label=f"{args.pe_run_type} log likelihood")
+    putils.beautifyPlot(ax, labelsize=labelsize, minor=True, tickDirection="in", top=True, right=True)
     scan_plot_file = os.path.join(args.outdir, f"{args.label}_2d_likelihood_scan.png")
     if not args.no_save:
-        plt.savefig(scan_plot_file, bbox_inches="tight", dpi=200)
+        plt.savefig(scan_plot_file, bbox_inches="tight", dpi=300)
         print(f"Saved 2D likelihood scan plot: {scan_plot_file}")
     if not args.no_show:
         plt.show()
@@ -338,7 +344,7 @@ def debug_likelihood(likelihood, priors, injection_parameters, n_random=8) -> Di
 
 
 def compare_inj_recover_at_same_params(args, injection_generator, recovery_generator, injection_parameters,
-                                       plot_waveforms=True) -> None:
+                                       plot_waveforms=True, fontsize=15, labelsize=12) -> None:
     h_inj = injection_generator.frequency_domain_strain(injection_parameters)
     h_rec = recovery_generator.frequency_domain_strain(injection_parameters)
     print("\n========== INJECTION VS RECOVERY AT SAME PARAMETERS ==========")
@@ -355,16 +361,17 @@ def compare_inj_recover_at_same_params(args, injection_generator, recovery_gener
     if plot_waveforms:
         freqs = injection_generator.frequency_array
         fig, ax = plt.subplots(2, 1, figsize=(10, 6))
-        for i, pol in enumerate(["plus", "cross"]):
-            ax[i].plot(freqs, np.abs(h_inj[pol]), label=f"inj {pol}")
-            ax[i].plot(freqs, np.abs(h_rec[pol]), label=f"rec {pol}", linestyle="--")
-            ax[i].set_xlabel("Frequency [Hz]")
-            ax[i].set_ylabel("Strain amplitude")
-            ax[i].set_title(f"{pol} polarization")
+        for i, (pol, label) in enumerate(zip(["plus", "cross"], ["$h_+$", "$h_\\times$"])):
+            ax[i].plot(freqs, np.abs(h_inj[pol]), label=f"inj {label}")
+            ax[i].plot(freqs, np.abs(h_rec[pol]), label=f"rec {label}", linestyle="--")
+            ax[i].set_xlabel("Frequency [Hz]", fontsize=fontsize)
+            ax[i].set_ylabel("Strain amplitude", fontsize=fontsize)
             ax[i].legend()
+        plt.tight_layout()
+        putils.beautifyPlot([ax[0], ax[1]], labelsize=labelsize, minor=True, tickDirection="in", top=True, right=True)
         waveform_plot_file = os.path.join(args.outdir, f"{args.label}_injection_vs_recovery_waveforms.png")
         if not args.no_save:
-            plt.savefig(waveform_plot_file, bbox_inches="tight", dpi=200)
+            plt.savefig(waveform_plot_file, bbox_inches="tight", dpi=300)
             print(f"Saved injection vs recovery waveform plot: {waveform_plot_file}")
         if not args.no_show:
             plt.show()

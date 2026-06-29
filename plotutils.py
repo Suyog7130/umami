@@ -435,8 +435,9 @@ class putils:
             return SSIM
 
     @classmethod
-    def beautifyPlot(self, figures, labelsize=11, lengthMajor=10, tickNum=10, tickDirection='out', \
-                      lengthMinor=5, minor=False, grid=False, axisColor=None, yTicks=True, xTicks=True):
+    def beautifyPlot(self, figures, labelsize=11, lengthMajor=6, tickNum=10, tickDirection='out', \
+                      lengthMinor=2, minor=False, grid=False, axisColor=None, yTicks=True, xTicks=True,
+                      top=False, right=False):
         """
         Beautifies the plot by setting tick parameters, grid, and axis colors.
 
@@ -462,7 +463,7 @@ class putils:
         tickDirection : str, optional
             Direction of the ticks (default is 'out').
         lengthMinor : int, optional
-            Length of the minor ticks (default is 5).
+            Length of the minor ticks (default is 2).
         minor : bool, optional
             Boolean to show minor ticks (default is False).
         grid : bool, optional
@@ -480,6 +481,8 @@ class putils:
         """
         if isinstance(figures, np.ndarray):
             figures = figures.flatten().tolist()
+        elif not isinstance(figures, list):
+            figures = [figures]
             
         try:
             for i, figure in enumerate(figures):
@@ -500,8 +503,9 @@ class putils:
                     else:
                         figure.yaxis.set_major_locator(tck.AutoLocator())
                         
-                figure.tick_params(axis='both', which='major', labelsize=labelsize, length=lengthMajor, direction=tickDirection)
-                figure.tick_params(axis='both', which='minor', length=lengthMinor, direction=tickDirection)
+                figure.tick_params(axis='both', which='major', labelsize=labelsize, length=lengthMajor, direction=tickDirection,
+                                   top=top, right=right)
+                figure.tick_params(axis='both', which='minor', length=lengthMinor, direction=tickDirection, top=top, right=right)
                 
                 if minor==True:
                     figure.xaxis.set_minor_locator(tck.AutoMinorLocator())
