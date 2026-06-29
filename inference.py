@@ -444,7 +444,10 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
     save_txt(f"{time_end - time_start:.2f}", os.path.join(outdir, f"{this_label}_sampling_time.txt"))
 
     # Make a corner plot
-    true_params = {k: injection_parameters[k] for k in active_priors.keys() if k in injection_parameters}
+    true_params = {"mass_1": injection_parameters["mass_1"],
+                    "mass_2": injection_parameters["mass_2"],
+                    "chi_1": injection_parameters["chi_1"],
+                    "chi_2": injection_parameters["chi_2"]}
     result.plot_corner(save=True, parameters=true_params,
                        filename=outdir+f'{this_label}_corner.png')
     return result
@@ -551,7 +554,10 @@ def main(args, label='umamipe',
          sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',):
     label = label + f'_{pe_run_type}_{sampler}'
     project_dir = f'../{args.project_dir}/'
-    outdir = os.path.join(project_dir, f'results/{TODAY}/')
+    if args.outdir is None:
+        outdir = os.path.join(project_dir, f'results/{TODAY}/')
+    else:
+        outdir = args.outdir
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
@@ -646,11 +652,17 @@ def main(args, label='umamipe',
                                         **sampler_kwargs)
         
     elif args.plot_corner_from_result_file:
+        logger.info(f"Plotting corner plot from existing result file: {args.results_fname}...")
+        injection_index = args.injection_index + args.injection_index_start
         result = bilby.gw.result.CBCResult.from_json(f"{outdir}/{args.results_fname}")
         injection_parameters = result.injection_parameters
-        true_params = {k: injection_parameters[k] for k in active_priors.keys() if k in injection_parameters}
+        true_params = {"mass_1": injection_parameters["mass_1"],
+                       "mass_2": injection_parameters["mass_2"],
+                       "chi_1": injection_parameters["chi_1"],
+                       "chi_2": injection_parameters["chi_2"]}
+        logger.info(f"Loaded result from {outdir}/{args.results_fname}. Plotting corner plot with true parameters: {true_params}")
         result.plot_corner(save=True, parameters=true_params,
-                        filename=outdir+f'{args.label}_corner.png')
+                           filename=outdir+f'{label}_inj_{injection_index:04d}_corner.png')
     
     # -- Save all args and config to a results config JSON file!
     config_snapshot = {
@@ -863,11 +875,13 @@ if __name__ == "__main__":
                         help="Name of the trained model checkpoint (default: %(default)s)")
     parser.add_argument('--calmodel-name', type=str, default='calibrator_model_20260623-010953_epoch74.pt',
                         help="Name of the trained calibration model checkpoint (default: %(default)s)")
-    
+
     parser.add_argument('--results-fname', type=str, default=None,
                         help="Filename of the results JSON file to analyze in analyze-only mode (default: None, required if --analyze-only is set)")
     parser.add_argument('--results-dir', type=str, default=f'../{PROJECT_DIR}/results/',
                         help="Directory where the results JSON file is located (default: %(default)s)")
+    parser.add_argument('--outdir', type=str, default=None,
+                        help="Directory where the results will be saved (default: %(default)s)")
     
     parser.add_argument('--num-injections', type=int, default=None,
                         help="Number of injections to run in the campaign (default: %(default)s)")
