@@ -444,13 +444,8 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
     save_txt(f"{time_end - time_start:.2f}", os.path.join(outdir, f"{this_label}_sampling_time.txt"))
 
     # Make a corner plot
-    truths = [
-        injection_parameters["mass_1"],
-        injection_parameters["mass_2"],
-        injection_parameters["chi_1"],
-        injection_parameters["chi_2"],
-    ]
-    result.plot_corner(save=True, truths=truths,
+    true_params = {k: injection_parameters[k] for k in active_priors.keys() if k in injection_parameters}
+    result.plot_corner(save=True, parameters=true_params,
                        filename=outdir+f'{this_label}_corner.png')
     return result
 
@@ -649,6 +644,13 @@ def main(args, label='umamipe',
                                         outdir=outdir,
                                         sampler=sampler, 
                                         **sampler_kwargs)
+        
+    elif args.plot_corner_from_result_file:
+        result = bilby.gw.result.CBCResult.from_json(f"{outdir}/{args.results_fname}")
+        injection_parameters = result.injection_parameters
+        true_params = {k: injection_parameters[k] for k in active_priors.keys() if k in injection_parameters}
+        result.plot_corner(save=True, parameters=true_params,
+                        filename=outdir+f'{args.label}_corner.png')
     
     # -- Save all args and config to a results config JSON file!
     config_snapshot = {
@@ -904,6 +906,8 @@ if __name__ == "__main__":
                               help="Whether to run a single injection (default: False)")
     methodargs.add_argument('--run-pe-campaign', action='store_true', 
                               help="Whether to run the full PE campaign (default: False)")
+    methodargs.add_argument('--plot-corner-from-result-file', action='store_true',
+                              help="Whether to plot a corner plot from a previous result file (default: False)")
     methodargs.add_argument('--analyze-only', action='store_true', 
                               help="Whether to only analyze results from a previous run, using the provided JSON file (default: False)")
     methodargs.add_argument('--imp-reweight', action='store_true',
