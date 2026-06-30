@@ -472,18 +472,18 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
 def make_wf_generator(type: {'eob', 'ml'}, 
                       wfkwargs: Dict = {},
                       wf_source_model = None,
-                      param_converter = None) -> WaveformGenerator:
+                      parameter_converter = None) -> WaveformGenerator:
     if type=='eob':
         if wf_source_model is None:
             wf_source_model = bilby.gw.source.lal_binary_black_hole
-        if param_converter is None:
+        if parameter_converter is None:
             parameter_conversion = aligned_chi_to_lal_parameters
         wfgen = WaveformGenerator(
             duration=DURATION,
             sampling_frequency=SAMPLE_RATE,
             # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
             frequency_domain_source_model=wf_source_model,
-            parameter_conversion=param_converter,
+            parameter_conversion=parameter_converter,
             waveform_arguments=dict(
                 waveform_approximant="SEOBNRv4",      #"IMRPhenomPv2",
                 reference_frequency=FREF,
