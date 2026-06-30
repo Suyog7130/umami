@@ -598,14 +598,19 @@ def main(args, label='umamipe',
     # Perform a check that the prior does not extend to a parameter space longer than the data
     active_priors.validate_prior(DURATION, FMIN)
 
+    wfkwargs={'wfmodel_modelpath': model_path, 
+                'wfmodel_configpath': config_path,
+                'calibrator_modelpath': calmodel_path}
+    if args.distance_factor is not None:
+        wfkwargs['distance_scale_factor'] = args.distance_factor
+        if pe_run_type == 'eob2ml':
+            base_injection['luminosity_distance'] = args.distance_factor
+            logger.info(f"Using distance factor {args.distance_factor} for injection and recovery. Updated base_injection['luminosity_distance'] = {base_injection['luminosity_distance']}")
     if pe_run_type == 'eob2eob':
         injection_generator = make_wf_generator('eob')
         waveform_generator = make_wf_generator('eob')
         logger.info("Initialized EOB waveform generator for both injection and recovery.")
     else:
-        wfkwargs={'wfmodel_modelpath': model_path, 
-                  'wfmodel_configpath': config_path,
-                  'calibrator_modelpath': calmodel_path}
         waveform_generator = make_wf_generator('ml', wfkwargs=wfkwargs)
         if pe_run_type == 'ml2ml':
             injection_generator = make_wf_generator('ml', wfkwargs=wfkwargs)
@@ -899,6 +904,9 @@ if __name__ == "__main__":
                         help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
     parser.add_argument('--sampler', type=str, choices=['nessai', 'dynesty', 'pocomc'], default='nessai',
                         help="Sampler to use for parameter estimation: 'nessai' for neural density estimation sampler, 'dynesty' for nested sampling, 'pocomc' for preconditioned Monte Carlo (default: nessai)")
+    
+    parser.add_argument('--distance-factor', type=float, default=None,
+                        help="Distance scale factor for the injection (default: %(default)s)")
     
     parser.add_argument('--nlive', type=int, default=300,
                         help="Number of live points for the sampler (default: %(default)s)")
