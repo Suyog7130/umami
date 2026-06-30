@@ -5,10 +5,11 @@ LABEL="${1:-ml2ml-paper-1}"
 INJECTION_INDEX="${2:-0}"
 SAMPLER="${3:-pocomc}"
 PE_RUN_TYPE="${4:-ml2ml}"
-NLIVE="${5:-300}"
-THRESHOLD="${6:-0.2}"
-NPOOL="${7:-8}"
-PYTORCH_THREADS="${8:-1}"
+DISTANCE="${5:-400}"
+NLIVE="${6:-1024}"
+THRESHOLD="${7:-0.2}"
+NPOOL="${8:-4}"
+PYTORCH_THREADS="${9:-1}"
 
 echo "============================================================"
 echo "Starting inference job"
@@ -19,6 +20,7 @@ echo "LABEL: ${LABEL}"
 echo "INJECTION_INDEX: ${INJECTION_INDEX}"
 echo "SAMPLER: ${SAMPLER}"
 echo "PE_RUN_TYPE: ${PE_RUN_TYPE}"
+echo "DISTANCE: ${DISTANCE}"
 echo "NLIVE: ${NLIVE}"
 echo "THRESHOLD: ${THRESHOLD}"
 echo "NPOOL: ${NPOOL}"
@@ -79,6 +81,7 @@ echo "Running inference.py..."
     --injection-index "${INJECTION_INDEX}" \
     --sampler "${SAMPLER}" \
     --pe-run-type "${PE_RUN_TYPE}" \
+    --distance-factor "${DISTANCE}" \
     --nlive "${NLIVE}" \
     --threshold "${THRESHOLD}" \
     --npool "${NPOOL}" \

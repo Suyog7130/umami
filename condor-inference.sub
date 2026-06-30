@@ -24,6 +24,10 @@ if defined pe_run_type
 else
     arg_run_type = ml2ml
 endif
+if defined distance
+    arg_distance = $(distance)
+else
+    arg_distance = 400
 if defined nlive
     arg_nlive = $(nlive)
 else
@@ -52,7 +56,7 @@ endif
 
 injection_index = $$([ $(Process) + $(arg_idx_start) ])
 
-arguments = $(arg_label) $(injection_index) $(arg_sampler) $(arg_run_type) $(arg_nlive) $(arg_threshold) $(arg_npool) $(arg_pytorch_threads)
+arguments = $(arg_label) $(injection_index) $(arg_sampler) $(arg_run_type) $(arg_distance) $(arg_nlive) $(arg_threshold) $(arg_npool) $(arg_pytorch_threads)
 
 # Match this to nessai_npool * pytorch_threads.
 # For arguments ending in "8 1", request_cpus = 8.
