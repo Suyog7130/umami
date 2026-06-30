@@ -28,6 +28,7 @@ if defined distance
     arg_distance = $(distance)
 else
     arg_distance = 400
+endif
 if defined nlive
     arg_nlive = $(nlive)
 else
