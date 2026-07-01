@@ -603,9 +603,8 @@ def main(args, label='umamipe',
                 'calibrator_modelpath': calmodel_path}
     if args.distance_factor is not None:
         wfkwargs['distance_scale_factor'] = args.distance_factor
-        if pe_run_type == 'eob2ml':
-            base_injection['luminosity_distance'] = args.distance_factor
-            logger.info(f"Using distance factor {args.distance_factor} for injection and recovery. Updated base_injection['luminosity_distance'] = {base_injection['luminosity_distance']}")
+        base_injection['luminosity_distance'] = args.distance_factor
+        logger.info(f"Using distance factor / luminosity distance for ML waveform generator: {args.distance_factor} Mpc")
     if pe_run_type == 'eob2eob':
         injection_generator = make_wf_generator('eob')
         waveform_generator = make_wf_generator('eob')
