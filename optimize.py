@@ -380,7 +380,7 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
         test_set = WaveformDataset(hdf_fname=test_hdf_path, target_type=target_type,
                                 input_normalized=input_normalized, target_normalized=target_normalized,
                                 params_mean=params_mean, params_std=params_std,
-                                train_device=DEVICE, precision=PRECISION, return_indices=return_indices)
+                                device=DEVICE, precision=PRECISION, return_indices=return_indices)
         test_loader = WaveformDataLoader(test_set, batch_size=batch_size, shuffle=False,
                                         num_workers=num_workers, pin_memory=True,
                                         drop_last=False)
@@ -389,11 +389,11 @@ def set_waveform_dataloaders(batch_size=BATCH_SIZE,
     train_set = WaveformDataset(hdf_fname=train_hdf_path, target_type=target_type,
                                 input_normalized=input_normalized, target_normalized=target_normalized,
                                 params_mean=params_mean, params_std=params_std,
-                                train_device=DEVICE, precision=PRECISION, return_indices=return_indices)
+                                device=DEVICE, precision=PRECISION, return_indices=return_indices)
     val_set = WaveformDataset(hdf_fname=val_hdf_path, target_type=target_type,
                               input_normalized=input_normalized, target_normalized=target_normalized,
                               params_mean=params_mean, params_std=params_std,
-                              train_device=DEVICE, precision=PRECISION, return_indices=return_indices)
+                              device=DEVICE, precision=PRECISION, return_indices=return_indices)
     logger.info(f"Initialized WaveformDataset for train and val sets.")
     # NOTE: `drop_last=True` in train_loader, ensures that all batches have equal size, and thus makes `torch.compile` make the training faster, once the model has been precompiled. For validation and test loaders, we can keep `drop_last=False`, since we want to evaluate on all samples.
     train_loader = WaveformDataLoader(train_set, batch_size=batch_size, shuffle=True,
