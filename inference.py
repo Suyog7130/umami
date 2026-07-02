@@ -375,6 +375,11 @@ def identity_parameter_conversion(parameters):
 #     print(f"  {key}: {prior}")
 # print(f'Updated priors for BBH parameters: {priors.keys()}')
 
+def get_network_optimal_snr(ifos):
+    snrs = []
+    for ifo in ifos:
+        snrs.append(float(ifo.meta_data["optimal_SNR"]))
+    return np.sqrt(np.sum(np.asarray(snrs) ** 2))
 
 def run_single_injection(run_idx, seed=None, label_base='umamipe', 
                          outdir=f'../{PROJECT_DIR}/results/',
@@ -413,6 +418,14 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
         parameters=injection_parameters,
     )
     logger.debug(f"Injection parameters for run {run_idx}: {injection_parameters}")
+
+    # -- Compute network optimal SNR for the injected signal
+    network_snr = get_network_optimal_snr(ifos)
+    logger.debug(f"Network optimal SNR for run {run_idx}: {network_snr}")
+    save_json({"network_optimal_snr": network_snr,
+               "H1_optimal_snr": float(ifos[0].meta_data["optimal_SNR"]),
+               "L1_optimal_snr": float(ifos[1].meta_data["optimal_SNR"]),}, 
+              os.path.join(outdir, f"{this_label}_network_optimal_snr.json"))
 
     # -- Save IFOs with injected signal and noise to file
     save_pickle(ifos, os.path.join(outdir, f"{this_label}_ifos.pkl"))
