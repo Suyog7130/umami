@@ -29,7 +29,7 @@ from optimize import (
 )
 
 from calibration import (
-    ResidualCalibratorCNN, 
+    ResidualCalibrationCNN, 
     CalibrationModel,
     merger_weighted_mse_loss_func
 )
@@ -91,6 +91,123 @@ params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION))
 
 
 
+def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, labels_mean=None, labels_std=None,
+                        inputnames=['ml_hp', 'ml_hc'], targetnames=['target_hp_residual', 'target_hc_residual'],
+                        savename=None, savedir='../data'):
+    """
+    Generate the fine tuner input and target data for a batch of original waveforms and labels.
+
+    Arguments
+    ---------
+    wfmodel : nn.Module
+        The waveform generation model (FlexC-VAE) used to generate the predicted waveforms.
+    calmodel : CalibrationModel
+        The calibration model used to generate the residuals.
+    originals : torch.Tensor
+        The original waveforms (targets) of shape (batch_size, 2, num_samples).
+    labels : torch.Tensor
+        The labels corresponding to the original waveforms of shape (batch_size, num_labels).
+    indices : torch.Tensor
+        The indices of the original waveforms in the dataset.
+    inputnames : list of str
+        The names of the input data to be saved in the HDF file.
+    targetnames : list of str
+        The names of the target data to be saved in the HDF file.
+    correct_length : bool
+        Whether to correct the length of the generated waveforms to match the original waveforms.
+    savedir : str
+        The directory to save the HDF file.
+    """
+    logger.debug(f"Generating fine tuner input and target data for batch with indices: {indices}")
+
+    orig_hp, orig_hc = originals[:, 0, :], originals[:, 1, :]  # shape (batch_size, num_samples)
+    logger.debug(f"Original waveforms shape: {originals.shape}, hp shape: {orig_hp.shape}, hc shape: {orig_hc.shape}")
+
+    outwaves = wfmodel.generate(labels, convert_to_hphc=False)  # has shape (1, 2=[amp,phase], seq_len)!
+    logger.debug(f"Generated waveform from ML model with shape: {outwaves.shape}")
+
+    ml_hp, ml_hc = calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=True)
+    logger.debug(f"Calibrated waveform shape: {ml_hp.shape}, {ml_hc.shape}")
+
+    assert ml_hp.shape == orig_hp.shape, f"Shape mismatch: ml_hp {ml_hp.shape} vs orig_hp {orig_hp.shape}"
+    assert ml_hc.shape == orig_hc.shape, f"Shape mismatch: ml_hc {ml_hc.shape} vs orig_hc {orig_hc.shape}"
+
+    target_hp_residual = orig_hp - ml_hp
+    target_hc_residual = orig_hc - ml_hc
+    logger.debug(f"Computed target residuals with shapes: {target_hp_residual.shape}, {target_hc_residual.shape}")
+
+    finetuner_input = torch.stack([ml_hp, ml_hc], dim=1)  # shape (batch_size, 2, num_samples)
+    finetuner_target = torch.stack([target_hp_residual, target_hc_residual], dim=1)  # shape (batch_size, 2, num_samples)
+    logger.debug(f"Stacked finetuner input shape: {finetuner_input.shape}, target shape: {finetuner_target.shape}")
+
+    param_m1, param_m2, param_s1z, param_s2z = labels[:, 0], labels[:, 1], labels[:, 2], labels[:, 3]
+
+    # -- repeat the parameters across the time dimension to match the shape of ml_amp/ml_freq
+    param_m1 = param_m1.unsqueeze(-1).expand(-1, ml_hp.shape[-1])
+    param_m2 = param_m2.unsqueeze(-1).expand(-1, ml_hp.shape[-1])
+    param_s1z = param_s1z.unsqueeze(-1).expand(-1, ml_hp.shape[-1])
+    param_s2z = param_s2z.unsqueeze(-1).expand(-1, ml_hp.shape[-1])
+
+    fig, ax = plt.subplots(4, 1, figsize=(12, 12))
+    ax[0].plot(ml_hp[0].cpu().numpy(), label=inputnames[0])
+    ax[0].plot(orig_hp[0].cpu().numpy(), label='original_hp')
+    ax[0].set_title('ML Generated HP vs Original HP')
+    ax[0].legend()
+    ax[1].plot(target_hp_residual[0].cpu().numpy(), label=targetnames[0])
+    ax[1].set_title('Target HP Residual')
+    ax[1].legend()
+    ax[2].plot(ml_hc[0].cpu().numpy(), label=inputnames[1])
+    ax[2].plot(orig_hc[0].cpu().numpy(), label='original_hc')
+    ax[2].set_title('ML Generated HC vs Original HC')
+    ax[2].legend()
+    ax[3].plot(target_hc_residual[0].cpu().numpy(), label=targetnames[1])
+    ax[3].set_title(targetnames[1])
+    ax[3].legend()
+    plt.tight_layout()
+    plt.savefig(savedir + f'finetuner_input_example_{NOW}.png')
+    plt.close()
+
+    if labels_mean is None or labels_std is None:
+        labels_mean = wfmodel.MODEL_CONFIG['labels_mean']
+        labels_std = wfmodel.MODEL_CONFIG['labels_std']
+        logger.debug(f"Obtained labels_mean and labels_std from the model config: {labels_mean}, {labels_std}")
+        if labels_mean is None or labels_std is None:
+            logger.debug("labels_mean and labels_std are not provided and not found in the model config. So, we will use the global labels_mean and labels_std calculated from the training data CSV file.")
+            labels_mean = params_mean
+            labels_std = params_std
+        else:
+            logger.debug(f"Using labels_mean and labels_std from the model config: {labels_mean}, {labels_std}")
+
+    param_m1 = (param_m1 - labels_mean[0]) / labels_std[0]
+    param_m2 = (param_m2 - labels_mean[1]) / labels_std[1]
+    param_s1z = (param_s1z - labels_mean[2]) / labels_std[2]
+    param_s2z = (param_s2z - labels_mean[3]) / labels_std[3]
+    logger.debug(f"Normalized parameters: param_m1={param_m1}, param_m2={param_m2}, param_s1z={param_s1z}, param_s2z={param_s2z}")
+
+    finetuner_input = torch.cat([finetuner_input, param_m1.unsqueeze(1), param_m2.unsqueeze(1),
+                                param_s1z.unsqueeze(1), param_s2z.unsqueeze(1)], dim=1)  # shape: (batch, 6, n)
+    logger.debug(f"Finetuner input shape: {finetuner_input.shape}")
+
+    if savename is not None and indices is not None:
+        with h5py.File(os.path.join(savedir, savename), 'a') as hf:
+            for i in range(len(indices)):
+                grp_name = f'sample{int(indices[i])}'
+                if grp_name in hf:
+                    logger.warning(f"Group {grp_name} already exists in HDF file. Overwriting...")
+                    del hf[grp_name]
+                grp = hf.create_group(grp_name)
+                grp.create_dataset(inputnames[0], data=finetuner_input[i, 0, :].cpu().numpy())
+                grp.create_dataset(inputnames[1], data=finetuner_input[i, 1, :].cpu().numpy())
+                grp.create_dataset(targetnames[0], data=finetuner_target[i, 0, :].cpu().numpy())
+                grp.create_dataset(targetnames[1], data=finetuner_target[i, 1, :].cpu().numpy())
+                grp.create_dataset('param_m1', data=finetuner_input[i, 2, :].cpu().numpy())
+                grp.create_dataset('param_m2', data=finetuner_input[i, 3, :].cpu().numpy())
+                grp.create_dataset('param_s1z', data=finetuner_input[i, 4, :].cpu().numpy())
+                grp.create_dataset('param_s2z', data=finetuner_input[i, 5, :].cpu().numpy())
+        logger.info(f"Saved finetuner input and target data for batch with indices {indices} to HDF file: {savename} in directory: {savedir}")
+
+
+
 def save_finetuner_data(wfmodel_modelpath, wfmodel_configpath, calibrator_modelpath,
                         timestamp = NOW):
     """
@@ -102,11 +219,35 @@ def save_finetuner_data(wfmodel_modelpath, wfmodel_configpath, calibrator_modelp
     inputnames = ['ml_hp', 'ml_hc']
     targetnames = ['target_hp_residual', 'target_hc_residual']
 
-    ml_wfmodel = load_flex_model(model_path=wfmodel_modelpath, 
-                                configpath=wfmodel_configpath, 
+    model_path = os.path.join(PROJECT_DIR, 'trained-models', args.wfmodel_modelpath)
+    config_path = os.path.join(PROJECT_DIR, 'trained-models', args.wfmodel_configpath)
+    calmodel_path = os.path.join(PROJECT_DIR, 'trained-models', args.calibrator_modelpath)
+    if not os.path.isfile(model_path):
+        model_path = os.path.join('../', 'trained-models', args.model_name)
+        if not os.path.isfile(model_path):
+            logger.error(f"Provided MODEL_PATH does not exist: {model_path}")
+            raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
+    logger.info(f"Using MODEL_PATH: {model_path}")
+    if not os.path.isfile(config_path):
+        config_path = os.path.join('../', 'trained-models', args.model_config)
+        if not os.path.isfile(config_path):
+            logger.error(f"Provided MODEL_CONFIG_PATH does not exist: {config_path}")
+            raise FileNotFoundError(f"MODEL_CONFIG_PATH file not found at {config_path}")
+    logger.info(f"Using MODEL_CONFIG_PATH: {config_path}")
+    if not os.path.isfile(calmodel_path):
+        calmodel_path = os.path.join('../', 'trained-models', args.calmodel_name)
+        if not os.path.isfile(calmodel_path):
+            logger.error(f"Provided CALMODEL_PATH does not exist: {calmodel_path}")
+            raise FileNotFoundError(f"CALMODEL_PATH file not found at {calmodel_path}")
+    logger.info(f"Using CALMODEL_PATH: {calmodel_path}")
+
+
+    ml_wfmodel = load_flex_model(model_path=model_path, 
+                                configpath=config_path, 
                                 device=None, precision=None)
-    ml_calmodel = CalibrationModel(calibrator_modelpath=calibrator_modelpath,
+    ml_calmodel = CalibrationModel(calibrator_modelpath=calmodel_path,
                                    device=None, precision=None)
+    logger.info(f"Loaded waveform generation model and calibration model successfully.")
     
     # -- Read waveform generation model input data for labels and original waveforms
     wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type='amp_phase', 
@@ -114,11 +255,13 @@ def save_finetuner_data(wfmodel_modelpath, wfmodel_configpath, calibrator_modelp
     wftestloader = set_waveform_dataloaders(target_type='amp_phase', 
                                             return_test_loader=True, 
                                             num_workers=0, return_indices=True)
+    logger.info(f"Loaded waveform generation model input data for train, valid, and test sets successfully.")
     dataloaders = [wftrainloader, wfvalidloader, wftestloader]
-    savenames = ['train', 'valid', 'test']
+    datasets = ['train', 'valid', 'test']
 
     for i in range(len(dataloaders)):
-        savename = f'finetuner_data_{savenames[i]}_{timestamp}.hdf'
+        logger.info(f"Generating and saving fine tuner input and target data for {datasets[i]} set...")
+        savename = f'finetuner_data_{datasets[i]}_{timestamp}.hdf'
         for batch in tqdm(dataloaders[i], desc="batches"):
             input, target, labels, keys, strains, indices, attr = batch
             get_finetuner_input(
@@ -126,16 +269,15 @@ def save_finetuner_data(wfmodel_modelpath, wfmodel_configpath, calibrator_modelp
                 calmodel=ml_calmodel,
                 originals=strains,   # targets are original [hp,hc] strains waveforms
                 labels=labels,
-                data_hdf=savename,
                 indices=indices,
                 inputnames=inputnames,
                 targetnames=targetnames,
-                correct_length=False,
+                savename=savename,
                 savedir=savedir
             )
-        logger.info(f"Finished generating and saving calibrator input and target data for {savenames[i]} set to HDF file: {savename}")
+        logger.info(f"Finished generating and saving finetuner input and target data for {datasets[i]} set to HDF file: {savename}")
 
-    # -- Save calibration data config to JSON file
+    # -- Save finetuner data config to JSON file
     config = {
         'wfmodel_modelpath': wfmodel_modelpath,
         'wfmodel_configpath': wfmodel_configpath,
@@ -147,7 +289,7 @@ def save_finetuner_data(wfmodel_modelpath, wfmodel_configpath, calibrator_modelp
     config_fname = f'finetuner_data_{timestamp}_config.json'
     with open(savedir + config_fname, 'w') as f:
         json.dump(config, f, indent=4)
-    logger.info(f"Finished generating and saving calibrator input and target data to HDF files for all sets (train, valid, test).")
+    logger.info(f"Finished generating and saving finetuner input and target data to HDF files for all sets (train, valid, test).")
 
 
 
@@ -156,11 +298,11 @@ def save_finetuner_data(wfmodel_modelpath, wfmodel_configpath, calibrator_modelp
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Finetune the output [hp,hc] polarizations to match the target [hp,hc], by predicting the residual errors.")
 
-    parser.add_argument('--model-config', type=str, default='modelconfig-flexcvae-20260619-064140.json',
+    parser.add_argument('--wfmodel_configpath', type=str, default='modelconfig-flexcvae-20260619-064140.json',
                         help="Name of the waveform generation model configuration JSON file (default: %(default)s)")
-    parser.add_argument('--model-name', type=str, default='flexcvae-model-backup-20260619-064140-epoch98.pt',
+    parser.add_argument('--wfmodel_modelpath', type=str, default='flexcvae-model-backup-20260619-064140-epoch98.pt',
                         help="Name of the trained waveform generation model (default: %(default)s)")
-    parser.add_argument('--calmodel-name', type=str, default='calibrator_model_20260623-010953_epoch74.pt',
+    parser.add_argument('--calibrator_modelpath', type=str, default='calibrator_model_20260623-010953_epoch74.pt',
                         help="Name of the trained calibration model checkpoint (default: %(default)s)")
     
     parser.add_argument('--timestamp', type=str, default=NOW,
@@ -189,6 +331,6 @@ if __name__ == "__main__":
         save_finetuner_data(
             wfmodel_modelpath=args.wfmodel_modelpath,
             wfmodel_configpath=args.wfmodel_configpath,
-            calibrator_modelpath=args.calmodel_name,
+            calibrator_modelpath=args.calibrator_modelpath,
             timestamp=args.timestamp,
         )
