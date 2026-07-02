@@ -208,34 +208,39 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, labe
 
 
 
-def save_finetuner_data(wfmodel_modelpath, wfmodel_configpath, calibrator_modelpath,
+def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modelname,
                         timestamp = NOW):
     """
     Generate and save the fine tuner input and target data to HDF files.
     This is useful for pre-generating the data for faster training later.
     """
-    logger.info(f"Loading waveform generation model from {wfmodel_modelpath} with config {wfmodel_configpath}...")
+    logger.info(f"Loading waveform generation model from {wfmodel_modelname} with config {wfmodel_configname}...")
     savedir = '../data'
+    project_dir = os.path.join('../', PROJECT_DIR)
     inputnames = ['ml_hp', 'ml_hc']
     targetnames = ['target_hp_residual', 'target_hc_residual']
 
-    model_path = os.path.join(PROJECT_DIR, 'trained-models', args.wfmodel_modelpath)
-    config_path = os.path.join(PROJECT_DIR, 'trained-models', args.wfmodel_configpath)
-    calmodel_path = os.path.join(PROJECT_DIR, 'trained-models', args.calibrator_modelpath)
+    model_path = os.path.join(project_dir, 'trained-models', wfmodel_modelname)
+    config_path = os.path.join(project_dir, 'trained-models', wfmodel_configname)
+    calmodel_path = os.path.join(project_dir, 'trained-models', calibrator_modelname)
+
+    logger.info(f"Searching for waveform generation model at: {model_path}")
     if not os.path.isfile(model_path):
-        model_path = os.path.join('../', 'trained-models', args.model_name)
+        model_path = os.path.join('../', 'trained-models', args.wfmodel_modelname)
         if not os.path.isfile(model_path):
             logger.error(f"Provided MODEL_PATH does not exist: {model_path}")
             raise FileNotFoundError(f"MODEL_PATH file not found at {model_path}")
     logger.info(f"Using MODEL_PATH: {model_path}")
+    logger.info(f"Searching for waveform generation model config at: {config_path}")
     if not os.path.isfile(config_path):
-        config_path = os.path.join('../', 'trained-models', args.model_config)
+        config_path = os.path.join('../', 'trained-models', args.wfmodel_configname)
         if not os.path.isfile(config_path):
             logger.error(f"Provided MODEL_CONFIG_PATH does not exist: {config_path}")
             raise FileNotFoundError(f"MODEL_CONFIG_PATH file not found at {config_path}")
     logger.info(f"Using MODEL_CONFIG_PATH: {config_path}")
+    logger.info(f"Searching for calibration model at: {calmodel_path}")
     if not os.path.isfile(calmodel_path):
-        calmodel_path = os.path.join('../', 'trained-models', args.calmodel_name)
+        calmodel_path = os.path.join('../', 'trained-models', args.calibrator_modelname)
         if not os.path.isfile(calmodel_path):
             logger.error(f"Provided CALMODEL_PATH does not exist: {calmodel_path}")
             raise FileNotFoundError(f"CALMODEL_PATH file not found at {calmodel_path}")
@@ -279,9 +284,9 @@ def save_finetuner_data(wfmodel_modelpath, wfmodel_configpath, calibrator_modelp
 
     # -- Save finetuner data config to JSON file
     config = {
-        'wfmodel_modelpath': wfmodel_modelpath,
-        'wfmodel_configpath': wfmodel_configpath,
-        'calibrator_modelpath': calibrator_modelpath,
+        'wfmodel_modelname': wfmodel_modelname,
+        'wfmodel_configname': wfmodel_configname,
+        'calibrator_modelname': calibrator_modelname,
         'inputnames': inputnames,
         'targetnames': targetnames,
         'timestamp': timestamp
@@ -298,11 +303,11 @@ def save_finetuner_data(wfmodel_modelpath, wfmodel_configpath, calibrator_modelp
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Finetune the output [hp,hc] polarizations to match the target [hp,hc], by predicting the residual errors.")
 
-    parser.add_argument('--wfmodel_configpath', type=str, default='modelconfig-flexcvae-20260619-064140.json',
+    parser.add_argument('--wfmodel_configname', type=str, default='modelconfig-flexcvae-20260619-064140.json',
                         help="Name of the waveform generation model configuration JSON file (default: %(default)s)")
-    parser.add_argument('--wfmodel_modelpath', type=str, default='flexcvae-model-backup-20260619-064140-epoch98.pt',
+    parser.add_argument('--wfmodel_modelname', type=str, default='flexcvae-model-backup-20260619-064140-epoch98.pt',
                         help="Name of the trained waveform generation model (default: %(default)s)")
-    parser.add_argument('--calibrator_modelpath', type=str, default='calibrator_model_20260623-010953_epoch74.pt',
+    parser.add_argument('--calibrator_modelname', type=str, default='calibrator_model_20260623-010953_epoch74.pt',
                         help="Name of the trained calibration model checkpoint (default: %(default)s)")
     
     parser.add_argument('--timestamp', type=str, default=NOW,
@@ -329,8 +334,8 @@ if __name__ == "__main__":
     if args.save_data:
         logger.info("Generating and saving fine tuner input and target data to HDF files...")
         save_finetuner_data(
-            wfmodel_modelpath=args.wfmodel_modelpath,
-            wfmodel_configpath=args.wfmodel_configpath,
-            calibrator_modelpath=args.calibrator_modelpath,
+            wfmodel_modelname=args.wfmodel_modelname,
+            wfmodel_configname=args.wfmodel_configname,
+            calibrator_modelname=args.calibrator_modelname,
             timestamp=args.timestamp,
         )
