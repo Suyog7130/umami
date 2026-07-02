@@ -18,6 +18,8 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
 
+import pycbc
+
 from tqdm import tqdm
 
 from datacvae import CustomDataset, CustomDataLoader
@@ -90,8 +92,50 @@ params_mean = torch.tensor(params_mean, dtype=getattr(torch, PRECISION))
 params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION))
 
 
+def calc_residual_via_best_match(orig, ml, delta_t=None, use_psd=True):
+    """
+    Calculate the residual between the original and ML-generated waveforms
+    by finding the best match (minimum mismatch) between them, by time shifting
+    and phase shifting the ML waveform to align with the original waveform.
 
-def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, labels_mean=None, labels_std=None,
+    Arguments
+    ---------
+    orig : torch.Tensor
+        The original waveform of shape (num_samples,).
+    ml : torch.Tensor
+        The ML-generated waveform of shape (num_samples,).
+
+    Returns
+    -------
+    residual : torch.Tensor
+        The residual waveform of shape (num_samples,).
+    """
+    dt = delta_t or 1 / SAMPLE_RATE
+    orig = orig.detach().cpu().numpy()
+    ml = ml.detach().cpu().numpy()
+    orig = np.array(orig, dtype=np.float64)
+    ml = np.array(ml, dtype=np.float64)
+    orig_ts = pycbc.types.TimeSeries(orig, delta_t=dt)
+    ml_ts = pycbc.types.TimeSeries(ml, delta_t=dt)
+    if use_psd:
+        psd = pycbc.psd.aLIGOZeroDetHighPower(len(orig_ts), delta_f=1/(len(orig_ts) * dt), low_freq_cutoff=FMIN)
+        orig_fs = orig_ts.to_frequencyseries()
+        ml_fs = ml_ts.to_frequencyseries()
+        psd.astype(np.float64)
+        psd_interp = np.interp(orig_fs.sample_frequencies, psd.sample_frequencies, psd.data)
+        psd_resampled = pycbc.types.FrequencySeries(psd_interp, delta_f=orig_ts.delta_f, dtype=psd.dtype)
+        m, t = pycbc.filter.match(ml_fs, orig_fs, psd=psd_resampled, low_frequency_cutoff=FMIN,)
+    else:
+        m, t = pycbc.filter.match(ml_ts, orig_ts, low_frequency_cutoff=FMIN)
+
+    ml_shifted_ts = ml_ts.cyclic_time_shift(t)
+    ml_shifted = np.array(ml_shifted_ts, dtype=np.float64)
+    residual = orig - ml_shifted
+    return residual
+
+
+def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, attr=None,
+                        labels_mean=None, labels_std=None,
                         inputnames=['ml_hp', 'ml_hc'], targetnames=['target_hp_residual', 'target_hc_residual'],
                         savename=None, savedir='../data'):
     """
@@ -132,8 +176,13 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, labe
     assert ml_hp.shape == orig_hp.shape, f"Shape mismatch: ml_hp {ml_hp.shape} vs orig_hp {orig_hp.shape}"
     assert ml_hc.shape == orig_hc.shape, f"Shape mismatch: ml_hc {ml_hc.shape} vs orig_hc {orig_hc.shape}"
 
-    target_hp_residual = orig_hp - ml_hp
-    target_hc_residual = orig_hc - ml_hc
+    # -- compute the residuals between the original and ML-generated waveforms
+    target_hp_residual = torch.tensor([calc_residual_via_best_match(orig_hp[i].cpu(), ml_hp[i].cpu(), delta_t=attr['delta_t'][i]) 
+                                       for i in range(orig_hp.shape[0])], dtype=getattr(torch, PRECISION), device=DEVICE)
+    target_hc_residual = torch.tensor([calc_residual_via_best_match(orig_hc[i].cpu(), ml_hc[i].cpu(), delta_t=attr['delta_t'][i]) 
+                                       for i in range(orig_hc.shape[0])], dtype=getattr(torch, PRECISION), device=DEVICE)
+    # target_hp_residual = orig_hp - ml_hp
+    # target_hc_residual = orig_hc - ml_hc
     logger.debug(f"Computed target residuals with shapes: {target_hp_residual.shape}, {target_hc_residual.shape}")
 
     finetuner_input = torch.stack([ml_hp, ml_hc], dim=1)  # shape (batch_size, 2, num_samples)
@@ -275,6 +324,7 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
                 originals=strains,   # targets are original [hp,hc] strains waveforms
                 labels=labels,
                 indices=indices,
+                attr=attr,
                 inputnames=inputnames,
                 targetnames=targetnames,
                 savename=savename,
