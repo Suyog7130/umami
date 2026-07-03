@@ -314,10 +314,10 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
     
     # -- Read waveform generation model input data for labels and original waveforms
     wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type='amp_phase', 
-                                                            batch_size=1024,
+                                                            batch_size=64,
                                                             num_workers=0, return_indices=True)
     wftestloader = set_waveform_dataloaders(target_type='amp_phase', 
-                                            batch_size=1024,
+                                            batch_size=64,
                                             return_test_loader=True, 
                                             num_workers=0, return_indices=True)
     logger.info(f"Loaded waveform generation model input data for train, valid, and test sets successfully.")
