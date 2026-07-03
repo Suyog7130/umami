@@ -785,7 +785,7 @@ def set_lr_for_epoch(
 # Full loss computation
 # ============================================================
 
-def compute_stage3_loss(
+def compute_finetuner_loss(
     model: nn.Module,
     batch: Dict[str, torch.Tensor],
     coeffs: Dict[str, float],
@@ -898,7 +898,7 @@ def evaluate_model(
         if max_batches is not None and bidx >= max_batches:
             break
 
-        loss, stats, tensors = compute_stage3_loss(
+        loss, stats, tensors = compute_finetuner_loss(
             model=model,
             batch=batch,
             coeffs=coeffs,
@@ -934,7 +934,7 @@ def evaluate_model(
         "loss_overlap": ov_losses,
         "loss_high": high_losses,
         "loss_smooth": smooth_losses,
-        "mismatch": mismatch_all,
+        "mismatch": mismatch_all
     }
     return val_stats_per_epoch, val_stats_per_batch
 
@@ -975,7 +975,7 @@ def mine_hard_samples(
     }
 
     for batch in tqdm(loader, desc="Mining hard samples", leave=False):
-        _, _, tensors = compute_stage3_loss(
+        _, _, tensors = compute_finetuner_loss(
             model=model,
             batch=batch,
             coeffs=coeffs,
@@ -1019,7 +1019,7 @@ def plot_batch_predictions(
         "smooth": 1e-5,
     }
 
-    _, _, tensors = compute_stage3_loss(
+    _, _, tensors = compute_finetuner_loss(
         model=model,
         batch=batch,
         coeffs=coeffs,
@@ -1076,17 +1076,7 @@ def plot_batch_predictions(
 def plot_loss_curves(history: List[Dict[str, float]], outpath: str,) -> None:
     if len(history) == 0:
         return
-    
-    names = sorted(set().union(*[h.keys() for h in history]))
-    if plot_per_batch_losses:
-        epochs = [h["epoch"] for h in history]
-        names = [n for n in names 
-                 if n.startswith("train_running_") or n.startswith("valid_running_")]
-    else:
-        epochs = [h["epoch"] for h in history]
-        names = [n for n in names 
-                 if not n.startswith("train_running_") and not n.startswith("valid_running_")]
-
+    epochs = [h["epoch"] for h in history]
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     axes[0, 0].plot(epochs, [h["train_loss_total"] for h in history], label="train total")
@@ -1120,6 +1110,44 @@ def plot_loss_curves(history: List[Dict[str, float]], outpath: str,) -> None:
     axes[1, 1].set_title("Worst-case mismatch")
     axes[1, 1].legend()
 
+    fig.tight_layout()
+    fig.savefig(outpath, dpi=150)
+    plt.close(fig)
+
+
+def plot_running_losses(history: List[Dict[str, float]], outpath: str,) -> None:
+    """
+    Plot running loss curves for train and validation.
+    These are saved as np.array in the history dict for each epoch, where all keys are appended
+    with the prefix "train_running_" or "valid_running_". The total loss is stored as "train_running_loss_total" and "valid_running_loss_total".
+    """
+    if len(history) == 0:
+        return
+        
+    total_steps = 0
+    run_train_loss = []
+    run_valid_loss = []
+
+    for row in history:
+        steps_this_epoch = len(row.get("train_running_loss_total", []))
+        if steps_this_epoch == 0:
+            continue
+        total_steps += steps_this_epoch
+        run_train_loss.append(row["train_running_loss_total"])
+        run_valid_loss.append(row.get("valid_running_loss_total", np.nan))
+
+    run_train_loss = np.concatenate(run_train_loss)
+    run_valid_loss = np.concatenate(run_valid_loss)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(np.arange(len(run_train_loss)), run_train_loss, label="train running loss")
+    ax.plot(np.arange(len(run_valid_loss)), run_valid_loss, label="valid running loss")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_title("Running loss curves")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.legend()
     fig.tight_layout()
     fig.savefig(outpath, dpi=150)
     plt.close(fig)
@@ -1311,7 +1339,7 @@ def train_finetuner(
 
             if use_cuda_amp:
                 with torch.amp.autocast("cuda", dtype=amp_dtype):
-                    loss, stats, tensors = compute_stage3_loss(
+                    loss, stats, tensors = compute_finetuner_loss(
                         model=model,
                         batch=batch,
                         coeffs=coeffs,
@@ -1329,7 +1357,7 @@ def train_finetuner(
                 scaler.update()
 
             else:
-                loss, stats, tensors = compute_stage3_loss(
+                loss, stats, tensors = compute_finetuner_loss(
                     model=model,
                     batch=batch,
                     coeffs=coeffs,
@@ -1430,10 +1458,9 @@ def train_finetuner(
             history,
             os.path.join(plot_dir, f"loss_curves_{run_id}.png"),
         )
-        plot_loss_curves(
+        plot_running_losses(
             history,
-            os.path.join(plot_dir, f"running_loss_curves_{run_id}.png"), 
-            plot_per_batch_losses=True,
+            os.path.join(plot_dir, f"running_loss_curves_{run_id}.png"),
         )
 
         if epoch % cfg.plot_every == 0 and fixed_plot_batch is not None:
@@ -1492,10 +1519,9 @@ def train_finetuner(
         history,
         os.path.join(plot_dir, f"loss_curves_final_{run_id}.png"),
     )
-    plot_loss_curves(
+    plot_running_losses(
         history,
-        os.path.join(plot_dir, f"running_loss_curves_final_{run_id}.png"), 
-        plot_per_batch_losses=True,
+        os.path.join(plot_dir, f"running_loss_curves_final_{run_id}.png"),
     )
 
     final_path = os.path.join(ckpt_dir, f"final_model_{run_id}.pt")
@@ -1527,6 +1553,34 @@ def train_finetuner(
     ]
     loss_df = pd.DataFrame(loss_history)
     loss_df.to_csv(os.path.join(run_dir, f"loss_history_{run_id}.csv"), index=False)
+
+    # -- Save just the running losses to a separate CSV for easier plotting
+    running_loss_history = []
+    for h in history:
+        steps_this_epoch = len(h.get("train_running_loss_total", []))
+        if steps_this_epoch == 0:
+            continue
+        for step in range(steps_this_epoch):
+            running_loss_history.append({
+                "epoch": h["epoch"],
+                "step": step + 1,
+                "train_running_loss_total": h["train_running_loss_total"][step],
+                "train_running_loss_res": h["train_running_loss_res"][step],
+                "train_running_loss_overlap": h["train_running_loss_overlap"][step],
+                "train_running_loss_high": h["train_running_loss_high"][step],
+                "train_running_loss_smooth": h["train_running_loss_smooth"][step],
+                "train_running_mismatch_mean": h["train_running_mismatch_mean"][step],
+                "train_running_mismatch_median": h["train_running_mismatch_median"][step],
+                "train_running_mismatch_max": h["train_running_mismatch_max"][step],
+                "valid_running_loss_total": h["valid_running_loss_total"][step],
+                "valid_running_loss_res": h["valid_running_loss_res"][step],
+                "valid_running_loss_overlap": h["valid_running_loss_overlap"][step],
+                "valid_running_loss_high": h["valid_running_loss_high"][step],
+                "valid_running_loss_smooth": h["valid_running_loss_smooth"][step],
+                "valid_running_mismatch": h["valid_running_mismatch"][step]
+            })
+    running_loss_df = pd.DataFrame(running_loss_history)
+    running_loss_df.to_csv(os.path.join(run_dir, f"running_loss_history_{run_id}.csv"), index=False)
 
     print(f"Training complete. Best model: {best_path}")
     return model
