@@ -24,7 +24,7 @@ from typing import Optional, Sequence, Dict, Tuple, List
 
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 
-
+import math
 import pycbc
 
 from tqdm import tqdm
@@ -373,7 +373,7 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
 # ============================================================
 
 @dataclass
-class FinetunerTrainConfig:
+class FinetunerConfig:
     train_path: str
     valid_path: str
     outdir: str = "stage3_polarization_calibrator_runs"
@@ -451,8 +451,8 @@ class FinetunerDataset(Dataset):
     def __init__(
         self,
         hdf_path: str,
-        input_names: str = "inputs",
-        target_names: str = "targets",
+        input_names: list = ["ml_hp", "ml_hc"],
+        target_names: list = ["target_hp_residual", "target_hc_residual"],
         max_samples: Optional[int] = None,
         dtype: torch.dtype = torch.float32,
     ):
@@ -466,34 +466,49 @@ class FinetunerDataset(Dataset):
         self._inputs = None
         self._targets = None
 
-        with h5py.File(self.hdf_path, "r") as f:
-            n = f[self.input_names].shape[0]
-            self.input_shape = tuple(f[self.input_names].shape)
-            self.target_shape = tuple(f[self.target_names].shape)
+        # -- open HDF file once to read number of groups
+        with h5py.File(self.hdf_path, 'r') as f:
+            self.num_samples = len(f.keys())
+            self.group_names = list(f.keys())  # -- we use these instead of indices!
 
         if max_samples is not None:
-            n = min(n, max_samples)
+            self.num_samples = min(self.num_samples, max_samples)
 
-        self.length = n
-
-    def _open_if_needed(self):
-        if self._file is None:
-            self._file = h5py.File(self.hdf_path, "r")
-            self._inputs = self._file[self.input_names]
-            self._targets = self._file[self.target_names]
+    def _init_hdf(self):
+        if not os.path.exists(self.hdf_path):
+            raise FileNotFoundError(f"HDF file not found at {self.hdf_path}. Please generate the finetuner data first using save_finetuner_data().")
+        self._file = h5py.File(self.hdf_path, 'r')
+        logger.info(f"Opened HDF file {self.hdf_path} for reading calibrator input and target residuals in the CalibratorDataset.")
 
     def __len__(self):
-        return self.length
+        return self.num_samples
+
+    def _read_data(self, idx):
+        if self._file is None:
+            self._init_hdf()
+
+        group_name = self.group_names[idx]
+        group = self._file[group_name]
+
+        x = torch.tensor(
+            np.stack([group[self.input_names[0]][:], 
+                      group[self.input_names[1]][:],
+                      group['param_m1'][:],
+                      group['param_m2'][:],
+                      group['param_s1z'][:],
+                      group['param_s2z'][:]
+                      ], axis=0),
+            dtype=self.dtype,
+        )
+        y = torch.tensor(
+            np.stack([group[self.target_names[0]][:], 
+                      group[self.target_names[1]][:]], axis=0),
+            dtype=self.dtype,
+        )
+        return x, y
 
     def __getitem__(self, idx):
-        self._open_if_needed()
-
-        x = self._inputs[idx]
-        y = self._targets[idx]
-
-        x = torch.as_tensor(x, dtype=self.dtype)
-        y = torch.as_tensor(y, dtype=self.dtype)
-
+        x, y = self._read_data(idx)
         return {
             "input": x,
             "target_norm_residual": y,
@@ -538,7 +553,6 @@ class FinetunerDataLoader:
         self.persistent_workers = persistent_workers and num_workers > 0
         self.prefetch_factor = prefetch_factor if num_workers > 0 else None
         self.drop_last = drop_last
-
         self.hard_indices = None
         self.hard_weight = 1.0
 
@@ -553,6 +567,9 @@ class FinetunerDataLoader:
         else:
             self.hard_indices = np.asarray(hard_indices, dtype=np.int64)
             self.hard_weight = float(hard_weight)
+
+    def __len__(self) -> int:
+        return len(self.dataset) // self.batch_size
 
     def build(self) -> DataLoader:
         kwargs = dict(
@@ -719,9 +736,8 @@ def smoothness_loss(
 # Schedules
 # ============================================================
 
-def get_loss_coefficients(epoch: int, cfg: Stage3TrainConfig) -> Dict[str, float]:
+def get_loss_coefficients(epoch: int, cfg: FinetunerConfig) -> Dict[str, float]:
     frac = epoch / max(1, cfg.num_epochs)
-
     if frac < 0.20:
         return {
             "res": 1.0,
@@ -729,7 +745,7 @@ def get_loss_coefficients(epoch: int, cfg: Stage3TrainConfig) -> Dict[str, float
             "high": 0.20,
             "smooth": 1e-5,
         }
-
+    
     if frac < cfg.hard_start_frac:
         return {
             "res": 0.50,
@@ -737,7 +753,7 @@ def get_loss_coefficients(epoch: int, cfg: Stage3TrainConfig) -> Dict[str, float
             "high": 0.50,
             "smooth": 1e-5,
         }
-
+    
     return {
         "res": 0.20,
         "overlap": 1.00,
@@ -749,7 +765,7 @@ def get_loss_coefficients(epoch: int, cfg: Stage3TrainConfig) -> Dict[str, float
 def set_lr_for_epoch(
     optimizer: torch.optim.Optimizer,
     epoch: int,
-    cfg: Stage3TrainConfig,
+    cfg: FinetunerConfig,
 ) -> float:
     frac = epoch / max(1, cfg.num_epochs)
 
@@ -762,7 +778,6 @@ def set_lr_for_epoch(
 
     for group in optimizer.param_groups:
         group["lr"] = lr
-
     return lr
 
 
@@ -774,9 +789,10 @@ def compute_stage3_loss(
     model: nn.Module,
     batch: Dict[str, torch.Tensor],
     coeffs: Dict[str, float],
-    cfg: Stage3TrainConfig,
+    cfg: FinetunerConfig,
     device: torch.device,
 ) -> Tuple[torch.Tensor, Dict[str, float], Dict[str, torch.Tensor]]:
+    
     x = batch["input"].to(device, non_blocking=True)
     target_norm = batch["target_norm_residual"].to(device, non_blocking=True)
 
@@ -785,7 +801,6 @@ def compute_stage3_loss(
     h_true = reconstruct_true_from_normalized_residual(
         h_ml,
         target_norm,
-        eps=cfg.eps,
     )
 
     pred_norm = model(x)
@@ -793,7 +808,6 @@ def compute_stage3_loss(
     h_pred = apply_predicted_normalized_residual(
         h_ml,
         pred_norm,
-        eps=cfg.eps,
     )
 
     loss_res = weighted_normalized_residual_loss(
@@ -860,7 +874,7 @@ def compute_stage3_loss(
 def evaluate_model(
     model: nn.Module,
     loader: DataLoader,
-    cfg: Stage3TrainConfig,
+    cfg: FinetunerConfig,
     device: torch.device,
     max_batches: Optional[int] = None,
 ) -> Dict[str, float]:
@@ -920,7 +934,7 @@ def evaluate_model(
 def mine_hard_samples(
     model: nn.Module,
     dataset: Dataset,
-    cfg: Stage3TrainConfig,
+    cfg: FinetunerConfig,
     device: torch.device,
     top_frac: float = 0.15,
 ) -> np.ndarray:
@@ -981,7 +995,7 @@ def mine_hard_samples(
 def plot_batch_predictions(
     model: nn.Module,
     batch: Dict[str, torch.Tensor],
-    cfg: Stage3TrainConfig,
+    cfg: FinetunerConfig,
     device: torch.device,
     outpath: str,
     title: str = "",
@@ -1102,7 +1116,7 @@ def save_checkpoint(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     epoch: int,
-    cfg: Stage3TrainConfig,
+    cfg: FinetunerConfig,
     history: List[Dict[str, float]],
     outpath: str,
     extra: Optional[Dict] = None,
@@ -1135,7 +1149,7 @@ def save_history_csv(history: List[Dict[str, float]], outpath: str) -> None:
 
 def train_finetuner(
     model: nn.Module,
-    cfg: FinetunerTrainConfig,
+    cfg: FinetunerConfig,
 ) -> nn.Module:
     # -- set random number seed
     torch.manual_seed(cfg.seed)
@@ -1148,9 +1162,9 @@ def train_finetuner(
         torch.set_float32_matmul_precision("high")
 
     run_id = NOW
-    run_dir = os.path.join(cfg.outdir, f"finetuner_run_{run_id}")
-    plot_dir = os.path.join(run_dir, "plots")
-    ckpt_dir = os.path.join(run_dir, "checkpoints")
+    run_dir = os.path.join(cfg.outdir, f"finetuner_run_{run_id}/")
+    plot_dir = os.path.join(run_dir, "plots/")
+    ckpt_dir = os.path.join(run_dir, "checkpoints/")
 
     ensure_dir(run_dir)
     ensure_dir(plot_dir)
@@ -1175,6 +1189,8 @@ def train_finetuner(
         target_names=cfg.target_names,
         max_samples=cfg.max_valid_samples,
     )
+    logger.info(f"Train dataset: {len(train_dataset)} samples from {cfg.train_path}")
+    logger.info(f"Valid dataset: {len(valid_dataset)} samples from {cfg.valid_path}")
 
     train_loader_builder = FinetunerDataLoader(
         dataset=train_dataset,
@@ -1185,6 +1201,7 @@ def train_finetuner(
         prefetch_factor=cfg.prefetch_factor,
         drop_last=True,
     )
+    logger.info(f"Built training DataLoader with {len(train_loader_builder)} batches")
 
     valid_kwargs = dict(
         dataset=valid_dataset,
@@ -1196,13 +1213,14 @@ def train_finetuner(
         drop_last=False,
     )
 
+    logger.info("Building validation DataLoader...")
     if cfg.num_workers > 0:
         valid_kwargs["prefetch_factor"] = cfg.prefetch_factor
-
     valid_loader = DataLoader(**valid_kwargs)
 
     model = model.to(device)
     model.train()
+    logger.info(f"Model moved to device {device}")
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -1357,6 +1375,7 @@ def train_finetuner(
 
             if valid_score < best_valid_score:
                 best_valid_score = valid_score
+                logger.info(f"New best validation score found: {best_valid_score:.3e}")
                 save_checkpoint(
                     model=model,
                     optimizer=optimizer,
@@ -1478,10 +1497,10 @@ def train_finetuner(
 
 def training_main(args: argparse.Namespace) -> None:
 
-    cfg = FinetunerTrainConfig(
-        train_path = "../finetuner_data_train_20260703-173318.hdf",
-        valid_path = "../finetuner_data_valid_20260703-173318.hdf",
-        outdir = f"../v0p1/results/{TODAY}",
+    cfg = FinetunerConfig(
+        train_path = "../data/finetuner_data_train_20260703-173318.hdf",
+        valid_path = "../data/finetuner_data_valid_20260703-173318.hdf",
+        outdir = f"../v0p1/results/{TODAY}/",
 
         input_names = ['ml_hp', 'ml_hc'],
         target_names = ['target_hp_residual', 'target_hc_residual'],
@@ -1512,6 +1531,14 @@ def training_main(args: argparse.Namespace) -> None:
         max_valid_samples=None,
     )
 
+    if args.debug_training:
+        cfg.num_epochs = 2
+        cfg.batch_size = 32
+        cfg.num_workers = 0
+        cfg.max_train_samples = 256
+        cfg.max_valid_samples = 128
+        cfg.device = 'cpu'
+
     model = ResidualCalibrationCNN(
         input_channels=6,
         output_channels=2,
@@ -1537,6 +1564,9 @@ if __name__ == "__main__":
     
     parser.add_argument('--timestamp', type=str, default=NOW,
                         help="Timestamp for saving the generated data (default: %(default)s)")
+
+    parser.add_argument('--debug-training', action='store_true',
+                        help='Enable debug mode for training, which uses a smaller dataset and fewer epochs for quick testing.')
 
 
     methodargs = parser.add_mutually_exclusive_group(required=True)
@@ -1564,3 +1594,6 @@ if __name__ == "__main__":
             calibrator_modelname=args.calibrator_modelname,
             timestamp=args.timestamp,
         )
+    if args.train:
+        logger.info("Starting fine tuner training...")
+        training_main(args)
