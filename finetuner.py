@@ -79,7 +79,21 @@ FREF = 50.0  # Hz
 
 
 if torch.cuda.is_available():
-    DEVICE = torch.device("cuda")
+    n_cuda = torch.cuda.device_count()
+    if n_cuda > 1:
+        free_memories = []
+        for idx in range(n_cuda):
+            try:
+                free_bytes, _ = torch.cuda.mem_get_info(idx)
+            except TypeError:
+                with torch.cuda.device(idx):
+                    free_bytes, _ = torch.cuda.mem_get_info()
+            free_memories.append(free_bytes)
+        best_cuda_idx = int(np.argmax(free_memories))
+        torch.cuda.set_device(best_cuda_idx)
+        DEVICE = torch.device(f"cuda:{best_cuda_idx}")
+    else:
+        DEVICE = torch.device("cuda")
     PRECISION = 'float32'  # Can also use float64 for CUDA, but float32 is usually sufficient and faster on GPU
     torch.set_float32_matmul_precision("high")
 elif torch.backends.mps.is_available():
@@ -1617,7 +1631,7 @@ def training_main(args: argparse.Namespace) -> None:
         target_names = ['target_hp_residual', 'target_hc_residual'],
 
         num_epochs=100,
-        batch_size=512,
+        batch_size=216,
         num_workers=4,
 
         lr=3e-4,
