@@ -138,10 +138,10 @@ def calc_residual_via_best_match(orig, ml, delta_t=None, use_psd=True):
     return residual
 
 
-def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, attr=None,
+def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, attr=None,
                         labels_mean=None, labels_std=None,
                         inputnames=['ml_hp', 'ml_hc'], targetnames=['target_hp_residual', 'target_hc_residual'],
-                        savename=None, savedir='../data'):
+    ):
     """
     Generate the fine tuner input and target data for a batch of original waveforms and labels.
 
@@ -206,25 +206,25 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, attr
     param_s1z = param_s1z.unsqueeze(-1).expand(-1, ml_hp.shape[-1])
     param_s2z = param_s2z.unsqueeze(-1).expand(-1, ml_hp.shape[-1])
 
-    fig, ax = plt.subplots(4, 1, figsize=(12, 12))
-    ax[0].plot(ml_hp[0].cpu().numpy(), label=inputnames[0])
-    ax[0].plot(orig_hp[0].cpu().numpy(), label='original_hp')
-    ax[0].set_title('ML Generated HP vs Original HP')
-    ax[0].legend()
-    ax[1].plot(target_hp_residual[0].cpu().numpy(), label=targetnames[0])
-    ax[1].set_title('Target HP Residual')
-    ax[1].legend()
-    ax[2].plot(ml_hc[0].cpu().numpy(), label=inputnames[1])
-    ax[2].plot(orig_hc[0].cpu().numpy(), label='original_hc')
-    ax[2].set_title('ML Generated HC vs Original HC')
-    ax[2].legend()
-    ax[3].plot(target_hc_residual[0].cpu().numpy(), label=targetnames[1])
-    ax[3].set_title(targetnames[1])
-    ax[3].legend()
-    putils.beautifyPlot(ax, top=True, right=True)
-    plt.tight_layout()
-    plt.savefig(f'finetuner_input_example_{NOW}.png', dpi=300, bbox_inches='tight')
-    plt.close()
+    # fig, ax = plt.subplots(4, 1, figsize=(12, 12))
+    # ax[0].plot(ml_hp[0].cpu().numpy(), label=inputnames[0])
+    # ax[0].plot(orig_hp[0].cpu().numpy(), label='original_hp')
+    # ax[0].set_title('ML Generated HP vs Original HP')
+    # ax[0].legend()
+    # ax[1].plot(target_hp_residual[0].cpu().numpy(), label=targetnames[0])
+    # ax[1].set_title('Target HP Residual')
+    # ax[1].legend()
+    # ax[2].plot(ml_hc[0].cpu().numpy(), label=inputnames[1])
+    # ax[2].plot(orig_hc[0].cpu().numpy(), label='original_hc')
+    # ax[2].set_title('ML Generated HC vs Original HC')
+    # ax[2].legend()
+    # ax[3].plot(target_hc_residual[0].cpu().numpy(), label=targetnames[1])
+    # ax[3].set_title(targetnames[1])
+    # ax[3].legend()
+    # putils.beautifyPlot(ax, top=True, right=True)
+    # plt.tight_layout()
+    # plt.savefig(f'finetuner_input_example_{NOW}.png', dpi=300, bbox_inches='tight')
+    # plt.close()
 
     if labels_mean is None or labels_std is None:
         labels_mean = wfmodel.MODEL_CONFIG['labels_mean']
@@ -247,22 +247,21 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, attr
                                 param_s1z.unsqueeze(1), param_s2z.unsqueeze(1)], dim=1)  # shape: (batch, 6, n)
     logger.debug(f"Finetuner input shape: {finetuner_input.shape}")
 
-    if savename is not None and indices is not None:
-        with h5py.File(os.path.join(savedir, savename), 'a') as hf:
-            for i in range(len(indices)):
-                grp_name = f'sample{int(indices[i])}'
-                if grp_name in hf:
-                    logger.warning(f"Group {grp_name} already exists in HDF file. Overwriting...")
-                    del hf[grp_name]
-                grp = hf.create_group(grp_name)
-                grp.create_dataset(inputnames[0], data=finetuner_input[i, 0, :].cpu().numpy())
-                grp.create_dataset(inputnames[1], data=finetuner_input[i, 1, :].cpu().numpy())
-                grp.create_dataset(targetnames[0], data=finetuner_target[i, 0, :].cpu().numpy())
-                grp.create_dataset(targetnames[1], data=finetuner_target[i, 1, :].cpu().numpy())
-                grp.create_dataset('param_m1', data=finetuner_input[i, 2, :].cpu().numpy())
-                grp.create_dataset('param_m2', data=finetuner_input[i, 3, :].cpu().numpy())
-                grp.create_dataset('param_s1z', data=finetuner_input[i, 4, :].cpu().numpy())
-                grp.create_dataset('param_s2z', data=finetuner_input[i, 5, :].cpu().numpy())
+    # -- Save the finetuner input and target data to HDF file
+    for i in range(len(indices)):
+        grp_name = f'sample{int(indices[i])}'
+        if grp_name in hf_file:
+            logger.warning(f"Group {grp_name} already exists in HDF file. Overwriting...")
+            del hf_file[grp_name]
+        grp = hf_file.create_group(grp_name)
+        grp.create_dataset(inputnames[0], data=finetuner_input[i, 0, :].cpu().numpy())
+        grp.create_dataset(inputnames[1], data=finetuner_input[i, 1, :].cpu().numpy())
+        grp.create_dataset(targetnames[0], data=finetuner_target[i, 0, :].cpu().numpy())
+        grp.create_dataset(targetnames[1], data=finetuner_target[i, 1, :].cpu().numpy())
+        grp.create_dataset('param_m1', data=finetuner_input[i, 2, :].cpu().numpy())
+        grp.create_dataset('param_m2', data=finetuner_input[i, 3, :].cpu().numpy())
+        grp.create_dataset('param_s1z', data=finetuner_input[i, 4, :].cpu().numpy())
+        grp.create_dataset('param_s2z', data=finetuner_input[i, 5, :].cpu().numpy())
     return
 
 
@@ -325,7 +324,9 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
 
     for i in range(len(dataloaders)):
         logger.info(f"Generating and saving fine tuner input and target data for {datasets[i]} set...")
+        ensure_dir(savedir)
         savename = f'finetuner_data_{datasets[i]}_{timestamp}.hdf'
+        hf_file = h5py.File(os.path.join(savedir, savename), 'a')
         for batch in tqdm(dataloaders[i], desc="batches"):
             input, target, labels, keys, strains, indices, attr = batch
             get_finetuner_input(
@@ -334,14 +335,14 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
                 originals=strains,   # targets are original [hp,hc] strains waveforms
                 labels=labels,
                 indices=indices,
+                hf_file=hf_file,
                 attr=attr,
                 inputnames=inputnames,
                 targetnames=targetnames,
-                savename=savename,
-                savedir=savedir
             )
-        logger.info(f"Finished generating and saving finetuner input and target data for {datasets[i]} set to HDF file: {savename}")
-
+        hf_file.close()
+    logger.info(f"Finished generating and saving finetuner input and target data for {datasets[i]} set to HDF file: {savename}")
+    
     # -- Save finetuner data config to JSON file
     config = {
         'wfmodel_modelname': wfmodel_modelname,
@@ -352,7 +353,7 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
         'timestamp': timestamp
     }
     config_fname = f'finetuner_data_{timestamp}_config.json'
-    with open(savedir + config_fname, 'w') as f:
+    with open(os.path.join(savedir, config_fname), 'w') as f:
         json.dump(config, f, indent=4)
     logger.info(f"Finished generating and saving finetuner input and target data to HDF files for all sets (train, valid, test).")
 
