@@ -1219,7 +1219,7 @@ def train_finetuner(
     ensure_dir(plot_dir)
     ensure_dir(ckpt_dir)
 
-    with open(os.path.join(run_dir, "config.json"), "w") as f:
+    with open(os.path.join(run_dir, "finetuner_config.json"), "w") as f:
         json.dump(asdict(cfg), f, indent=2)
 
     logger.info(f"Run directory: {run_dir}")
