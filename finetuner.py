@@ -1177,10 +1177,14 @@ def save_checkpoint(
     torch.save(payload, outpath)
 
 
-def save_history_csv(history: List[Dict[str, float]], outpath: str) -> None:
+def save_history_csv(history: List[Dict[str, float]], outpath: str,
+                     do_not_write_running_loss_cols: bool = True) -> None:
     if len(history) == 0:
         return
     keys = sorted(set().union(*[h.keys() for h in history]))
+    if do_not_write_running_loss_cols:
+        keys = [k for k in keys 
+                if not k.startswith("train_running_") and not k.startswith("valid_running_")]
     with open(outpath, "w") as f:
         f.write(",".join(keys) + "\n")
         for row in history:
@@ -1554,7 +1558,7 @@ def train_finetuner(
     loss_df = pd.DataFrame(loss_history)
     loss_df.to_csv(os.path.join(run_dir, f"loss_history_{run_id}.csv"), index=False)
 
-    # -- Save just the running losses to a separate CSV for easier plotting
+    # -- Save just the train running losses to a separate h5 file
     running_loss_history = []
     for h in history:
         steps_this_epoch = len(h.get("train_running_loss_total", []))
@@ -1572,15 +1576,31 @@ def train_finetuner(
                 "train_running_mismatch_mean": h["train_running_mismatch_mean"][step],
                 "train_running_mismatch_median": h["train_running_mismatch_median"][step],
                 "train_running_mismatch_max": h["train_running_mismatch_max"][step],
+            })
+    running_loss_df = pd.DataFrame(running_loss_history)
+    running_loss_df.to_hdf(os.path.join(run_dir, f"train_running_losses_{run_id}.h5"), 
+                           key="train_running_losses", index=False)
+
+    # -- Save just the valid running losses to a separate h5 file for easier plotting
+    running_valid_loss_history = []
+    for h in history:
+        steps_this_epoch = len(h.get("valid_running_loss_total", []))
+        if steps_this_epoch == 0:
+            continue
+        for step in range(steps_this_epoch):
+            running_valid_loss_history.append({
+                "epoch": h["epoch"],
+                "step": step + 1,
                 "valid_running_loss_total": h["valid_running_loss_total"][step],
                 "valid_running_loss_res": h["valid_running_loss_res"][step],
                 "valid_running_loss_overlap": h["valid_running_loss_overlap"][step],
                 "valid_running_loss_high": h["valid_running_loss_high"][step],
                 "valid_running_loss_smooth": h["valid_running_loss_smooth"][step],
-                "valid_running_mismatch": h["valid_running_mismatch"][step]
+                "valid_running_mismatch": h["valid_running_mismatch"][step],
             })
-    running_loss_df = pd.DataFrame(running_loss_history)
-    running_loss_df.to_csv(os.path.join(run_dir, f"running_loss_history_{run_id}.csv"), index=False)
+    running_valid_loss_df = pd.DataFrame(running_valid_loss_history)
+    running_valid_loss_df.to_hdf(os.path.join(run_dir, f"valid_running_losses_{run_id}.h5"), 
+                                key="valid_running_losses", index=False)
 
     print(f"Training complete. Best model: {best_path}")
     return model
