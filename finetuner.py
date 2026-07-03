@@ -1479,12 +1479,12 @@ def train_finetuner(
 def training_main(args: argparse.Namespace) -> None:
 
     cfg = FinetunerTrainConfig(
-        train_path="../data/stage3_train_hphc_residuals.hdf",
-        valid_path="../data/stage3_valid_hphc_residuals.hdf",
-        outdir="../v0p1/results/stage3_polarization",
+        train_path = "../finetuner_data_train_20260703-173318.hdf",
+        valid_path = "../finetuner_data_valid_20260703-173318.hdf",
+        outdir = f"../v0p1/results/{TODAY}",
 
-        input_names="inputs",
-        target_names="targets",
+        input_names = ['ml_hp', 'ml_hc'],
+        target_names = ['target_hp_residual', 'target_hc_residual'],
 
         num_epochs=100,
         batch_size=512,
