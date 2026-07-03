@@ -51,6 +51,8 @@ from utils.gwutils import (
 )
 from utils.plotting import plot_twopanel
 
+from plotutils import putils
+
 import logging
 from utils.generic import init_logging, init_verbosity_args
 logger = logging.getLogger(__name__)
@@ -94,6 +96,8 @@ params_std = torch.tensor(params_std, dtype=getattr(torch, PRECISION))
 
 def calc_residual_via_best_match(orig, ml, delta_t=None, use_psd=True):
     """
+    DEPRECATED: We will directly use the residuals and use mismatch in the loss function!
+
     Calculate the residual between the original and ML-generated waveforms
     by finding the best match (minimum mismatch) between them, by time shifting
     and phase shifting the ML waveform to align with the original waveform.
@@ -176,13 +180,18 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, attr
     assert ml_hp.shape == orig_hp.shape, f"Shape mismatch: ml_hp {ml_hp.shape} vs orig_hp {orig_hp.shape}"
     assert ml_hc.shape == orig_hc.shape, f"Shape mismatch: ml_hc {ml_hc.shape} vs orig_hc {orig_hc.shape}"
 
-    # -- compute the residuals between the original and ML-generated waveforms
-    target_hp_residual = torch.tensor([calc_residual_via_best_match(orig_hp[i].cpu(), ml_hp[i].cpu(), delta_t=attr['delta_t'][i]) 
-                                       for i in range(orig_hp.shape[0])], dtype=getattr(torch, PRECISION), device=DEVICE)
-    target_hc_residual = torch.tensor([calc_residual_via_best_match(orig_hc[i].cpu(), ml_hc[i].cpu(), delta_t=attr['delta_t'][i]) 
-                                       for i in range(orig_hc.shape[0])], dtype=getattr(torch, PRECISION), device=DEVICE)
-    # target_hp_residual = orig_hp - ml_hp
-    # target_hc_residual = orig_hc - ml_hc
+    # # -- compute the residuals between the original and ML-generated waveforms
+    # target_hp_residual = torch.tensor([calc_residual_via_best_match(orig_hp[i].cpu(), ml_hp[i].cpu(), 
+    #                                    delta_t=attr['delta_t'][i]) 
+    #                                    for i in range(orig_hp.shape[0])], dtype=getattr(torch, PRECISION), device=DEVICE)
+    # target_hc_residual = torch.tensor([calc_residual_via_best_match(orig_hc[i].cpu(), ml_hc[i].cpu(), 
+    #                                    delta_t=attr['delta_t'][i]) 
+    #                                    for i in range(orig_hc.shape[0])], dtype=getattr(torch, PRECISION), device=DEVICE)
+
+    # -- Compute residual and normalize them!
+    target_hp_residual = orig_hp - ml_hp
+    target_hc_residual = orig_hc - ml_hc
+
     logger.debug(f"Computed target residuals with shapes: {target_hp_residual.shape}, {target_hc_residual.shape}")
 
     finetuner_input = torch.stack([ml_hp, ml_hc], dim=1)  # shape (batch_size, 2, num_samples)
@@ -212,8 +221,9 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, attr
     ax[3].plot(target_hc_residual[0].cpu().numpy(), label=targetnames[1])
     ax[3].set_title(targetnames[1])
     ax[3].legend()
+    putils.beautifyPlot(ax, top=True, right=True)
     plt.tight_layout()
-    plt.savefig(savedir + f'finetuner_input_example_{NOW}.png')
+    plt.savefig(f'finetuner_input_example_{NOW}.png', dpi=300, bbox_inches='tight')
     plt.close()
 
     if labels_mean is None or labels_std is None:
@@ -253,7 +263,7 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, indices=None, attr
                 grp.create_dataset('param_m2', data=finetuner_input[i, 3, :].cpu().numpy())
                 grp.create_dataset('param_s1z', data=finetuner_input[i, 4, :].cpu().numpy())
                 grp.create_dataset('param_s2z', data=finetuner_input[i, 5, :].cpu().numpy())
-        logger.info(f"Saved finetuner input and target data for batch with indices {indices} to HDF file: {savename} in directory: {savedir}")
+    return
 
 
 

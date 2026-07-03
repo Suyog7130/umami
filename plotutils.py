@@ -435,9 +435,9 @@ class putils:
             return SSIM
 
     @classmethod
-    def beautifyPlot(self, figures, labelsize=11, lengthMajor=6, tickNum=10, tickDirection='out', \
-                      lengthMinor=2, minor=False, grid=False, axisColor=None, yTicks=True, xTicks=True,
-                      top=False, right=False):
+    def beautifyPlot(self, figures, labelsize=11, lengthMajor=6, tickNum=10, tickDirection='in', \
+                      lengthMinor=2, minor=True, grid=False, axisColor=None, yTicks=True, xTicks=True,
+                      top=True, right=True, **kwargs):
         """
         Beautifies the plot by setting tick parameters, grid, and axis colors.
 
