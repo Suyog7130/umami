@@ -147,6 +147,8 @@ class ResidualCalibrationCNN(nn.Module):
         )
 
         # Important: initialize final layer near zero
+        # NOTE: This ensures that atleast the input level
+        # accuracy is preserved, even if the model doesn't train well.
         nn.init.zeros_(self.output_proj.weight)
         nn.init.zeros_(self.output_proj.bias)
 
