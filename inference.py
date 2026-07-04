@@ -735,6 +735,50 @@ def analyze_results(fname: str = None,
 
 
 
+def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
+                  label: str = 'umamipe',
+                  pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
+                  sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',
+                  outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/'):
+    """
+    Make PP plots for a list of Bilby CBCResult objects.
+    """
+    outdir = os.path.join(outdir, f'pp_plots_{NOW}/')
+    ensure_dir(outdir)
+    results = []
+    for dirname in os.listdir(results_dir):
+        if label in dirname and pe_run_type in dirname and sampler in dirname:
+            logger.info(f"Found result directory: {dirname} for PP plot generation...")
+            for fname in os.listdir(f"{results_dir}/{dirname}"):
+                if fname.endswith('result.json'):
+                    result = bilby.gw.result.CBCResult.from_json(f"{results_dir}/{dirname}/{fname}")
+                    results.append(result)
+    logger.info(f"Loaded {len(results)} results from {results_dir} for PP plot generation...")
+    savename = os.path.join(outdir, f"{label}_{pe_run_type}_{sampler}_pp-plot_{NOW}.png")
+    fig, pvals = make_pp_plot(
+        results,
+        filename=savename,
+        save=True,
+    )
+    print("Combined p-value:", pvals.combined_pvalue)
+    # -- Save PP plot metadata to JSON file
+    pp_metadata = {
+        "results_dir": results_dir,
+        "label": label,
+        "pe_run_type": pe_run_type,
+        "sampler": sampler,
+        "num_results": len(results),
+        "combined_pvalue": pvals.combined_pvalue,
+        "result_dirs": [dirname for dirname in os.listdir(results_dir) if label in dirname and pe_run_type in dirname and sampler in dirname],
+        "result_fnames": [fname for dirname in os.listdir(results_dir) if label in dirname and pe_run_type in dirname and sampler in dirname for fname in os.listdir(f"{results_dir}/{dirname}") if fname.endswith('result.json')],
+        "timestamp": NOW,
+    }
+    with open(savename.replace('.png', '.json'), 'w') as f:
+        json.dump(pp_metadata, f, indent=4)
+    logger.info(f"Saved PP plot for {len(results)} results to {savename}")
+
+
+
 def read_ifos_from_file(fname: str, outdir: str = f'../{PROJECT_DIR}/results/'):
     if not fname.endswith('.pkl'):
         fname += '.pkl'
@@ -947,6 +991,8 @@ if __name__ == "__main__":
                               help="Whether to only analyze results from a previous run, using the provided JSON file (default: False)")
     methodargs.add_argument('--imp-reweight', action='store_true',
                               help="Whether to perform importance reweighting on a previous result, using the provided JSON file (default: False)")
+    methodargs.add_argument('--make-pp-plots', action='store_true',
+                              help="Whether to make PP plots from a previous run, using the provided JSON file (default: False)")
     
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
@@ -957,12 +1003,20 @@ if __name__ == "__main__":
 
     if args.analyze_only:
         logger.info("Running in analyze-only mode. Will analyze results from a previous run using the provided JSON file.")
-        analyze_results(fname=args.results_fname, label=args.label, outdir=f'../{PROJECT_DIR}/results/{TODAY}')
+        analyze_results(fname=args.results_fname, label=args.label, 
+                        outdir=f'../{PROJECT_DIR}/results/{TODAY}')
     
     elif args.imp_reweight:
         logger.info("Running in importance reweighting mode. Will reweight results from a previous run using the provided JSON file.")
-        imp_reweight_posteriors(fname=args.results_fname, outdir=args.results_dir, npool=args.npool,
+        imp_reweight_posteriors(fname=args.results_fname, outdir=args.results_dir, 
+                                npool=args.npool,
                                 use_nested_samples=True)
+        
+    elif args.make_pp_plots:
+        logger.info("Running in make-PP-plots mode. Will generate PP plots from previous results.")
+        make_pp_plots(results_dir=args.results_dir, label=args.label, 
+                      pe_run_type=args.pe_run_type, sampler=args.sampler,
+                      outdir=f'../{PROJECT_DIR}/results/{TODAY}/')
     
     else:
         main(args, label=args.label, 
