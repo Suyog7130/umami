@@ -826,7 +826,10 @@ def compute_finetuner_loss(
     
     x = batch["input"].to(device, non_blocking=True)
     target = batch["target_residual"].to(device, non_blocking=True)
-    normed_target = target / (compute_peak_amplitude(x[:, 0:2, :]))
+
+    # -- ML waveform output and true waveform will remain unnormalized!
+    h_ml, _ = split_stage3_input(x)
+    h_true = reconstruct_true_from_residual(h_ml, target)
 
     # print("target_norm mean:", normed_target.mean().item())
     # print("target_norm std:", normed_target.std().item())
@@ -835,9 +838,10 @@ def compute_finetuner_loss(
     # print("target_norm plus abs max:", normed_target[:, 0].abs().max().item())
     # print("target_norm cross abs max:", normed_target[:, 1].abs().max().item())
 
-    h_ml, _ = split_stage3_input(x)
-
-    h_true = reconstruct_true_from_residual(h_ml, target)
+    # -- Now normalize both input waveforms and target residuals
+    norm_factor = compute_peak_amplitude(x[:, 0:2, :])
+    normed_target = target / norm_factor
+    x[:, 0:2, :] = x[:, 0:2, :] / norm_factor
 
     pred_norm = model(x)
 
