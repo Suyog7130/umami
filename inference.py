@@ -777,6 +777,40 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         json.dump(pp_metadata, f, indent=4)
     logger.info(f"Saved PP plot for {len(results)} results to {savename}")
 
+    # -- Debug PP plot and results
+    rows = []
+    for i, r in enumerate(results):
+        inj = r.injection_parameters
+        post = r.posterior
+
+        row = {
+            "i": i,
+            "label": r.label,
+            "inj_m1": inj["mass_1"],
+            "inj_m2": inj["mass_2"],
+            "inj_chi1": inj["chi_1"],
+            "inj_chi2": inj["chi_2"],
+            "m1_ge_m2_inj": inj["mass_1"] >= inj["mass_2"],
+            "npost": len(post),
+            "post_m1_median": post["mass_1"].median(),
+            "post_m2_median": post["mass_2"].median(),
+            "post_chi1_median": post["chi_1"].median(),
+            "post_chi2_median": post["chi_2"].median(),
+            "post_m1_lt_m2_count": int((post["mass_1"] < post["mass_2"]).sum()),
+        }
+        for p in ["mass_1", "mass_2", "chi_1", "chi_2"]:
+            row[f"q_{p}"] = np.mean(post[p].to_numpy() < inj[p])
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    print(df)
+    print(df[["q_mass_1", "q_mass_2", "q_chi_1", "q_chi_2"]].describe())
+    print("unique injections:", len(df.drop_duplicates(["inj_m1", "inj_m2", "inj_chi1", "inj_chi2"])))
+    print("bad injection mass order:", (~df["m1_ge_m2_inj"]).sum())
+    print("posterior mass-order violations:", df["post_m1_lt_m2_count"].sum())
+    df.to_csv(savename.replace('.png', '_debug.csv'), index=False)
+    print(f"Saved debug CSV for PP plot to {savename.replace('.png', '_debug.csv')}")
+
 
 
 def read_ifos_from_file(fname: str, outdir: str = f'../{PROJECT_DIR}/results/'):
