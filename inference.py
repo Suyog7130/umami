@@ -734,11 +734,61 @@ def analyze_results(fname: str = None,
     logger.info("Saved PP plot, waveform posterior plot, and corner plot for the first injection result.")
 
 
-def chirp_mass(m1, m2):
-    return (m1 * m2)**(3.0 / 5.0) / (m1 + m2)**(1.0 / 5.0)
 
-def chi_eff(m1, m2, chi1, chi2):
-    return (m1 * chi1 + m2 * chi2) / (m1 + m2)
+def chirp_mass(mass_1, mass_2):
+    mass_1 = np.asarray(mass_1)
+    mass_2 = np.asarray(mass_2)
+    return (mass_1 * mass_2) ** (3.0 / 5.0) / (mass_1 + mass_2) ** (1.0 / 5.0)
+
+
+def chi_eff(mass_1, mass_2, chi_1, chi_2):
+    mass_1 = np.asarray(mass_1)
+    mass_2 = np.asarray(mass_2)
+    chi_1 = np.asarray(chi_1)
+    chi_2 = np.asarray(chi_2)
+    return (mass_1 * chi_1 + mass_2 * chi_2) / (mass_1 + mass_2)
+
+
+def add_derived_parameters_to_result(result):
+    """
+    Return a copied Bilby result with derived posterior columns and
+    derived injection parameters added.
+
+    No likelihood object is needed for PP plots.
+    """
+    r = copy.deepcopy(result)
+    post = r.posterior.copy()
+
+    post["chirp_mass"] = chirp_mass(
+        post["mass_1"],
+        post["mass_2"],
+    )
+    post["chi_eff"] = chi_eff(
+        post["mass_1"],
+        post["mass_2"],
+        post["chi_1"],
+        post["chi_2"],
+    )
+
+    r.posterior = post
+
+    inj = dict(r.injection_parameters)
+    inj["chirp_mass"] = float(
+        chirp_mass(
+            inj["mass_1"],
+            inj["mass_2"],
+        )
+    )
+    inj["chi_eff"] = float(
+        chi_eff(
+            inj["mass_1"],
+            inj["mass_2"],
+            inj["chi_1"],
+            inj["chi_2"],
+        )
+    )
+    r.injection_parameters = inj
+    return r
 
 
 def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
@@ -818,28 +868,26 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
     df.to_csv(savename.replace('.png', '_debug.csv'), index=False)
     print(f"Saved debug CSV for PP plot to {savename.replace('.png', '_debug.csv')}")
 
-    # -- Make PP plot for derived parameters: chirp mass and effective spin
-    derived_results = []
-    for r in results:
-        print(r.__dict__)
-        inj = r.injection_parameters
-        post = r.posterior.copy()
-        post["chirp_mass"] = chirp_mass(post["mass_1"], post["mass_2"])
-        post["chi_eff"] = chi_eff(post["mass_1"], post["mass_2"], post["chi_1"], post["chi_2"])
-        derived_results.append(bilby.gw.result.CBCResult(
-            label=r.label,
-            injection_parameters={**inj, "chirp_mass": chirp_mass(inj["mass_1"], inj["mass_2"]),
-                                  "chi_eff": chi_eff(inj["mass_1"], inj["mass_2"], inj["chi_1"], inj["chi_2"])},
-            posterior=post,
-            likelihood=r.likelihood,
-            priors=r.priors,
-        ))
-    savename_derived = os.path.join(outdir, f"{label}_{pe_run_type}_{sampler}_pp-plot_derived_{NOW}.png")
+    # -- Make PP plot for derived parameters: chirp mass and effective spin 
+    derived_keys = ["chirp_mass", "chi_eff"]
+
+    derived_results = [
+        add_derived_parameters_to_result(r)
+        for r in results
+    ]
+
+    savename_derived = os.path.join(
+        outdir, 
+        f"{label}_{pe_run_type}_{sampler}_pp-plot_derived_{NOW}.png"
+        )
     fig, pvals = make_pp_plot(
         derived_results,
+        keys=derived_keys,
         filename=savename_derived,
         save=True,
     )
+    print("Derived-parameter PP plot saved to:", savename_derived)
+    print("Derived PP p-values:", pvals)
     print("Combined p-value for derived parameters:", pvals.combined_pvalue)
 
 
