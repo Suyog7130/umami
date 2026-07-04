@@ -1237,8 +1237,13 @@ def overfit_one_batch_residual_only(model, loader, device="cuda", steps=2000):
     batch = next(iter(loader))
     x = batch["input"].to(device).float()
     target = batch["target_residual"].to(device).float()
+    
+    # -- normalize input waveforms by peak amplitude of the ML waveform
+    norm_factor = compute_peak_amplitude(x[:, 0:2, :])
+    x[:, 0:2, :] = x[:, 0:2, :] / norm_factor
+
     # -- normalize target by peak amplitude of the ML waveform
-    target = target / (compute_peak_amplitude(x[:, 0:2, :]))
+    target = target / norm_factor
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.0)
 
@@ -1738,7 +1743,7 @@ def training_main(args: argparse.Namespace) -> None:
         batch_size=216,
         num_workers=4,
 
-        lr=3e-4,
+        lr=3e-3,
         weight_decay=1e-5,
 
         validate_every=1,
@@ -1770,23 +1775,22 @@ def training_main(args: argparse.Namespace) -> None:
     )
 
     if args.debug_training:
-        cfg.num_epochs = 2
+        cfg.num_epochs = 10
         cfg.batch_size = 32
         cfg.num_workers = 0
         cfg.max_train_samples = 256
-        cfg.max_valid_samples = 128
-        cfg.device = 'cpu'
+        cfg.max_valid_samples = 64
+        cfg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     elif args.demo_training:
         cfg.num_epochs = 10
         cfg.batch_size = 64
-        cfg.num_workers = 2
+        cfg.num_workers = 0
         cfg.max_train_samples = 512
         cfg.max_valid_samples = 64
         cfg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         train_finetuner(model, cfg, do_demo_train_run=True)
         return
-
 
     train_finetuner(model, cfg)
 
