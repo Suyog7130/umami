@@ -643,9 +643,9 @@ def compute_peak_amplitude(h_ml: torch.Tensor) -> torch.Tensor:
 def reconstruct_true_from_normalized_residual(
     h_ml: torch.Tensor,
     target_norm_residual: torch.Tensor,
+    norm_factor: float = 1.0,
 ) -> torch.Tensor:
-    amax = compute_peak_amplitude(h_ml)
-    return h_ml + amax * target_norm_residual
+    return h_ml + target_norm_residual * norm_factor
 
 def reconstruct_true_from_residual(
     h_ml: torch.Tensor,
@@ -657,9 +657,9 @@ def reconstruct_true_from_residual(
 def apply_predicted_normalized_residual(
     h_ml: torch.Tensor,
     pred_norm_residual: torch.Tensor,
+    norm_factor: float = 1.0,
 ) -> torch.Tensor:
-    amax = compute_peak_amplitude(h_ml)
-    return h_ml + amax * pred_norm_residual
+    return h_ml + pred_norm_residual * norm_factor
 
 
 # ============================================================
@@ -694,7 +694,6 @@ def weighted_normalized_residual_loss(
 def overlap_and_mismatch(
     h_true: torch.Tensor,
     h_pred: torch.Tensor,
-    eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     h_true = h_true.float()
     h_pred = h_pred.float()
@@ -703,12 +702,11 @@ def overlap_and_mismatch(
     pred_c = torch.complex(h_pred[:, 0, :], h_pred[:, 1, :])
 
     inner = torch.real(torch.sum(true_c * torch.conj(pred_c), dim=-1))
-    norm_true = torch.sqrt(torch.sum(torch.abs(true_c) ** 2, dim=-1) + eps)
-    norm_pred = torch.sqrt(torch.sum(torch.abs(pred_c) ** 2, dim=-1) + eps)
+    norm_true = torch.sqrt(torch.sum(torch.abs(true_c) ** 2, dim=-1))
+    norm_pred = torch.sqrt(torch.sum(torch.abs(pred_c) ** 2, dim=-1))
 
-    overlap = inner / (norm_true * norm_pred + eps)
+    overlap = inner / (norm_true * norm_pred)
     mismatch = 1.0 - overlap
-
     return overlap, mismatch
 
 
@@ -717,7 +715,7 @@ def overlap_loss(
     h_pred: torch.Tensor,
     eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    _, mismatch = overlap_and_mismatch(h_true, h_pred, eps=eps)
+    _, mismatch = overlap_and_mismatch(h_true, h_pred)
     return mismatch.mean(), mismatch
 
 
@@ -847,11 +845,11 @@ def compute_finetuner_loss(
 
     # -- create a copy and then replace, to avoid modifying the original input tensor
     normed_input = x.clone()
-    normed_input[:, 0:2, :] = h_ml / norm_factor
+    normed_input[:, 0:2, :] = normed_input[:, 0:2, :] / norm_factor
 
     pred_norm = model(normed_input)
 
-    h_pred = apply_predicted_normalized_residual(h_ml, pred_norm,)
+    h_pred = apply_predicted_normalized_residual(h_ml, pred_norm, norm_factor)
 
     # # -- print scales of all h tensors
     # print("h_ml mean:", h_ml.mean().item())
@@ -879,7 +877,6 @@ def compute_finetuner_loss(
     loss_ov, mismatch = overlap_loss(
         h_true=h_true,
         h_pred=h_pred,
-        eps=cfg.eps,
     )
 
     loss_high = topk_mismatch_loss(
@@ -1673,7 +1670,7 @@ def train_finetuner(
         os.path.join(plot_dir, f"running_loss_curves_final_{run_id}.png"),
     )
 
-    final_path = os.path.join(ckpt_dir, f"final_model_{run_id}.pt")
+    final_path = os.path.join(ckpt_dir, f"fineturner_final_model_{run_id}.pt")
     save_checkpoint(
         model=model,
         optimizer=optimizer,
