@@ -1675,7 +1675,7 @@ def training_main(args: argparse.Namespace) -> None:
         cfg.num_workers = 2
         cfg.max_train_samples = 10000
         cfg.max_valid_samples = 512
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        cfg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     model = ResidualCalibrationCNN(
         input_channels=6,
