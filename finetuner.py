@@ -629,6 +629,8 @@ class FinetunerDataLoader:
 def split_stage3_input(x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     h_ml = x[:, 0:2, :]
     params = x[:, 2:, :]
+    # print("h_ml mean:", h_ml.mean().item())
+    # print("h_ml std:", h_ml.std().item())
     return h_ml, params
 
 
@@ -827,25 +829,43 @@ def compute_finetuner_loss(
     x = batch["input"].to(device, non_blocking=True)
     target = batch["target_residual"].to(device, non_blocking=True)
 
+    # # -- print scales of input and target tensors
+    # print("x hp mean:", x[:, 0].mean().item())
+    # print("x hp std:", x[:, 0].std().item())
+    # print("x hc mean:", x[:, 1].mean().item())
+    # print("x hc std:", x[:, 1].std().item())
+    # print("target mean:", target.mean().item())
+    # print("target std:", target.std().item())
+
     # -- ML waveform output and true waveform will remain unnormalized!
     h_ml, _ = split_stage3_input(x)
     h_true = reconstruct_true_from_residual(h_ml, target)
 
-    # print("target_norm mean:", normed_target.mean().item())
-    # print("target_norm std:", normed_target.std().item())
-    # print("target_norm abs mean:", normed_target.abs().mean().item())
-    # print("target_norm abs max:", normed_target.abs().max().item())
-    # print("target_norm plus abs max:", normed_target[:, 0].abs().max().item())
-    # print("target_norm cross abs max:", normed_target[:, 1].abs().max().item())
-
     # -- Now normalize both input waveforms and target residuals
-    norm_factor = compute_peak_amplitude(x[:, 0:2, :])
+    norm_factor = compute_peak_amplitude(h_ml)
     normed_target = target / norm_factor
-    x[:, 0:2, :] = x[:, 0:2, :] / norm_factor
 
-    pred_norm = model(x)
+    # -- create a copy and then replace, to avoid modifying the original input tensor
+    normed_input = x.clone()
+    normed_input[:, 0:2, :] = h_ml / norm_factor
+
+    pred_norm = model(normed_input)
 
     h_pred = apply_predicted_normalized_residual(h_ml, pred_norm,)
+
+    # # -- print scales of all h tensors
+    # print("h_ml mean:", h_ml.mean().item())
+    # print("h_ml std:", h_ml.std().item())
+    # print("h_true mean:", h_true.mean().item())
+    # print("h_true std:", h_true.std().item())
+    # print("h_pred mean:", h_pred.mean().item())
+    # print("h_pred std:", h_pred.std().item())
+
+    # # -- print scales of all normalized tensors
+    # print("normed_target mean:", normed_target.mean().item())
+    # print("normed_target std:", normed_target.std().item())
+    # print("pred_norm mean:", pred_norm.mean().item())
+    # print("pred_norm std:", pred_norm.std().item())
 
     loss_res = weighted_normalized_residual_loss(
         pred_norm=pred_norm,
