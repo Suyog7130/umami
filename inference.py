@@ -768,6 +768,7 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         "pe_run_type": pe_run_type,
         "sampler": sampler,
         "num_results": len(results),
+        "pvalues": pvals.pvalues,
         "combined_pvalue": pvals.combined_pvalue,
         "result_dirs": [dirname for dirname in os.listdir(results_dir) if label in dirname and pe_run_type in dirname and sampler in dirname],
         "result_fnames": [fname for dirname in os.listdir(results_dir) if label in dirname and pe_run_type in dirname and sampler in dirname for fname in os.listdir(f"{results_dir}/{dirname}") if fname.endswith('result.json')],
@@ -782,7 +783,6 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
     for i, r in enumerate(results):
         inj = r.injection_parameters
         post = r.posterior
-
         row = {
             "i": i,
             "label": r.label,
