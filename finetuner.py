@@ -818,17 +818,11 @@ def compute_finetuner_loss(
 
     h_ml, _ = split_stage3_input(x)
 
-    h_true = reconstruct_true_from_residual(
-        h_ml,
-        target,
-    )
+    h_true = reconstruct_true_from_residual(h_ml, target)
 
     pred_norm = model(x)
 
-    h_pred = apply_predicted_normalized_residual(
-        h_ml,
-        pred_norm,
-    )
+    h_pred = apply_predicted_normalized_residual(h_ml, pred_norm,)
 
     loss_res = weighted_normalized_residual_loss(
         pred_norm=pred_norm,
