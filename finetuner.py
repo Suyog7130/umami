@@ -455,11 +455,10 @@ class FinetunerDataset(Dataset):
         5: chi2 repeated over time
 
     Target channels:
-        0: normalized residual plus
-        1: normalized residual cross
+        0: residual for plus polarization, `h_true_plus - h_ml_plus`
+        1: residual for cross polarization, `h_true_cross - h_ml_cross`
 
-    Target normalization:
-        r_norm = (h_true - h_ml) / A_ml_max
+    NOTE: Targets saved in the dataset are not normalized!
     """
 
     def __init__(
@@ -525,7 +524,7 @@ class FinetunerDataset(Dataset):
         x, y = self._read_data(idx)
         return {
             "input": x,
-            "target_norm_residual": y,
+            "target_residual": y,
             "index": torch.tensor(idx, dtype=torch.long),
         }
 
@@ -645,6 +644,12 @@ def reconstruct_true_from_normalized_residual(
 ) -> torch.Tensor:
     amax = compute_peak_amplitude(h_ml)
     return h_ml + amax * target_norm_residual
+
+def reconstruct_true_from_residual(
+    h_ml: torch.Tensor,
+    target_residual: torch.Tensor,
+) -> torch.Tensor:
+    return h_ml + target_residual
 
 
 def apply_predicted_normalized_residual(
@@ -808,13 +813,14 @@ def compute_finetuner_loss(
 ) -> Tuple[torch.Tensor, Dict[str, float], Dict[str, torch.Tensor]]:
     
     x = batch["input"].to(device, non_blocking=True)
-    target_norm = batch["target_norm_residual"].to(device, non_blocking=True)
+    target = batch["target_residual"].to(device, non_blocking=True)
+    normed_target = target / (compute_peak_amplitude(x[:, 0:2, :]))
 
     h_ml, _ = split_stage3_input(x)
 
-    h_true = reconstruct_true_from_normalized_residual(
+    h_true = reconstruct_true_from_residual(
         h_ml,
-        target_norm,
+        target,
     )
 
     pred_norm = model(x)
@@ -826,7 +832,7 @@ def compute_finetuner_loss(
 
     loss_res = weighted_normalized_residual_loss(
         pred_norm=pred_norm,
-        target_norm=target_norm,
+        target_norm=normed_target,
         h_ref=h_true,
         w_min=cfg.w_min,
         gamma=cfg.gamma,
@@ -872,7 +878,7 @@ def compute_finetuner_loss(
         "h_ml": h_ml.detach(),
         "h_true": h_true.detach(),
         "h_pred": h_pred.detach(),
-        "target_norm": target_norm.detach(),
+        "target_norm": normed_target.detach(),
         "pred_norm": pred_norm.detach(),
         "mismatch": mismatch.detach(),
     }
@@ -1663,6 +1669,13 @@ def training_main(args: argparse.Namespace) -> None:
         cfg.max_train_samples = 256
         cfg.max_valid_samples = 128
         cfg.device = 'cpu'
+    elif args.demo_training:
+        cfg.num_epochs = 5
+        cfg.batch_size = 64
+        cfg.num_workers = 2
+        cfg.max_train_samples = 10000
+        cfg.max_valid_samples = 512
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     model = ResidualCalibrationCNN(
         input_channels=6,
@@ -1692,7 +1705,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--debug-training', action='store_true',
                         help='Enable debug mode for training, which uses a smaller dataset and fewer epochs for quick testing.')
-
+    parser.add_argument('--demo-training', action='store_true',
+                        help='Enable demo mode for training, which uses a moderate dataset and fewer epochs for demonstration purposes.')
 
     methodargs = parser.add_mutually_exclusive_group(required=True)
     methodargs.add_argument('--save-data', action='store_true',
