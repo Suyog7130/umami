@@ -1229,9 +1229,79 @@ def save_history_csv(history: List[Dict[str, float]], outpath: str,
 # Main training loop
 # ============================================================
 
+
+def overfit_one_batch_residual_only(model, loader, device="cuda", steps=2000):
+    model = model.to(device)
+    model.train()
+
+    batch = next(iter(loader))
+    x = batch["input"].to(device).float()
+    target = batch["target_residual"].to(device).float()
+    # -- normalize target by peak amplitude of the ML waveform
+    target = target / (compute_peak_amplitude(x[:, 0:2, :]))
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.0)
+
+    print("x shape:", x.shape)
+    print("target shape:", target.shape)
+    print("target mean:", target.mean().item())
+    print("target std:", target.std().item())
+    print("target abs mean:", target.abs().mean().item())
+    print("target abs max:", target.abs().max().item())
+
+    with torch.no_grad():
+        pred0 = model(x).float()
+        zero_loss = (target ** 2).mean()
+        init_loss = ((pred0 - target) ** 2).mean()
+        print("zero baseline loss:", zero_loss.item())
+        print("initial model loss:", init_loss.item())
+        print("initial pred abs mean:", pred0.abs().mean().item())
+        print("initial pred abs max:", pred0.abs().max().item())
+
+    for step in range(steps):
+        pred = model(x).float()
+        loss = ((pred - target) ** 2).mean()
+
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+
+        if step in [0, 1, 2, 10]:
+            grad_sum = 0.0
+            max_grad = 0.0
+            for name, p in model.named_parameters():
+                if p.grad is not None:
+                    g = p.grad.detach().abs().mean().item()
+                    gm = p.grad.detach().abs().max().item()
+                    grad_sum += g
+                    max_grad = max(max_grad, gm)
+                    if "output" in name or "out" in name or "proj" in name:
+                        print(f"step {step} | {name} grad mean {g:.3e}, grad max {gm:.3e}")
+            print(f"step {step} | grad_sum {grad_sum:.3e}, max_grad {max_grad:.3e}")
+
+        optimizer.step()
+
+        if step % 100 == 0 or step == steps - 1:
+            with torch.no_grad():
+                pred_abs = pred.abs().mean().item()
+                pred_max = pred.abs().max().item()
+                corr = torch.mean(pred * target) / (
+                    torch.sqrt(torch.mean(pred ** 2) * torch.mean(target ** 2)) + 1e-12
+                )
+
+            print(
+                f"step {step:04d} | "
+                f"loss {loss.item():.6e} | "
+                f"pred_abs {pred_abs:.3e} | "
+                f"pred_max {pred_max:.3e} | "
+                f"corr {corr.item():.3e}"
+            )
+    return model
+
+
 def train_finetuner(
     model: nn.Module,
     cfg: FinetunerConfig,
+    do_demo_train_run: bool = False,
 ) -> nn.Module:
     # -- set random number seed
     torch.manual_seed(cfg.seed)
@@ -1284,6 +1354,19 @@ def train_finetuner(
         drop_last=True,
     )
     logger.info(f"Built training DataLoader with {len(train_loader_builder)} batches")
+
+
+    if do_demo_train_run:
+        logger.info("Running demo training run on 1 batch...")
+        model = overfit_one_batch_residual_only(
+            model=model,
+            loader=train_loader_builder.build(),
+            device=device,
+            steps=2000,
+        )
+        logger.info("Demo training run complete. Exiting.")
+        return model
+
 
     valid_kwargs = dict(
         dataset=valid_dataset,
@@ -1639,6 +1722,8 @@ def train_finetuner(
     return model
 
 
+
+
 def training_main(args: argparse.Namespace) -> None:
 
     cfg = FinetunerConfig(
@@ -1675,21 +1760,6 @@ def training_main(args: argparse.Namespace) -> None:
         max_valid_samples=None,
     )
 
-    if args.debug_training:
-        cfg.num_epochs = 2
-        cfg.batch_size = 32
-        cfg.num_workers = 0
-        cfg.max_train_samples = 256
-        cfg.max_valid_samples = 128
-        cfg.device = 'cpu'
-    elif args.demo_training:
-        cfg.num_epochs = 10
-        cfg.batch_size = 64
-        cfg.num_workers = 2
-        cfg.max_train_samples = 512
-        cfg.max_valid_samples = 64
-        cfg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
     model = ResidualCalibrationCNN(
         input_channels=6,
         output_channels=2,
@@ -1698,6 +1768,26 @@ def training_main(args: argparse.Namespace) -> None:
         kernel_size=7,
         dropout=0.0,
     )
+
+    if args.debug_training:
+        cfg.num_epochs = 2
+        cfg.batch_size = 32
+        cfg.num_workers = 0
+        cfg.max_train_samples = 256
+        cfg.max_valid_samples = 128
+        cfg.device = 'cpu'
+
+    elif args.demo_training:
+        cfg.num_epochs = 10
+        cfg.batch_size = 64
+        cfg.num_workers = 2
+        cfg.max_train_samples = 512
+        cfg.max_valid_samples = 64
+        cfg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        train_finetuner(model, cfg, do_demo_train_run=True)
+        return
+
+
     train_finetuner(model, cfg)
 
 
