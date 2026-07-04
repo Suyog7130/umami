@@ -734,6 +734,12 @@ def analyze_results(fname: str = None,
     logger.info("Saved PP plot, waveform posterior plot, and corner plot for the first injection result.")
 
 
+def chirp_mass(m1, m2):
+    return (m1 * m2)**(3.0 / 5.0) / (m1 + m2)**(1.0 / 5.0)
+
+def chi_eff(m1, m2, chi1, chi2):
+    return (m1 * chi1 + m2 * chi2) / (m1 + m2)
+
 
 def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                   label: str = 'umamipe',
@@ -761,6 +767,7 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         save=True,
     )
     print("Combined p-value:", pvals.combined_pvalue)
+
     # -- Save PP plot metadata to JSON file
     pp_metadata = {
         "results_dir": results_dir,
@@ -810,6 +817,30 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
     print("posterior mass-order violations:", df["post_m1_lt_m2_count"].sum())
     df.to_csv(savename.replace('.png', '_debug.csv'), index=False)
     print(f"Saved debug CSV for PP plot to {savename.replace('.png', '_debug.csv')}")
+
+    # -- Make PP plot for derived parameters: chirp mass and effective spin
+    derived_results = []
+    for r in results:
+        print(r.__dict__)
+        inj = r.injection_parameters
+        post = r.posterior.copy()
+        post["chirp_mass"] = chirp_mass(post["mass_1"], post["mass_2"])
+        post["chi_eff"] = chi_eff(post["mass_1"], post["mass_2"], post["chi_1"], post["chi_2"])
+        derived_results.append(bilby.gw.result.CBCResult(
+            label=r.label,
+            injection_parameters={**inj, "chirp_mass": chirp_mass(inj["mass_1"], inj["mass_2"]),
+                                  "chi_eff": chi_eff(inj["mass_1"], inj["mass_2"], inj["chi_1"], inj["chi_2"])},
+            posterior=post,
+            likelihood=r.likelihood,
+            priors=r.priors,
+        ))
+    savename_derived = os.path.join(outdir, f"{label}_{pe_run_type}_{sampler}_pp-plot_derived_{NOW}.png")
+    fig, pvals = make_pp_plot(
+        derived_results,
+        filename=savename_derived,
+        save=True,
+    )
+    print("Combined p-value for derived parameters:", pvals.combined_pvalue)
 
 
 
