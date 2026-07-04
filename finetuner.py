@@ -760,25 +760,37 @@ def get_loss_coefficients(epoch: int, cfg: FinetunerConfig) -> Dict[str, float]:
     if frac < 0.20:
         return {
             "res": 1.0,
-            "overlap": 0.10,
-            "high": 0.20,
+            "overlap": 0.0,
+            "high": 0.0,
             "smooth": 1e-5,
         }
-    
-    if frac < cfg.hard_start_frac:
+    if frac < 0.50:
         return {
-            "res": 0.50,
-            "overlap": 1.00,
-            "high": 0.50,
-            "smooth": 1e-5,
-        }
-    
-    return {
-        "res": 0.20,
-        "overlap": 1.00,
-        "high": 1.00,
+        "res": 1.0,
+        "overlap": 0.05,
+        "high": 0.0,
         "smooth": 1e-5,
     }
+    if frac < 0.80:
+        return {
+            "res": 0.5,
+            "overlap": 0.5,
+            "high": 0.0,
+            "smooth": 1e-5,
+        }
+    # if frac < cfg.hard_start_frac:
+    return {
+        "res": 0.50,
+        "overlap": 0.50,
+        "high": 0.50,
+        "smooth": 1e-5,
+    }
+    # return {
+    #     "res": 0.20,
+    #     "overlap": 0.05,
+    #     "high": 0.0,
+    #     "smooth": 1e-5,
+    # }
 
 
 def set_lr_for_epoch(
@@ -815,6 +827,13 @@ def compute_finetuner_loss(
     x = batch["input"].to(device, non_blocking=True)
     target = batch["target_residual"].to(device, non_blocking=True)
     normed_target = target / (compute_peak_amplitude(x[:, 0:2, :]))
+
+    # print("target_norm mean:", normed_target.mean().item())
+    # print("target_norm std:", normed_target.std().item())
+    # print("target_norm abs mean:", normed_target.abs().mean().item())
+    # print("target_norm abs max:", normed_target.abs().max().item())
+    # print("target_norm plus abs max:", normed_target[:, 0].abs().max().item())
+    # print("target_norm cross abs max:", normed_target[:, 1].abs().max().item())
 
     h_ml, _ = split_stage3_input(x)
 
@@ -1664,11 +1683,11 @@ def training_main(args: argparse.Namespace) -> None:
         cfg.max_valid_samples = 128
         cfg.device = 'cpu'
     elif args.demo_training:
-        cfg.num_epochs = 5
+        cfg.num_epochs = 10
         cfg.batch_size = 64
         cfg.num_workers = 2
-        cfg.max_train_samples = 10000
-        cfg.max_valid_samples = 512
+        cfg.max_train_samples = 512
+        cfg.max_valid_samples = 64
         cfg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     model = ResidualCalibrationCNN(
