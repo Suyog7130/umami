@@ -421,7 +421,7 @@ class FinetunerConfig:
     checkpoint_every: int = 5
     hard_refresh_every: int = 5
 
-    hard_start_frac: float = 0.70
+    hard_start_frac: float = 0.80
     hard_top_frac: float = 0.15
     hard_sample_weight: float = 8.0
 
@@ -771,27 +771,21 @@ def get_training_loss_coefficients(epoch: int, cfg: FinetunerConfig) -> Dict[str
             "high": 0.0,
             "smooth": 1e-5,
         }
-    if frac < 0.50:
+    elif frac >= cfg.hard_start_frac:
+        return {
+            "res": 1.0,
+            "overlap": 0.5,
+            "high": 0.05,
+            "smooth": 1e-5,
+        }
+    else:
         return {
         "res": 1.0,
         "overlap": 0.05,
         "high": 0.0,
         "smooth": 1e-5,
     }
-    if frac < 0.80:
-        return {
-            "res": 0.5,
-            "overlap": 0.5,
-            "high": 0.0,
-            "smooth": 1e-5,
-        }
     # if frac < cfg.hard_start_frac:
-    return {
-        "res": 0.50,
-        "overlap": 0.50,
-        "high": 0.50,
-        "smooth": 1e-5,
-    }
     # return {
     #     "res": 0.20,
     #     "overlap": 0.05,
@@ -1162,7 +1156,8 @@ def plot_loss_curves(history: List[Dict[str, float]], outpath: str,) -> None:
     plt.close(fig)
 
 
-def plot_running_losses(history: List[Dict[str, float]], outpath: str,) -> None:
+def plot_running_losses(history: List[Dict[str, float]], outpath: str,
+                        fontsize=15, labelsize=12) -> None:
     """
     Plot running loss curves for train and validation.
     These are saved as np.array in the history dict for each epoch, where all keys are appended
@@ -1187,16 +1182,16 @@ def plot_running_losses(history: List[Dict[str, float]], outpath: str,) -> None:
     run_valid_loss = np.concatenate(run_valid_loss)
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(np.arange(len(run_train_loss)), run_train_loss, label="train running loss")
-    ax.plot(np.arange(len(run_valid_loss)), run_valid_loss, label="valid running loss")
+    ax.plot(np.arange(len(run_train_loss)), run_train_loss, label="Train loss")
+    ax.plot(np.arange(len(run_valid_loss)), run_valid_loss, label="Valid loss")
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_title("Running loss curves")
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("Loss")
+    ax.set_xlabel("Steps", fontsize=fontsize)
+    ax.set_ylabel("Loss", fontsize=fontsize)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(outpath, dpi=150)
+    putils.beautifyPlot(ax, fontsize=fontsize, labelsize=labelsize)
+    fig.savefig(outpath, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
@@ -1548,6 +1543,8 @@ def train_finetuner(
             **train_stats_per_batch,
         }
 
+        # -- Validation step
+
         if epoch % cfg.validate_every == 0:
             val_stats_per_epoch, val_stats_per_batch = evaluate_model(
                 model=model,
@@ -1764,7 +1761,7 @@ def training_main(args: argparse.Namespace) -> None:
         plot_every=5,
         checkpoint_every=5,
 
-        hard_start_frac=0.70,
+        hard_start_frac=0.80,
         hard_top_frac=0.15,
         hard_sample_weight=8.0,
 
@@ -1828,6 +1825,27 @@ if __name__ == "__main__":
                         help='Enable debug mode for training, which uses a smaller dataset and fewer epochs for quick testing.')
     parser.add_argument('--demo-training', action='store_true',
                         help='Enable demo mode for training, which uses a moderate dataset and fewer epochs for demonstration purposes.')
+    
+    trainargs = parser.add_argument_group('Training arguments')
+    trainargs.add_argument('-ne', '--epochs', type=int, default=100,
+                        help='Number of training epochs (default: %(default)s)')
+    trainargs.add_argument('-bs', '--batch-size', type=int, default=216,
+                        help='Batch size for training (default: %(default)s)')
+    trainargs.add_argument('-lr', '--learning-rate', type=float, default=3e-3,
+                        help='Starting learning rate for the optimizer (default: %(default)s)')
+    trainargs.add_argument('-wd', '--weight-decay', type=float, default=1e-5,
+                        help='Weight decay (L2 regularization) for the optimizer (default: %(default)s)')
+    trainargs.add_argument('-ua', '--use-amp', action='store_true',
+                        help='Use automatic mixed precision (AMP) for training (default: %(default)s)')
+    trainargs.add_argument('-ad', '--amp-dtype', type=str, 
+                        choices=['float16', 'bfloat16'], default='float16',
+                        help='Data type for AMP (default: %(default)s)')
+    trainargs.add_argument('-hs', '--hard-start-frac', type=float, default=0.80,
+                        help='Fraction of training epochs after which to start hard sample mining (default: %(default)s)')
+    trainargs.add_argument('-ht', '--hard-top-frac', type=float, default=0.15,
+                        help='Fraction of hardest samples to mine during hard sample mining (default: %(default)s)')
+    trainargs.add_argument('-hw', '--hard-sample-weight', type=float, default=8.0,
+                        help='Weight for hard samples during training (default: %(default)s)')
 
     methodargs = parser.add_mutually_exclusive_group(required=True)
     methodargs.add_argument('--save-data', action='store_true',
