@@ -130,6 +130,24 @@ def clear_waveform_cache(generator) -> None:
         except Exception:
             pass
 
+def check_noise_projection_before_injection(ifos, waveform_generator, params):
+    pols = waveform_generator.frequency_domain_strain(params)
+    print("\n========== CHECKING NOISE PROJECTION BEFORE INJECTION ==========")
+    for ifo in ifos:
+        h = ifo.get_detector_response(pols, params)
+        d0 = ifo.frequency_domain_strain.copy()
+
+        mf_before = ifo.matched_filter_snr(signal=h)
+        opt = np.sqrt(ifo.optimal_snr_squared(signal=h))
+
+        print()
+        print("IFO:", ifo.name)
+        print("optimal SNR:", opt)
+        print("matched filter SNR before injection:", mf_before)
+        print("noise projection real:", np.real(mf_before))
+        print("noise projection imag:", np.imag(mf_before))
+    print("===============================================================\n")
+
 
 def make_interferometers(args, injection_parameters, injection_generator):
     ifos = InterferometerList(list(args.ifos))
@@ -146,6 +164,12 @@ def make_interferometers(args, injection_parameters, injection_generator):
             duration=args.duration,
             start_time=start_time,
         )
+
+    check_noise_projection_before_injection(
+        ifos,
+        injection_generator,
+        injection_parameters,
+    )
     ifos.inject_signal(waveform_generator=injection_generator, parameters=injection_parameters)
     return ifos
 
