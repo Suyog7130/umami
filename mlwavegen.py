@@ -76,6 +76,28 @@ def get_cached_mlmodel():
     return (CACHED_MLMODEL['ml_wfmodel'], CACHED_MLMODEL['ml_calmodel'])
 
 
+def _swap_masses_and_spins_if_needed(parameters):
+    """
+    Swap the masses and spins in the parameters dictionary if mass_1 < mass_2.
+    This is to ensure that the ML model receives parameters in the expected mass order,
+    similar to the training data domain.
+    """
+    m1 = parameters.get("mass_1", None)
+    m2 = parameters.get("mass_2", None)
+    chi1z = parameters.get("spin_1z", None)
+    chi2z = parameters.get("spin_2z", None)
+
+    if m1 is None or m2 is None or chi1z is None or chi2z is None:
+        raise ValueError("Missing required mass or spin parameters for swapping.")
+
+    if m1 < m2:
+        logger.debug(f"Swapping masses and spins: mass_1={m1} < mass_2={m2}.")
+        parameters["mass_1"], parameters["mass_2"] = m2, m1
+        parameters["spin_1z"], parameters["spin_2z"] = chi2z, chi1z
+        logger.debug(f"After swapping: mass_1={parameters['mass_1']}, mass_2={parameters['mass_2']}, spin_1z={parameters['spin_1z']}, spin_2z={parameters['spin_2z']}.")
+    return parameters
+
+
 def get_td_SEOBNRv4ml(time_array, **kwargs):
     """
     Generate a waveform using the ML model based on the input parameters.
@@ -104,8 +126,7 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     We assume this list contains either [m1, m2, chi1z, chi2z] or [mass_1, mass_2, spin_1z, spin_2z],
     or ['mass_ratio', 'chirp_mass', 'a_1', 'a_2'] depending on how the parameters are formatted!
     
-    Additionally, the `**kwargs` should contain the `modelpath` and `configpath` for the ML model, 
-    which we will use to load the model and generate the waveform!
+    Additionally, the `**kwargs` should contain the `modelpath` and `configpath` for the ML model, which we will use to load the model and generate the waveform!
     """
     logger.info(f"Received parameters for waveform generation: {kwargs}")
     ml_wfmodel, ml_calmodel = get_cached_mlmodel()
@@ -121,7 +142,10 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
                                    device=None, precision=None)
         set_cached_mlmodel({'ml_wfmodel': ml_wfmodel, 'ml_calmodel': ml_calmodel})
     
-    parameters = {model_param: kwargs[model_param] for model_param in ['mass_1', 'mass_2', 'spin_1z', 'spin_2z']}
+    parameters = {model_param: kwargs[model_param] 
+                  for model_param in ['mass_1', 'mass_2', 'spin_1z', 'spin_2z']}
+    parameters = _swap_masses_and_spins_if_needed(parameters)
+    
     labels = [parameters[key] for key in sorted(parameters.keys())]
     labels = torch.tensor(labels, dtype=torch.float32).unsqueeze(0)  # shape: (1, 4, 1)
     logger.debug(f"Converted parameters to tensor labels for ML model: {labels}")
@@ -240,6 +264,9 @@ class MLWaveformGenerator(WaveformGenerator):
     Further only the 22 mode is generated to things simple for now!
     We will use the `generate()` method of the ML model to produce the waveform, 
     and then return it in the format expected by Bilby.
+
+    NOTE: If the analysis prior doesn't have a mass ratio constraint, then the ML model may generate unphysical waveforms for cases outside the training scope. So, we make it so
+    that the mass parameters and the spins are swapped for cases where m1<m2!
     """
     def __init__(self, **kwargs):
         time_domain_source_model = kwargs.get('time_domain_source_model', None)
