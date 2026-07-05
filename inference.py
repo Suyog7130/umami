@@ -795,11 +795,15 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                   label: str = 'umamipe',
                   pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
                   sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',
-                  outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/'):
+                  outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
+                  save_to_outdir: bool = False):
     """
     Make PP plots for a list of Bilby CBCResult objects.
     """
-    outdir = os.path.join(outdir, f'pp_plots_{NOW}/')
+    if save_to_outdir:
+        outdir = os.path.join(outdir, f'pp_plots_{NOW}/')
+    else:
+        outdir = os.path.join(results_dir, f'pp_plots_{NOW}/')
     ensure_dir(outdir)
     results = []
     for dirname in os.listdir(results_dir):
