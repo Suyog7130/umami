@@ -491,11 +491,7 @@ def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, l
     print_dict("WAVEFORM GENERATOR AND INTERFEROMETER COMPATIBILITY", debug["wf_interferometer_compatibility"])
 
     print("CHECK IMMEDIATELY AFTER INJECTION")
-    diagnose_data_template_alignment(
-        ifos,
-        recovery_generator,
-        injection_parameters,
-    )
+    diagnose_data_template_alignment_bilby(ifos, injection_generator, injection_parameters)
 
     # -- convert any non-JSON-serializable objects to JSON-serializable forms and save debug report
     for key, value in debug.items():
@@ -737,49 +733,69 @@ def check_detector_residual_at_truth(ifos, waveform_generator, injection_paramet
         print(row)
     return rows
 
+def nwip(a, b, psd, duration):
+    """
+    Bilby-style noise-weighted inner product.
 
-def inner_product(a, b, psd, df, mask=None):
-    if mask is not None:
-        a = a[mask]
-        b = b[mask]
-        psd = psd[mask]
-
-    good = np.isfinite(psd) & (psd > 0)
-    a = a[good]
-    b = b[good]
-    psd = psd[good]
-
-    return 4.0 * np.real(np.sum(a * np.conjugate(b) / psd)) * df
+    Uses the same normalization convention as bilby.gw.utils.noise_weighted_inner_product.
+    """
+    val = bilby.gw.utils.noise_weighted_inner_product(
+        aa=a,
+        bb=b,
+        power_spectral_density=psd,
+        duration=duration,
+    )
+    return float(np.real(val))
 
 
-def diagnose_data_template_alignment(ifos, waveform_generator, params):
-    waveform_pols = waveform_generator.frequency_domain_strain(params)
+def diagnose_data_template_alignment_bilby(ifos, waveform_generator, parameters):
     print("\n========== DATA-TEMPLATE ALIGNMENT DIAGNOSTICS ==========")
+
+    waveform_pols = waveform_generator.frequency_domain_strain(parameters)
+
     for ifo in ifos:
-        h = ifo.get_detector_response(waveform_pols, params)
-        d = ifo.frequency_domain_strain
+        h_full = ifo.get_detector_response(waveform_pols, parameters)
+        d_full = ifo.frequency_domain_strain
 
-        psd = ifo.power_spectral_density_array
-        df = ifo.frequency_array[1] - ifo.frequency_array[0]
-        mask = getattr(ifo, "frequency_mask", None)
+        mask = ifo.frequency_mask
 
-        hh = inner_product(h, h, psd, df, mask)
-        dd = inner_product(d, d, psd, df, mask)
-        dh = inner_product(d, h, psd, df, mask)
-        rr = inner_product(d - h, d - h, psd, df, mask)
+        h = h_full[mask]
+        d = d_full[mask]
+        psd = ifo.power_spectral_density_array[mask]
+        duration = ifo.strain_data.duration
 
-        rho_template = dh / np.sqrt(hh)
-        overlap = dh / np.sqrt(dd * hh)
+        r = d - h
 
-        print("\nIFO:", ifo.name)
+        hh = nwip(h, h, psd, duration)
+        dd = nwip(d, d, psd, duration)
+        dh = nwip(d, h, psd, duration)
+        rr = nwip(r, r, psd, duration)
+
+        rr_from_identity = dd + hh - 2.0 * dh
+        dh_from_identity = 0.5 * (dd + hh - rr)
+
+        signal_snr = np.sqrt(max(hh, 0.0))
+        data_norm = np.sqrt(max(dd, 0.0))
+        residual_snr = np.sqrt(max(rr, 0.0))
+
+        matched_rho = dh / np.sqrt(max(hh, 1e-300))
+        normalized_overlap = dh / np.sqrt(max(dd * hh, 1e-300))
+        amplitude_factor = dh / max(hh, 1e-300)
+
+        print(f"\nIFO: {ifo.name}")
         print("<h,h>:", hh)
         print("<d,d>:", dd)
         print("<d,h>:", dh)
         print("<d-h,d-h>:", rr)
-        print("signal_snr sqrt<h,h>:", np.sqrt(hh))
-        print("matched rho <d,h>/sqrt<h,h>:", rho_template)
-        print("normalized data-template overlap:", overlap)
-        print("residual_snr:", np.sqrt(rr))
+        print("identity residual dd + hh - 2dh:", rr_from_identity)
+        print("identity dh from dd,hh,rr:", dh_from_identity)
+        print("identity error rr - identity:", rr - rr_from_identity)
+        print("signal_snr sqrt<h,h>:", signal_snr)
+        print("data_norm sqrt<d,d>:", data_norm)
+        print("residual_snr sqrt<d-h,d-h>:", residual_snr)
+        print("matched rho <d,h>/sqrt<h,h>:", matched_rho)
+        print("normalized data-template overlap:", normalized_overlap)
+        print("best-fit amplitude factor alpha=(d|h)/(h|h):", amplitude_factor)
     print("=========================================================\n")
 
 
@@ -809,10 +825,10 @@ def run_post_sampler_debug(args, wfgenerator):
         result.injection_parameters,
     )
     truth = dict(result.injection_parameters)
-    diagnose_data_template_alignment(
+    diagnose_data_template_alignment_bilby(
         likelihood.interferometers,
         likelihood.waveform_generator,
-        truth,
+        result.injection_parameters
     )
 
 
