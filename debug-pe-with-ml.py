@@ -373,6 +373,12 @@ def compare_inj_recover_at_same_params(args, injection_generator, recovery_gener
         if not args.no_save:
             plt.savefig(waveform_plot_file, bbox_inches="tight", dpi=300)
             print(f"Saved injection vs recovery waveform plot: {waveform_plot_file}")
+            # -- save another plot with log-scaling
+            for i in range(2):
+                ax[i].set_yscale("log")
+            waveform_plot_file_log = os.path.join(args.outdir, f"{args.label}_injection_vs_recovery_waveforms_log.png")
+            plt.savefig(waveform_plot_file_log, bbox_inches="tight", dpi=300)
+            print(f"Saved injection vs recovery waveform plot (log scale): {waveform_plot_file_log}")
         if not args.no_show:
             plt.show()
         plt.close()
