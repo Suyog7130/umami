@@ -842,6 +842,109 @@ def make_ordered_result(result):
     r.injection_parameters = order_injection_parameters(r.injection_parameters)
     return r
 
+
+
+def swap_dataframe_component_labels(df):
+    out = df.copy()
+
+    pairs = [
+        ("mass_1", "mass_2"),
+        ("chi_1", "chi_2"),
+        ("spin_1z", "spin_2z"),
+        ("a_1", "a_2"),
+        ("tilt_1", "tilt_2"),
+    ]
+
+    for a, b in pairs:
+        if a in out.columns and b in out.columns:
+            tmp = out[a].copy()
+            out[a] = out[b].copy()
+            out[b] = tmp
+
+    if "mass_1" in out.columns and "mass_2" in out.columns:
+        out["mass_ratio"] = out["mass_2"] / out["mass_1"]
+        out["chirp_mass"] = chirp_mass(out["mass_1"], out["mass_2"])
+
+    if all(k in out.columns for k in ["mass_1", "mass_2", "chi_1", "chi_2"]):
+        out["chi_eff"] = chi_eff(
+            out["mass_1"],
+            out["mass_2"],
+            out["chi_1"],
+            out["chi_2"],
+        )
+    return out
+
+
+def swap_dict_component_labels(d):
+    out = dict(d)
+
+    pairs = [
+        ("mass_1", "mass_2"),
+        ("chi_1", "chi_2"),
+        ("spin_1z", "spin_2z"),
+        ("a_1", "a_2"),
+        ("tilt_1", "tilt_2"),
+    ]
+
+    for a, b in pairs:
+        if a in out and b in out:
+            out[a], out[b] = out[b], out[a]
+
+    if "mass_1" in out and "mass_2" in out:
+        out["mass_ratio"] = out["mass_2"] / out["mass_1"]
+        out["chirp_mass"] = float(chirp_mass(out["mass_1"], out["mass_2"]))
+
+    if all(k in out for k in ["mass_1", "mass_2", "chi_1", "chi_2"]):
+        out["chi_eff"] = float(
+            chi_eff(out["mass_1"], out["mass_2"], out["chi_1"], out["chi_2"])
+        )
+    return out
+
+
+def make_swapped_label_result(result, swap_injection=False, swap_nested_samples=True):
+    """
+    Return a copied Bilby result with component labels swapped.
+
+    Default behavior:
+        posterior mass_1 <-> mass_2
+        posterior chi_1  <-> chi_2
+        injection parameters unchanged
+
+    This is the correct diagnostic if the recovered posterior labels are suspected
+    to be swapped relative to the physical injection labels.
+
+    Set swap_injection=True only if the stored injection labels themselves are
+    known to be swapped incorrectly.
+    """
+    r = copy.deepcopy(result)
+
+    r.posterior = swap_dataframe_component_labels(r.posterior)
+
+    if swap_nested_samples and hasattr(r, "nested_samples"):
+        if r.nested_samples is not None:
+            r.nested_samples = swap_dataframe_component_labels(r.nested_samples)
+
+    if swap_injection:
+        r.injection_parameters = swap_dict_component_labels(r.injection_parameters)
+    else:
+        r.injection_parameters = dict(r.injection_parameters)
+    return r
+
+
+def print_quantile_summary(results, keys=("mass_1", "mass_2", "chi_1", "chi_2")):
+    rows = []
+    for i, r in enumerate(results):
+        row = {"i": i}
+        for key in keys:
+            if key in r.posterior.columns and key in r.injection_parameters:
+                row[f"q_{key}"] = np.mean(
+                    r.posterior[key].to_numpy() < r.injection_parameters[key]
+                )
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    print(df.describe())
+    return df
+
 def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                   label: str = 'umamipe',
                   pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
@@ -907,6 +1010,30 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         save=True,
     )
     logger.info(f"Saved ordered-parameter PP plot for {len(ordered_results)} results to {savename_ordered}")
+
+    # -- Do Posterior label swapping, for a check
+    swapped_results = [
+        make_swapped_label_result(r, swap_injection=False)
+        for r in results
+    ]
+
+    print("Quantiles after posterior-only label swap:")
+    df_swapped = print_quantile_summary(
+        swapped_results,
+        keys=("mass_1", "mass_2", "chi_1", "chi_2"),
+    )
+
+    savename_swapped = os.path.join(
+        outdir,
+        f"{label}_{pe_run_type}_{sampler}_pp-plot_swapped_labels_{NOW}.png",
+    )
+    fig, pvals = make_pp_plot(
+        swapped_results,
+        keys=["mass_1", "mass_2", "chi_1", "chi_2"],
+        filename=savename_swapped,
+        save=True,
+    )
+    logger.info(f"Saved swapped-label PP plot for {len(swapped_results)} results to {savename_swapped}")
 
     # -- Debug PP plot and results
     rows = []
