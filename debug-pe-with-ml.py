@@ -417,6 +417,7 @@ def check_sampled_params_follow_constraints(priors, n_samples=100, constraints=(
             continue
         prior_constraint = priors[constraint]
         if not isinstance(prior_constraint, bilby.gw.prior.Constraint):
+            print(f"Warning: prior for {constraint} is not a Constraint, skipping check.")
             continue
         min_val = prior_constraint.minimum
         max_val = prior_constraint.maximum
@@ -433,8 +434,28 @@ def check_sampled_params_follow_constraints(priors, n_samples=100, constraints=(
     print("====================================================================\n")
 
 
-def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, likelihood, priors, injection_parameters):
-    debug = {"run_config": vars(args), "injection_parameters": injection_parameters, "priors": {k: str(v) for k, v in priors.items()}}
+def check_sampled_params_within_priors(priors, n_samples=100):
+    print("\n========== CHECKING SAMPLED PARAMETERS WITHIN PRIORS ==========")
+    print(f"Checking {n_samples} random samples from priors {list(priors.keys())}")
+    samples = priors.sample(n_samples)
+    for key, prior in priors.items():
+        if isinstance(prior, bilby.gw.prior.Constraint):
+            continue  # skip constraints
+        min_val = prior.minimum
+        max_val = prior.maximum
+        vals = samples[key]
+        for i, val in enumerate(vals):
+            if not (min_val <= val <= max_val):
+                print(f"[BAD] Sample {i}: {key}={val:.3f} violates prior range [{min_val}, {max_val}]!")
+            else:
+                print(f"[GOOD] Sample {i}: {key}={val:.3f} is within prior range [{min_val}, {max_val}].")
+    print("===============================================================\n")
+
+
+def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, likelihood,
+                           priors, injection_parameters):
+    debug = {"run_config": vars(args), "injection_parameters": injection_parameters, 
+             "priors": {k: str(v) for k, v in priors.items()}}
     print_dict("INJECTION PARAMETERS", injection_parameters)
     print_dict("PRIORS", {k: str(v) for k, v in priors.items()})
     debug["injection_generator_summary"] = waveform_debug_summary(injection_generator, injection_parameters, "injection_generator")
@@ -458,7 +479,13 @@ def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, l
                                                           n_points=args.n_debug_random)
     debug["likelihood"] = debug_likelihood(likelihood, priors, injection_parameters, n_random=args.n_debug_random)
     compare_inj_recover_at_same_params(args, injection_generator, recovery_generator, injection_parameters)
-    check_sampled_params_follow_constraints(priors, n_samples=args.n_debug_random, constraints=("mass_ratio",))
+
+    if args.without_mass_ratio_constraint:
+        check_sampled_params_within_priors(priors, n_samples=args.n_debug_random)
+    else:
+        check_sampled_params_follow_constraints(priors, 
+                    n_samples=args.n_debug_random, constraints=("mass_ratio",))
+
     debug["wf_interferometer_compatibility"] = check_wf_interferometer_compatibility(injection_generator, recovery_generator, ifos)
     print_dict("WAVEFORM GENERATOR AND INTERFEROMETER COMPATIBILITY", debug["wf_interferometer_compatibility"])
     # -- convert any non-JSON-serializable objects to JSON-serializable forms and save debug report
@@ -559,6 +586,175 @@ def make_plots(args, result):
             print(f"Waveform posterior plot failed: {exc}")
 
 
+def print_likelihood_setup(likelihood):
+    wg = likelihood.waveform_generator
+
+    print("waveform generator duration:", getattr(wg, "duration", None))
+    print("waveform generator sampling_frequency:", getattr(wg, "sampling_frequency", None))
+    print("waveform generator start_time:", getattr(wg, "start_time", None))
+    print("waveform generator frequency_array[0:5]:", wg.frequency_array[:5])
+    print("waveform generator frequency_array[-5:]:", wg.frequency_array[-5:])
+
+    for ifo in likelihood.interferometers:
+        print()
+        print("IFO:", ifo.name)
+        print("ifo start_time:", ifo.strain_data.start_time)
+        print("ifo duration:", ifo.strain_data.duration)
+        print("ifo sampling_frequency:", ifo.strain_data.sampling_frequency)
+        print("ifo frequency_resolution:", ifo.strain_data.frequency_resolution)
+        print("ifo min/max frequency:", ifo.frequency_array[0], ifo.frequency_array[-1])
+        print("ifo strain shape:", ifo.frequency_domain_strain.shape)
+        print("ifo PSD shape:", ifo.power_spectral_density_array.shape)
+
+
+
+def inner_product_frequency_domain(a, b, psd, df, mask=None):
+    if mask is not None:
+        a = a[mask]
+        b = b[mask]
+        psd = psd[mask]
+
+    good = np.isfinite(psd) & (psd > 0)
+    a = a[good]
+    b = b[good]
+    psd = psd[good]
+    return 4.0 * np.real(np.sum(a * np.conjugate(b) / psd)) * df
+
+
+DERIVED_KEYS = {
+    "mass_ratio",
+    "chirp_mass",
+    "total_mass",
+    "symmetric_mass_ratio",
+    "chi_eff",
+    "mass_triangle_u",
+    "mass_triangle_v",
+}
+
+
+def clean_params_for_likelihood(params):
+    p = dict(params)
+
+    for key in DERIVED_KEYS:
+        p.pop(key, None)
+
+    return p
+
+
+def evaluate_likelihood(likelihood, params):
+    """
+    Robust evaluator for Bilby-style likelihoods.
+
+    Works for likelihoods where parameters are assigned through
+    likelihood.parameters before calling log_likelihood().
+    """
+    p = clean_params_for_likelihood(params)
+
+    old_params = getattr(likelihood, "parameters", {}).copy()
+
+    try:
+        likelihood.parameters.update(p)
+        return likelihood.log_likelihood()
+    finally:
+        likelihood.parameters = old_params
+
+
+def compare_truth_and_posterior_mode(result, likelihood):
+    posterior = result.posterior.copy()
+    truth = clean_params_for_likelihood(result.injection_parameters)
+
+    if "log_likelihood" in posterior.columns:
+        idx = posterior["log_likelihood"].idxmax()
+    elif "log_likelihood_evaluated" in posterior.columns:
+        idx = posterior["log_likelihood_evaluated"].idxmax()
+    else:
+        raise ValueError("No log_likelihood column found in posterior.")
+
+    mode = clean_params_for_likelihood(posterior.loc[idx].to_dict())
+
+    ll_truth = evaluate_likelihood(likelihood, truth)
+    ll_mode = evaluate_likelihood(likelihood, mode)
+
+    print("truth:")
+    print({k: truth[k] for k in ["mass_1", "mass_2", "chi_1", "chi_2"] if k in truth})
+
+    print("posterior mode:")
+    print({k: mode[k] for k in ["mass_1", "mass_2", "chi_1", "chi_2"] if k in mode})
+
+    print("logL truth:", ll_truth)
+    print("logL posterior mode:", ll_mode)
+    print("truth - mode:", ll_truth - ll_mode)
+
+    return {
+        "ll_truth": ll_truth,
+        "ll_mode": ll_mode,
+        "delta": ll_truth - ll_mode,
+        "truth": truth,
+        "mode": mode,
+    }
+
+def check_detector_residual_at_truth(ifos, waveform_generator, injection_parameters):
+    params = clean_params_for_likelihood(injection_parameters)
+
+    waveform_polarizations = waveform_generator.frequency_domain_strain(params)
+    rows = []
+    for ifo in ifos:
+        response = ifo.get_detector_response(waveform_polarizations, params)
+
+        data = ifo.frequency_domain_strain
+        residual = data - response
+
+        psd = ifo.power_spectral_density_array
+        df = ifo.strain_data.frequency_resolution
+
+        mask = getattr(ifo, "frequency_mask", None)
+
+        rr = inner_product_frequency_domain(residual, residual, psd, df, mask)
+        hh = inner_product_frequency_domain(response, response, psd, df, mask)
+        dd = inner_product_frequency_domain(data, data, psd, df, mask)
+
+        rows.append(
+            {
+                "ifo": ifo.name,
+                "residual_snr": np.sqrt(max(rr, 0.0)),
+                "signal_snr": np.sqrt(max(hh, 0.0)),
+                "data_norm": np.sqrt(max(dd, 0.0)),
+                "residual_over_signal": np.sqrt(max(rr, 0.0)) / np.sqrt(max(hh, 1e-300)),
+            }
+        )
+    for row in rows:
+        print(row)
+    return rows
+
+
+
+
+def read_ifos_from_file(fname: str, outdir: str = f'../v0p1/results/'):
+    if not fname.endswith('.pkl'):
+        fname += '.pkl'
+    ifos = bilby.gw.detector.InterferometerList.from_pickle(f"{outdir}/{fname}")
+    print(f"Loaded interferometers from {outdir}/{fname} for analysis...")
+    return ifos
+
+
+def run_post_sampler_debug(args, wfgenerator):
+    fname = args.fname
+    fname = fname.replace('_result.json', '_ifos.pkl')
+
+    ifos = read_ifos_from_file(f"{args.label}_ifos", outdir=args.outdir)
+    likelihood = make_likelihood(ifos, wfgenerator)
+
+    result = bilby.result.read_in_result(os.path.join(args.outdir, args.fname))
+
+    print_likelihood_setup(likelihood)
+    diagnostic = compare_truth_and_posterior_mode(result, likelihood)
+    residual_rows = check_detector_residual_at_truth(
+        likelihood.interferometers,
+        likelihood.waveform_generator,
+        result.injection_parameters,
+    )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="4D ML waveform Bilby PE debug script: ML injection -> ML recovery.")
     parser.add_argument("--model-path", required=True, help="Path to the ML waveform model file.")
@@ -597,8 +793,12 @@ def parse_args():
     parser.add_argument("--precision", default="float32", choices=["float32", "float64"])
     parser.add_argument("--torch-threads", type=int, default=1)
     parser.add_argument("--scale-amplitude", action="store_true", help="Whether to apply an overall amplitude scaling to the ML waveforms. This can be useful for debugging when the ML model was trained on whitened waveforms or waveforms with a different distance convention.")
+
     parser.add_argument("--debug-only", action="store_true")
+    parser.add_argument("--debug-post-sampler", action="store_true")
     parser.add_argument("--plot-only", action="store_true")
+    parser.add_argument("--without-mass-ratio-constraint", action="store_true")
+
     parser.add_argument("--strict-debug", action="store_true")
     parser.add_argument("--n-debug-random", type=int, default=8)
     parser.add_argument("--check-determinism", action="store_true")
@@ -660,7 +860,9 @@ def main():
         make_plots(args, result)
         return
 
-    priors = make_analysis_priors(injection_parameters=base_injection)
+    priors = make_analysis_priors(injection_parameters=base_injection,
+                        with_mass_ratio_constraint=not args.without_mass_ratio_constraint)
+    
     injection_parameters = sample_injection_from_priors(
         base_injection=base_injection, active_priors=priors
     )
@@ -679,6 +881,10 @@ def main():
     else:
         injection_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
         recovery_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
+
+    if args.debug_post_sampler:
+        run_post_sampler_debug(args, recovery_generator)
+        return
 
     ifos = make_interferometers(args, injection_parameters, injection_generator)
     likelihood = make_likelihood(ifos, recovery_generator)
