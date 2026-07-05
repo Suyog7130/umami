@@ -5,6 +5,7 @@ using Bilby, and obtain a Probability-Probability plot.
 """
 
 import os
+import copy
 import json
 import time
 import argparse
@@ -791,6 +792,56 @@ def add_derived_parameters_to_result(result):
     return r
 
 
+def order_component_samples(df):
+    """
+    Convert posterior samples to ordered primary-secondary convention.
+
+    If mass_2 > mass_1 for a sample, swap:
+        mass_1 <-> mass_2
+        chi_1  <-> chi_2
+
+    This preserves the physical component pairing.
+    """
+    out = df.copy()
+    swap = out["mass_2"].to_numpy() > out["mass_1"].to_numpy()
+
+    m1 = out["mass_1"].to_numpy().copy()
+    m2 = out["mass_2"].to_numpy().copy()
+    out.loc[swap, "mass_1"] = m2[swap]
+    out.loc[swap, "mass_2"] = m1[swap]
+
+    if "chi_1" in out.columns and "chi_2" in out.columns:
+        chi1 = out["chi_1"].to_numpy().copy()
+        chi2 = out["chi_2"].to_numpy().copy()
+        out.loc[swap, "chi_1"] = chi2[swap]
+        out.loc[swap, "chi_2"] = chi1[swap]
+    return out
+
+
+def order_injection_parameters(inj):
+    """
+    Convert injection dictionary to ordered primary-secondary convention.
+    """
+    p = dict(inj)
+
+    if p["mass_2"] > p["mass_1"]:
+        p["mass_1"], p["mass_2"] = p["mass_2"], p["mass_1"]
+
+        if "chi_1" in p and "chi_2" in p:
+            p["chi_1"], p["chi_2"] = p["chi_2"], p["chi_1"]
+    return p
+
+
+def make_ordered_result(result):
+    """
+    Return a copied Bilby result with ordered posterior samples and ordered
+    injection parameters.
+    """
+    r = copy.deepcopy(result)
+    r.posterior = order_component_samples(r.posterior)
+    r.injection_parameters = order_injection_parameters(r.injection_parameters)
+    return r
+
 def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                   label: str = 'umamipe',
                   pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
@@ -838,6 +889,24 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
     with open(savename.replace('.png', '.json'), 'w') as f:
         json.dump(pp_metadata, f, indent=4)
     logger.info(f"Saved PP plot for {len(results)} results to {savename}")
+
+    # -- Make ordered parameter PP plot
+    ordered_results = [
+        make_ordered_result(r)
+        for r in results
+    ]
+
+    savename_ordered = os.path.join(
+        outdir, 
+        f"{label}_{pe_run_type}_{sampler}_pp-plot_ordered_{NOW}.png"
+        )
+    fig, pvals = make_pp_plot(
+        ordered_results,
+        keys=["mass_1", "mass_2", "chi_1", "chi_2"],
+        filename=savename_ordered,
+        save=True,
+    )
+    logger.info(f"Saved ordered-parameter PP plot for {len(ordered_results)} results to {savename_ordered}")
 
     # -- Debug PP plot and results
     rows = []
