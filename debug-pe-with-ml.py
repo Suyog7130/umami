@@ -149,6 +149,61 @@ def check_noise_projection_before_injection(ifos, waveform_generator, params):
     print("===============================================================\n")
 
 
+def copy_pols(pols):
+    return {k: np.array(v, copy=True) for k, v in pols.items()}
+
+
+def get_fresh_detector_response(ifo, waveform_generator, params):
+    pols = copy_pols(waveform_generator.frequency_domain_strain(dict(params)))
+    return np.array(ifo.get_detector_response(pols, dict(params)), copy=True)
+
+
+def direct_array_check_after_bilby_injection(ifos, waveform_generator, params):
+    print("\n========== DIRECT ARRAY CHECK AFTER BILBY INJECTION ==========")
+
+    before = {}
+    expected_h = {}
+
+    for ifo in ifos:
+        before[ifo.name] = np.array(ifo.frequency_domain_strain, copy=True)
+        expected_h[ifo.name] = get_fresh_detector_response(
+            ifo, waveform_generator, params
+        )
+
+        print(f"\nBefore injection: {ifo.name}")
+        print("  max abs data before:", np.max(np.abs(before[ifo.name])))
+        print("  max abs expected h:", np.max(np.abs(expected_h[ifo.name])))
+
+    ifos.inject_signal(
+        waveform_generator=waveform_generator,
+        parameters=dict(params),
+    )
+
+    for ifo in ifos:
+        after = np.array(ifo.frequency_domain_strain, copy=True)
+        d0 = before[ifo.name]
+        h = expected_h[ifo.name]
+
+        delta = after - d0
+        err = delta - h
+
+        full_rel_err = np.max(np.abs(err)) / max(np.max(np.abs(h)), 1e-300)
+
+        mask = ifo.frequency_mask
+        masked_rel_err = np.max(np.abs(err[mask])) / max(np.max(np.abs(h[mask])), 1e-300)
+
+        print(f"\nAfter injection: {ifo.name}")
+        print("  max abs after:", np.max(np.abs(after)))
+        print("  max abs delta:", np.max(np.abs(delta)))
+        print("  max abs h:", np.max(np.abs(h)))
+        print("  max abs(delta - h):", np.max(np.abs(err)))
+        print("  full relative injection error:", full_rel_err)
+        print("  masked relative injection error:", masked_rel_err)
+        print("  allclose full:", np.allclose(delta, h, rtol=1e-6, atol=1e-35))
+        print("  allclose masked:", np.allclose(delta[mask], h[mask], rtol=1e-6, atol=1e-35))
+    print("=============================================================\n")
+
+
 def make_interferometers(args, injection_parameters, injection_generator):
     ifos = InterferometerList(list(args.ifos))
     start_time = injection_parameters["geocent_time"] - args.duration / 2.0
@@ -170,6 +225,8 @@ def make_interferometers(args, injection_parameters, injection_generator):
         injection_generator,
         injection_parameters,
     )
+    # direct_array_check_after_bilby_injection(ifos, injection_generator, injection_parameters)
+
     ifos.inject_signal(waveform_generator=injection_generator, parameters=injection_parameters)
     return ifos
 
