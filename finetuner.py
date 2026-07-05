@@ -1750,20 +1750,9 @@ def training_main(args: argparse.Namespace) -> None:
         input_names = ['ml_hp', 'ml_hc'],
         target_names = ['target_hp_residual', 'target_hc_residual'],
 
-        num_epochs=100,
-        batch_size=216,
-        num_workers=4,
-
-        lr=3e-3,
-        weight_decay=1e-5,
-
         validate_every=1,
         plot_every=5,
         checkpoint_every=5,
-
-        hard_start_frac=0.80,
-        hard_top_frac=0.15,
-        hard_sample_weight=8.0,
 
         w_min=0.05,
         gamma=1.0,
@@ -1771,10 +1760,12 @@ def training_main(args: argparse.Namespace) -> None:
 
         use_amp=True,
         amp_dtype="float16",
-
-        max_train_samples=None,
-        max_valid_samples=None,
     )
+
+    # -- Override config with command-line arguments
+    for key in vars(args):
+        if hasattr(cfg, key):
+            setattr(cfg, key, getattr(args, key))
 
     model = ResidualCalibrationCNN(
         input_channels=6,
@@ -1803,6 +1794,7 @@ def training_main(args: argparse.Namespace) -> None:
         train_finetuner(model, cfg, do_demo_train_run=True)
         return
 
+    logger.info(f"Starting fine tuner training with config: {cfg}")
     train_finetuner(model, cfg)
 
 
@@ -1827,7 +1819,7 @@ if __name__ == "__main__":
                         help='Enable demo mode for training, which uses a moderate dataset and fewer epochs for demonstration purposes.')
     
     trainargs = parser.add_argument_group('Training arguments')
-    trainargs.add_argument('-ne', '--epochs', type=int, default=100,
+    trainargs.add_argument('-ne', '--num-epochs', type=int, default=100,
                         help='Number of training epochs (default: %(default)s)')
     trainargs.add_argument('-bs', '--batch-size', type=int, default=216,
                         help='Batch size for training (default: %(default)s)')

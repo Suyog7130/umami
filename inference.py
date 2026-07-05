@@ -501,6 +501,7 @@ def make_wf_generator(type: {'eob', 'ml'},
             # NOTE: The `lal_binary_black_hole` source model works basically FrequencyDomain approximants!
             frequency_domain_source_model=wf_source_model,
             parameter_conversion=parameter_converter,
+            start_time=START_TIME,
             waveform_arguments=dict(
                 waveform_approximant="SEOBNRv4",      #"IMRPhenomPv2",
                 reference_frequency=FREF,
@@ -509,7 +510,7 @@ def make_wf_generator(type: {'eob', 'ml'},
                 catch_waveform_errors=True,
             )
         )
-        wfgen.start_time = START_TIME
+        assert wfgen.start_time == START_TIME, f"Waveform generator start time {wfgen.start_time} does not match expected {START_TIME}"
         return wfgen
     elif type=='ml':
         if 'distance_scale_factor' not in wfkwargs:
@@ -520,10 +521,10 @@ def make_wf_generator(type: {'eob', 'ml'},
             sampling_frequency=SAMPLE_RATE,
             time_domain_source_model=None,   # We will load ML model at initialization!
             parameter_conversion=convert_to_ml_parameters,
+            start_time=START_TIME,
             waveform_arguments=wfkwargs,
         )
-        # -- Set wfgenerator start time!
-        wfgen.start_time = START_TIME
+        assert wfgen.start_time == START_TIME, f"Waveform generator start time {wfgen.start_time} does not match expected {START_TIME}"
         return wfgen
     logger.error(f"Invalid waveform generator type: {type}. Must be 'eob' or 'ml'.")
 
