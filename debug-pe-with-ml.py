@@ -452,6 +452,7 @@ def check_sampled_params_within_priors(priors, n_samples=100):
     print("===============================================================\n")
 
 
+
 def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, likelihood,
                            priors, injection_parameters):
     debug = {"run_config": vars(args), "injection_parameters": injection_parameters, 
@@ -488,6 +489,14 @@ def run_pre_sampler_debug(args, injection_generator, recovery_generator, ifos, l
 
     debug["wf_interferometer_compatibility"] = check_wf_interferometer_compatibility(injection_generator, recovery_generator, ifos)
     print_dict("WAVEFORM GENERATOR AND INTERFEROMETER COMPATIBILITY", debug["wf_interferometer_compatibility"])
+
+    print("CHECK IMMEDIATELY AFTER INJECTION")
+    diagnose_data_template_alignment(
+        ifos,
+        recovery_generator,
+        injection_parameters,
+    )
+
     # -- convert any non-JSON-serializable objects to JSON-serializable forms and save debug report
     for key, value in debug.items():
         debug[key] = to_jsonable(value)
@@ -588,7 +597,7 @@ def make_plots(args, result):
 
 def print_likelihood_setup(likelihood):
     wg = likelihood.waveform_generator
-
+    print("\n========== LIKELIHOOD SETUP ==========")
     print("waveform generator duration:", getattr(wg, "duration", None))
     print("waveform generator sampling_frequency:", getattr(wg, "sampling_frequency", None))
     print("waveform generator start_time:", getattr(wg, "start_time", None))
@@ -601,10 +610,10 @@ def print_likelihood_setup(likelihood):
         print("ifo start_time:", ifo.strain_data.start_time)
         print("ifo duration:", ifo.strain_data.duration)
         print("ifo sampling_frequency:", ifo.strain_data.sampling_frequency)
-        print("ifo frequency_resolution:", ifo.strain_data.frequency_resolution)
         print("ifo min/max frequency:", ifo.frequency_array[0], ifo.frequency_array[-1])
         print("ifo strain shape:", ifo.frequency_domain_strain.shape)
         print("ifo PSD shape:", ifo.power_spectral_density_array.shape)
+    print("======================================\n")
 
 
 
@@ -705,7 +714,9 @@ def check_detector_residual_at_truth(ifos, waveform_generator, injection_paramet
         residual = data - response
 
         psd = ifo.power_spectral_density_array
-        df = ifo.strain_data.frequency_resolution
+
+        # -- calculate frequency spacing
+        df = ifo.frequency_array[1] - ifo.frequency_array[0]
 
         mask = getattr(ifo, "frequency_mask", None)
 
@@ -727,6 +738,49 @@ def check_detector_residual_at_truth(ifos, waveform_generator, injection_paramet
     return rows
 
 
+def inner_product(a, b, psd, df, mask=None):
+    if mask is not None:
+        a = a[mask]
+        b = b[mask]
+        psd = psd[mask]
+
+    good = np.isfinite(psd) & (psd > 0)
+    a = a[good]
+    b = b[good]
+    psd = psd[good]
+
+    return 4.0 * np.real(np.sum(a * np.conjugate(b) / psd)) * df
+
+
+def diagnose_data_template_alignment(ifos, waveform_generator, params):
+    waveform_pols = waveform_generator.frequency_domain_strain(params)
+    print("\n========== DATA-TEMPLATE ALIGNMENT DIAGNOSTICS ==========")
+    for ifo in ifos:
+        h = ifo.get_detector_response(waveform_pols, params)
+        d = ifo.frequency_domain_strain
+
+        psd = ifo.power_spectral_density_array
+        df = ifo.frequency_array[1] - ifo.frequency_array[0]
+        mask = getattr(ifo, "frequency_mask", None)
+
+        hh = inner_product(h, h, psd, df, mask)
+        dd = inner_product(d, d, psd, df, mask)
+        dh = inner_product(d, h, psd, df, mask)
+        rr = inner_product(d - h, d - h, psd, df, mask)
+
+        rho_template = dh / np.sqrt(hh)
+        overlap = dh / np.sqrt(dd * hh)
+
+        print("\nIFO:", ifo.name)
+        print("<h,h>:", hh)
+        print("<d,d>:", dd)
+        print("<d,h>:", dh)
+        print("<d-h,d-h>:", rr)
+        print("signal_snr sqrt<h,h>:", np.sqrt(hh))
+        print("matched rho <d,h>/sqrt<h,h>:", rho_template)
+        print("normalized data-template overlap:", overlap)
+        print("residual_snr:", np.sqrt(rr))
+    print("=========================================================\n")
 
 
 def read_ifos_from_file(fname: str, outdir: str = f'../v0p1/results/'):
@@ -738,13 +792,14 @@ def read_ifos_from_file(fname: str, outdir: str = f'../v0p1/results/'):
 
 
 def run_post_sampler_debug(args, wfgenerator):
-    fname = args.fname
-    fname = fname.replace('_result.json', '_ifos.pkl')
-
-    ifos = read_ifos_from_file(f"{args.label}_ifos", outdir=args.outdir)
+    fname = os.path.join(args.result_dir, args.fname)
+    outdir = args.outdir
+    ifos = read_ifos_from_file(args.fname.replace('_result.json', '_ifos.pkl'), 
+                               args.result_dir)
     likelihood = make_likelihood(ifos, wfgenerator)
 
-    result = bilby.result.read_in_result(os.path.join(args.outdir, args.fname))
+    result = bilby.result.read_in_result(fname)
+    print(f"Loaded result from {fname} for analysis...")
 
     print_likelihood_setup(likelihood)
     diagnostic = compare_truth_and_posterior_mode(result, likelihood)
@@ -752,6 +807,12 @@ def run_post_sampler_debug(args, wfgenerator):
         likelihood.interferometers,
         likelihood.waveform_generator,
         result.injection_parameters,
+    )
+    truth = dict(result.injection_parameters)
+    diagnose_data_template_alignment(
+        likelihood.interferometers,
+        likelihood.waveform_generator,
+        truth,
     )
 
 
@@ -795,7 +856,11 @@ def parse_args():
     parser.add_argument("--scale-amplitude", action="store_true", help="Whether to apply an overall amplitude scaling to the ML waveforms. This can be useful for debugging when the ML model was trained on whitened waveforms or waveforms with a different distance convention.")
 
     parser.add_argument("--debug-only", action="store_true")
+
     parser.add_argument("--debug-post-sampler", action="store_true")
+    parser.add_argument("--result-dir", default=DEFAULT_OUTDIR,)
+    parser.add_argument("--fname", default=f"{DEFAULT_LABEL}_result.json")
+
     parser.add_argument("--plot-only", action="store_true")
     parser.add_argument("--without-mass-ratio-constraint", action="store_true")
 
