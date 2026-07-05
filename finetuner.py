@@ -406,6 +406,13 @@ class FinetunerConfig:
     weight_decay: float = 1e-5
     grad_clip: Optional[float] = 1.0
 
+    coeffs = {
+        "res": 1.0,
+        "overlap": 0.05,
+        "high": 0.0,
+        "smooth": 1e-5,
+    }
+
     use_amp: bool = True
     amp_dtype: str = "float16"
 
@@ -755,7 +762,7 @@ def smoothness_loss(
 # Schedules
 # ============================================================
 
-def get_loss_coefficients(epoch: int, cfg: FinetunerConfig) -> Dict[str, float]:
+def get_training_loss_coefficients(epoch: int, cfg: FinetunerConfig) -> Dict[str, float]:
     frac = epoch / max(1, cfg.num_epochs)
     if frac < 0.20:
         return {
@@ -943,8 +950,8 @@ def evaluate_model(
 
     coeffs = {
         "res": 1.0,
-        "overlap": 1.0,
-        "high": 1.0,
+        "overlap": 0.05,
+        "high": 0.0,
         "smooth": 1e-5,
     }
 
@@ -1021,18 +1028,11 @@ def mine_hard_samples(
     all_indices = []
     all_mismatch = []
 
-    coeffs = {
-        "res": 1.0,
-        "overlap": 1.0,
-        "high": 1.0,
-        "smooth": 1e-5,
-    }
-
     for batch in tqdm(loader, desc="Mining hard samples", leave=False):
         _, _, tensors = compute_finetuner_loss(
             model=model,
             batch=batch,
-            coeffs=coeffs,
+            coeffs=cfg.coeffs,
             cfg=cfg,
             device=device,
         )
@@ -1066,17 +1066,10 @@ def plot_batch_predictions(
 ) -> None:
     model.eval()
 
-    coeffs = {
-        "res": 1.0,
-        "overlap": 1.0,
-        "high": 1.0,
-        "smooth": 1e-5,
-    }
-
     _, _, tensors = compute_finetuner_loss(
         model=model,
         batch=batch,
-        coeffs=coeffs,
+        coeffs=cfg.coeffs,
         cfg=cfg,
         device=device,
     )
@@ -1434,7 +1427,7 @@ def train_finetuner(
         epoch_start = time.perf_counter()
 
         lr = set_lr_for_epoch(optimizer, epoch, cfg)
-        coeffs = get_loss_coefficients(epoch, cfg)
+        coeffs = get_training_loss_coefficients(epoch, cfg)
 
         hard_phase = (epoch / cfg.num_epochs) >= cfg.hard_start_frac
 
