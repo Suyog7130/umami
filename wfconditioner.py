@@ -79,10 +79,16 @@ def as_1d_float_array(x, name):
 
 
 def resample_to_length(x, n_target):
+    """ TODO: Check if this alters the waveform in a way that is not desired. 
+        We know for sure that the total length of the ML wf is 8191 samples,
+        so this function is definitely interpolating one sample, but if this
+        changes the waveform in a way that is not desired, we should find another
+        way to do this.
+    """
     x = as_1d_float_array(x, "x")
     if len(x) == n_target:
         return x.copy()
-
+    logger.debug(f"Resampling array from length {len(x)} to {n_target} using linear interpolation.")
     old_grid = np.linspace(0.0, 1.0, len(x), endpoint=False)
     new_grid = np.linspace(0.0, 1.0, n_target, endpoint=False)
     return np.interp(new_grid, old_grid, x)
@@ -475,7 +481,7 @@ def get_conditioned_waveform(amplitude, phase, scale_factor=10**20,
         phase=phase,
         **kwargs
     )
-    
+
     hp_cond, hc_cond = out["hp_8s_final"] / scale_factor, out["hc_8s_final"] / scale_factor
 
     if plot_result:

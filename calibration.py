@@ -1095,7 +1095,8 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         'dataindex', 'm1', 'm2', 'chi1z', 'chi2z',
         'chirp_mass', 'total_mass', 'mass_ratio',
         'mismatch_amp', 'mismatch_freq', 
-        'mismatch_hplus', 'mismatch_hcross',],
+        'mismatch_hplus', 'mismatch_hcross',
+        'mismatch_hplus_cond', 'mismatch_hcross_cond'],
         dtype=float)
 
     for bidx, databatch in tqdm(enumerate(testloader), total=len(testloader), desc='Testing Calibrator'):
@@ -1142,6 +1143,8 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
         mismatch_phase = np.zeros(calibrator_input.shape[0])
         mismatch_hplus = np.zeros(calibrator_input.shape[0])
         mismatch_hcross = np.zeros(calibrator_input.shape[0])
+        mismatch_hplus_cond = np.zeros(calibrator_input.shape[0])
+        mismatch_hcross_cond = np.zeros(calibrator_input.shape[0])
 
         m1s, m2s, chi1zs, chi2zs = labels[:, 0], labels[:, 1], labels[:, 2], labels[:, 3]
         chirpmasses = calc_chirp_mass(m1s, m2s)
@@ -1183,6 +1186,9 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
             mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
 
+            logger.debug(f"Batch {bidx+1}/{len(testloader)}, Sample {i+1}/{calibrator_input.shape[0]}, Mismatch (Amp, Phase, hplus, hcross): ({mismatch_amp[i]:.4e}, {mismatch_phase[i]:.4e}, {mismatch_hplus[i]:.4e}, {mismatch_hcross[i]:.4e})")
+
+
             # -- now embed the amp/phase in 8s long data, such that merger occurs at fixed 6.4 s timestamp!
             from wfconditioner import get_conditioned_waveform
             recon_hp_cond, recon_hc_cond = get_conditioned_waveform(
@@ -1193,24 +1199,29 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                 orig_amp.cpu().numpy(), 
                 orig_phase.cpu().numpy()
                 )
-            mismatch_hplus_cond = calc_polarization_mismatch(recon_hp_cond, orig_hp_cond, delta_t, f_lower)
-            mismatch_hcross_cond = calc_polarization_mismatch(recon_hc_cond, orig_hc_cond, delta_t, f_lower)
+            mismatch_hplus_cond[i] = calc_polarization_mismatch(recon_hp_cond, orig_hp_cond, delta_t, f_lower)
+            mismatch_hcross_cond[i] = calc_polarization_mismatch(recon_hc_cond, orig_hc_cond, delta_t, f_lower)
+
+            # -- get 2 s long zoomed data window for conditioned waveforms, for plotting
+            zoom_start = int(5.0 / delta_t)  # 5 s into the waveform
+            zoom_end = int(7.0 / delta_t)  # 7 s into the waveform
+            orig_hp_cond_zoom = orig_hp_cond[zoom_start:zoom_end]
+            recon_hp_cond_zoom = recon_hp_cond[zoom_start:zoom_end]
+            orig_hc_cond_zoom = orig_hc_cond[zoom_start:zoom_end]
+            recon_hc_cond_zoom = recon_hc_cond[zoom_start:zoom_end]
 
             # -- Plot conditioned waveforms for the first sample in the batch
             if bidx == 0 and i == 0:
                 plot_reconstructions(
                     orig_amp.cpu().numpy(), recon_amp.cpu().numpy(), 
                     orig_phase.cpu().numpy(), recon_phase.cpu().numpy(), 
-                    orig_hp_cond, recon_hp_cond, 
-                    orig_hc_cond, recon_hc_cond,
+                    orig_hp_cond_zoom, recon_hp_cond_zoom, 
+                    orig_hc_cond_zoom, recon_hc_cond_zoom,
                     with_zoom_windows=False,
                     title=f'$m_1 = {labels[i, 0].item():.2f}, m_2 = {labels[i, 1].item():.2f}, \\chi_1(z) = {labels[i, 2].item():.2f}, \\chi_2(z) = {labels[i, 3].item():.2f}$ (Conditioned)',
                     savedir=savedir, savename='calibration-results-conditioned-'
                     )
-            print(f"Mismatch values for the conditioned waveforms (hplus, hcross): ({mismatch_hplus_cond:.4e}, {mismatch_hcross_cond:.4e})")
-            exit()
-
-            logger.debug(f"Batch {bidx+1}/{len(testloader)}, Sample {i+1}/{calibrator_input.shape[0]}, Mismatch (Amp, Phase, hplus, hcross): ({mismatch_amp[i]:.4e}, {mismatch_phase[i]:.4e}, {mismatch_hplus[i]:.4e}, {mismatch_hcross[i]:.4e})")
+            logger.debug(f"Mismatch values for the conditioned waveforms (hplus, hcross): ({mismatch_hplus_cond[i]:.4e}, {mismatch_hcross_cond[i]:.4e})")
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
             'm1': labels[:, 0].cpu().numpy(),
@@ -1225,6 +1236,8 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             'mismatch_phase': mismatch_phase.flatten(),
             'mismatch_hplus': mismatch_hplus.flatten(),
             'mismatch_hcross': mismatch_hcross.flatten(),
+            'mismatch_hplus_cond': mismatch_hplus_cond,
+            'mismatch_hcross_cond': mismatch_hcross_cond,
         })], ignore_index=True)
         logger.info(f"Processed batch {bidx+1}/{len(testloader)}, appended mismatch results to dataframe. Average mismatch for this batch: Amp: {mismatch_amp.mean():.4e}, Phase: {mismatch_phase.mean():.4e}, hplus: {mismatch_hplus.mean():.4e}, hcross: {mismatch_hcross.mean():.4e}")
 
