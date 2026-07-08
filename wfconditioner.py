@@ -28,6 +28,8 @@ from cvae import CVAE
 from utils.generic import init_logging, init_verbosity_args
 logger = logging.getLogger(__name__)
 
+from plotutils import putils
+
 
 PROJECT_DIR = 'v0p1'
 
@@ -465,6 +467,7 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     ax.set_title("Stage 1: raw amplitude and start taper")
     ax.legend()
     fig.tight_layout()
+    putils.beautifyPlot(ax)
     fig.savefig(os.path.join(outdir, f"{label}_stage1_amp_start_taper.png"), dpi=250)
     plt.close(fig)
 
@@ -477,6 +480,7 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     ax.set_title("Stage 2: phase-based one-cycle taper length")
     ax.legend()
     fig.tight_layout()
+    putils.beautifyPlot(ax)
     fig.savefig(os.path.join(outdir, f"{label}_stage2_phase_taper_length.png"), dpi=250)
     plt.close(fig)
 
@@ -491,10 +495,11 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     ax.set_title("Stage 3: reconstructed tapered waveform")
     ax.legend()
     fig.tight_layout()
+    putils.beautifyPlot(ax)
     fig.savefig(os.path.join(outdir, f"{label}_stage3_1s_tapered.png"), dpi=250)
     plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(18, 5))
     ax.plot(ts, result["hp_8s"], label=r"$h_+$ embedded in 8 s")
     ax.plot(ts, result["hc_8s"], label=r"$h_\times$ embedded in 8 s")
     ax.axvline(result["insertion_start_seconds"], linestyle=":", label="insertion start")
@@ -505,10 +510,11 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     ax.set_title("Stage 4: 1 s waveform embedded in 8 s segment")
     ax.legend()
     fig.tight_layout()
+    putils.beautifyPlot(ax)
     fig.savefig(os.path.join(outdir, f"{label}_stage4_8s_embedding.png"), dpi=250)
     plt.close(fig)
 
-    fig, ax = plt.subplots(figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(18, 5))
     ax.plot(ts, result["hp_8s_final"], label=r"$h_+$ after merger shift")
     ax.plot(ts, result["hc_8s_final"], label=r"$h_\times$ after merger shift")
     ax.axvline(result["merger_time_in_segment"], linestyle="--", label="merger")
@@ -517,6 +523,7 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     ax.set_title("Stage 5: 8 s waveform after merger shift")
     ax.legend()
     fig.tight_layout()
+    putils.beautifyPlot(ax)
     fig.savefig(os.path.join(outdir, f"{label}_stage5_8s_after_merger_shift.png"), dpi=250)
     plt.close(fig)
 
@@ -530,6 +537,7 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     ax.set_title("Stage 6: Fourier transform of 8 s tapered waveform")
     ax.legend()
     fig.tight_layout()
+    putils.beautifyPlot(ax)
     fig.savefig(os.path.join(outdir, f"{label}_stage6_fft_log.png"), dpi=250)
     plt.close(fig)
 
