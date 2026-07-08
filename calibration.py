@@ -1327,7 +1327,8 @@ def plot_calibration_results(original: torch.Tensor,
 
 
 def plot_calibrated_mm_hist(hdf_path, results_dir=None,
-                            wftype: {'amp_freq', 'amp_phase'} = 'amp_phase'):
+                            wftype: {'amp_freq', 'amp_phase'} = 'amp_phase',
+                            conditioned_waveforms=False):
     """
     Read the calibrated mismatch results from the HDF file and return as a pandas DataFrame.
     """
@@ -1339,6 +1340,14 @@ def plot_calibrated_mm_hist(hdf_path, results_dir=None,
         types = ['mismatch_amp', 'mismatch_phase', 'mismatch_hplus', 'mismatch_hcross']
         titles = ['Amplitude', 'Phase', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
 
+    if conditioned_waveforms:
+        types.remove('mismatch_hplus')
+        types.remove('mismatch_hcross')
+        types += ['mismatch_hplus_cond', 'mismatch_hcross_cond']
+        titles.remove('$\\mathbf{h_{+}}$')
+        titles.remove('$\\mathbf{h_{\\times}}$')
+        titles += ['$\\mathbf{h_{+}}$ (Cond)', '$\\mathbf{h_{\\times}}$ (Cond)']
+
     if not hdf_path.endswith('.h5'):
         hdf_path += '.h5'
     if results_dir is not None:
@@ -1347,9 +1356,10 @@ def plot_calibrated_mm_hist(hdf_path, results_dir=None,
         raise FileNotFoundError(f"Calibrated mismatch results HDF file not found: {hdf_path}")
     dfmm = pd.read_hdf(hdf_path, key='mismatch_results')
     logger.info(f"Read calibrated mismatch results from {hdf_path}, with {len(dfmm)} entries.")
-    
+    fname = 'calibrated'
+    fname += '-conditioned' if conditioned_waveforms else ''
     plot_mm_hist(dfmm, savedir=results_dir, 
-                 fname=f'calibrated', now=NOW, types=types, titles=titles)
+                 fname=fname, now=NOW, types=types, titles=titles)
     logger.info("Plotted calibrated mismatch histograms.")
 
 
@@ -1418,7 +1428,8 @@ if __name__ == "__main__":
             num_workers=args.num_workers,
         )
     if args.plot_results is not None:
-        plot_calibrated_mm_hist(args.plot_results, results_dir=args.results_dir)
+        plot_calibrated_mm_hist(args.plot_results, results_dir=args.results_dir,
+                                conditioned_waveforms=True)
     if args.test:
         test_calibrator(
             calibrator_modelpath=f'../{PROJECT_DIR}/trained-models/'+args.calibrator_modelpath,
