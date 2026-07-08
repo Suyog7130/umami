@@ -186,11 +186,14 @@ def shift_with_zero_padding(x, shift_samples):
 
 
 def shift_merger_to_fraction(h_plus, h_cross, amplitude_for_merger=None, merger_fraction=0.8,
-                             extend_length=True):
+                             shifting_after_embed=True):
     """
     Shift waveform so that the maximum amplitude occurs at merger_fraction of the 1-second waveform.
-    If `extend_length` is True, the waveform will be extended with zeros if necessary to accommodate the shift,
-    this ensures that no cycles are lost.
+
+    If `shifting_after_embed` is True, the signal has been embedded into the 8-second segment at start time
+    of 3.5 seconds and end time of 4.5 seconds. We will shift the merger to occur at 80% of the 1-second waveform, 
+    which is at 4.3 seconds in the 8-second segment. Since the signal is already embedded, this shift will only 
+    truncate the zeros-paddings on the left or right of the waveform, and will not affect the actual signal.
     """
     h_plus = as_1d_float_array(h_plus, "h_plus")
     h_cross = as_1d_float_array(h_cross, "h_cross")
@@ -307,7 +310,7 @@ def build_8s_tapered_ml_waveform(
     ringdown_taper_seconds=0.02,
     cross_sign=1.0,
     phase_offset=0.0,
-    shift_merger_after_embed=False,
+    shift_merger_after_embed=True,
 ):
     """
     Full pipeline:
@@ -373,6 +376,15 @@ def build_8s_tapered_ml_waveform(
         segment_duration=segment_duration,
         insertion_start_seconds=insertion_start_seconds,
     )
+
+    if shift_merger_after_embed:
+        hp_8s, hc_8s, merger_idx_old, merger_idx_target, shift_samples = shift_merger_to_fraction(
+            hp_8s,
+            hc_8s,
+            amplitude_for_merger=np.sqrt(hp_8s**2 + hc_8s**2),
+            merger_fraction=merger_fraction,
+            shifting_after_embed=shift_merger_after_embed
+        )
 
     freqs, hp_fd = fft_td_waveform(hp_8s, sampling_frequency)
     _, hc_fd = fft_td_waveform(hc_8s, sampling_frequency)
