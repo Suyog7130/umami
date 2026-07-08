@@ -626,21 +626,23 @@ def training(model: {FlexTwoC2E1D, FlexCAE, FlexCAEPhase},
 
 def plot_reconstructions(orig_amp, recon_amp, orig_phase, recon_phase, 
                          orig_hp, recon_hp, orig_hc, recon_hc,
+                         with_zoom_windows=True,
                          title='', savedir='', savename=''):
     """
     Plot the original and reconstructed waveforms for debugging.
     """
-    time_arr = calc_time_array(orig_amp.shape[-1])
+    time_arr_one = calc_time_array(orig_amp.shape[-1])
+    time_arr_two = calc_time_array(recon_hp.shape[-1])
 
     plot_twopanel(
-        xarr = time_arr.cpu().numpy(),
+        xarr = time_arr_one.cpu().numpy(),
         yarr = [
             {'Original': orig_amp, 
              'Reconstructed': recon_amp},
             {'Original': orig_phase, 
              'Reconstructed': recon_phase}
         ],
-        with_zoom_windows=True,
+        with_zoom_windows=with_zoom_windows,
         title = title,
         axes_labels = ['Time (s)', 'Amplitude', 'Phase (rad)'],
         savename = savedir + savename + f'overplot-ampphase-{NOW}.png',
@@ -648,14 +650,14 @@ def plot_reconstructions(orig_amp, recon_amp, orig_phase, recon_phase,
     logger.info(f"Saved amplitude and phase reconstruction plot at {savedir + savename + f'overplot-ampphase-{NOW}.png'}")
 
     plot_twopanel(
-        xarr = time_arr.cpu().numpy(),
+        xarr = time_arr_two.cpu().numpy(),
         yarr = [
             {'Original': orig_hp, 
              'Reconstructed': recon_hp},
             {'Original': orig_hc, 
              'Reconstructed': recon_hc}
         ],
-        with_zoom_windows=True,
+        with_zoom_windows=with_zoom_windows,
         title = title,
         axes_labels = ['Time (s)', '$h_{+}$', '$h_{\\times}$'],
         savename = savedir + savename + f'overplot-hphc-{NOW}.png',

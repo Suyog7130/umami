@@ -23,6 +23,7 @@ def _plot_zoom_window(ax, x, y, y2=None, zoom_halfwidth=75, padding=20):
     ax.set_xlim(x[zoom_start], x[zoom_end])
     ax.set_ylim(min(y[zoom_start:zoom_end]) - ypad, max(y[zoom_start:zoom_end]) + ypad)
 
+
 def plot_twopanel(xarr: np.ndarray, 
                 yarr: list[dict[str, np.ndarray], dict[str, np.ndarray]],
                 title=None, 

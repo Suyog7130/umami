@@ -1195,6 +1195,18 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                 )
             mismatch_hplus_cond = calc_polarization_mismatch(recon_hp_cond, orig_hp_cond, delta_t, f_lower)
             mismatch_hcross_cond = calc_polarization_mismatch(recon_hc_cond, orig_hc_cond, delta_t, f_lower)
+
+            # -- Plot conditioned waveforms for the first sample in the batch
+            if bidx == 0 and i == 0:
+                plot_reconstructions(
+                    orig_amp.cpu().numpy(), recon_amp.cpu().numpy(), 
+                    orig_phase.cpu().numpy(), recon_phase.cpu().numpy(), 
+                    orig_hp_cond, recon_hp_cond, 
+                    orig_hc_cond, recon_hc_cond,
+                    with_zoom_windows=False,
+                    title=f'$m_1 = {labels[i, 0].item():.2f}, m_2 = {labels[i, 1].item():.2f}, \\chi_1(z) = {labels[i, 2].item():.2f}, \\chi_2(z) = {labels[i, 3].item():.2f}$ (Conditioned)',
+                    savedir=savedir, savename='calibration-results-conditioned-'
+                    )
             print(f"Mismatch values for the conditioned waveforms (hplus, hcross): ({mismatch_hplus_cond:.4e}, {mismatch_hcross_cond:.4e})")
             exit()
 

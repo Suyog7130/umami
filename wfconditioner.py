@@ -475,7 +475,9 @@ def get_conditioned_waveform(amplitude, phase, scale_factor=10**20,
         phase=phase,
         **kwargs
     )
-    hp_cond, hc_cond = out["hp_8s_final"] * scale_factor, out["hc_8s_final"] * scale_factor
+    
+    hp_cond, hc_cond = out["hp_8s_final"] / scale_factor, out["hc_8s_final"] / scale_factor
+
     if plot_result:
         savedir = f"../v0p1/results/{TODAY}/taper_debug_plots_{NOW}/"
         plot_tapered_waveform_stages(
@@ -483,6 +485,7 @@ def get_conditioned_waveform(amplitude, phase, scale_factor=10**20,
             outdir=savedir,
             label="amp-phase_conditioning_test",
         )
+
     return (hp_cond, hc_cond)
 
 
