@@ -359,9 +359,6 @@ def build_8s_tapered_ml_waveform(
         )
     else:
         hp_shifted, hc_shifted = hp_start.copy(), hc_start.copy()
-        merger_idx_old = int(np.argmax(np.sqrt(hp_start**2 + hc_start**2)))
-        merger_idx_target = int(round(merger_fraction * n_short))
-        shift_samples = 0
 
     ringdown_taper_samples = int(round(ringdown_taper_seconds * sampling_frequency))
     end_window = cos2_fall_taper(n_short, ringdown_taper_samples)
@@ -435,7 +432,8 @@ def build_8s_tapered_ml_waveform(
     }
 
 
-def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug"):
+def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
+                                 shifted_after_embed=True):
     os.makedirs(outdir, exist_ok=True)
 
     t = result["t_short"]
@@ -447,11 +445,21 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug"):
 
     eps = 1e-40
 
+    # -- If `shifted_after_embed`, then update all merger, insertion etc. times
+    # -- to reflect the actual merger time of 4.3s within the 8s segment, which is 0.8s in the original 1s waveform.
+    # -- Update other windows and taper times accordingly.
+    if shifted_after_embed:
+        result["merger_index_old"] = result["merger_idx_target"]
+        result["merger_idx_target"] = int(round(result["merger_fraction"] * len(result["t_short"])))
+        result["merger_time_in_short"] = result["merger_idx_target"] / result["sampling_frequency"]
+        result["merger_time_in_segment"] = result["insertion_start_seconds"] + result["merger_time_in_short"]
+        result["insertion_end_seconds"] = result["insertion_start_seconds"] + result["short_duration"]
+
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(t, result["amplitude_raw"], label="raw amplitude")
     ax.plot(t, result["amplitude_start_tapered"], label="start-tapered amplitude")
     ax.axvline(result["start_taper_seconds"], linestyle="--", label="one-cycle taper end")
-    ax.axvline(result["merger_idx_old"] / result["sampling_frequency"], linestyle=":", label="raw merger")
+    ax.axvline(result["merger_time_in_short"], linestyle=":", label="raw merger")
     ax.set_xlabel("Time in 1 s ML waveform [s]")
     ax.set_ylabel("Amplitude")
     ax.set_title("Stage 1: raw amplitude and start taper")
@@ -475,7 +483,7 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug"):
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(t, result["hp_start_tapered"], label=r"$h_+$ after start taper")
     ax.plot(t, result["hp_1s_final"], label=r"$h_+$ after shift and end taper")
-    ax.axvline(result["merger_idx_target"] / result["sampling_frequency"], linestyle="--", label="target merger")
+    ax.axvline(result["merger_time_in_short"], linestyle="--", label="target merger")
     ax.axvline(1.0 - result["ringdown_taper_seconds"], linestyle=":", label="end taper start")
     ax.set_xlabel("Time in 1 s waveform [s]")
     ax.set_ylabel("Strain")
