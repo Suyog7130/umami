@@ -304,6 +304,8 @@ def build_8s_tapered_ml_waveform(
     mass_2,
     chi_1,
     chi_2,
+    amplitude=None,
+    phase=None,
     sampling_frequency=8192,
     short_duration=1.0,
     segment_duration=8.0,
@@ -440,6 +442,35 @@ def build_8s_tapered_ml_waveform(
     }
 
 
+def get_conditioned_waveform(amplitude, phase, **kwargs):
+    """
+    Get conditioned waveform from amplitude and phase, with optional parameters.
+
+    Arguments
+    ---------
+    amplitude : array-like
+        The amplitude of the waveform.
+    phase : array-like
+        The phase of the waveform.
+    **kwargs : dict
+        Additional keyword arguments to pass to `build_8s_tapered_ml_waveform`.
+
+    Returns
+    -------
+    tuple
+        A tuple containing the conditioned h_plus and h_cross waveforms after processing.
+        These will 8 s long polarization waveforms, with the tapered 1 s waveform embedded such
+        that the merger occurs at 6.4 s in the data segment!
+    """
+    out = build_8s_tapered_ml_waveform(
+        mass_1=None, mass_2=None, chi_1=None, chi_2=None,
+        amplitude=amplitude,
+        phase=phase,
+        **kwargs
+    )
+    return (out["hp_8s_final"], out["hc_8s_final"])
+
+
 def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
                                  shifted_after_embed=True):
     os.makedirs(outdir, exist_ok=True)
@@ -572,17 +603,27 @@ def run_conditioner():
         label="ml_8s_taper_test",
     )
 
-    hp_8s = out["hp_8s"]
-    hc_8s = out["hc_8s"]
-    freqs = out["freqs"]
-    hp_fd = out["hp_fd"]
-    hc_fd = out["hc_fd"]
-
     # -- Save configuration to file
     config_save_path = os.path.join(savedir, "ml_8s_taper_test_config.json")
     os.makedirs(savedir, exist_ok=True)
+    config = params.copy()
+    config.update({
+        "merger_time_in_segment": out["merger_time_in_segment"],
+        "merger_time_in_short": out["merger_time_in_short"],
+        "merger_time_in_segment_before_shift": out["merger_time_in_segment_before_shift"],
+        "merger_fraction": out["merger_fraction"],
+        "sampling_frequency": out["sampling_frequency"],
+        "short_duration": out["short_duration"],
+        "segment_duration": out["segment_duration"],
+        "insertion_start_seconds": out["insertion_start_seconds"],
+        "insertion_end_seconds": out["insertion_end_seconds"],
+        "start_taper_samples": out["start_taper_samples"],
+        "start_taper_seconds": out["start_taper_seconds"],
+        "ringdown_taper_samples": out["ringdown_taper_samples"],
+        "ringdown_taper_seconds": out["ringdown_taper_seconds"],
+    })
     with open(config_save_path, "w") as f:
-        json.dump(params, f, indent=4)
+        json.dump(config, f, indent=4)
 
     print("Merger time in 8 s segment:", out["merger_time_in_segment"])
     print("For Bilby use start_time = geocent_time -", out["merger_time_in_segment"])
