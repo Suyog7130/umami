@@ -182,13 +182,15 @@ def shift_with_zero_padding(x, shift_samples):
         s = -shift_samples
         if s < n:
             y[:n - s] = x[s:]
-
     return y
 
 
-def shift_merger_to_fraction(h_plus, h_cross, amplitude_for_merger=None, merger_fraction=0.8):
+def shift_merger_to_fraction(h_plus, h_cross, amplitude_for_merger=None, merger_fraction=0.8,
+                             extend_length=True):
     """
     Shift waveform so that the maximum amplitude occurs at merger_fraction of the 1-second waveform.
+    If `extend_length` is True, the waveform will be extended with zeros if necessary to accommodate the shift,
+    this ensures that no cycles are lost.
     """
     h_plus = as_1d_float_array(h_plus, "h_plus")
     h_cross = as_1d_float_array(h_cross, "h_cross")
@@ -213,7 +215,7 @@ def shift_merger_to_fraction(h_plus, h_cross, amplitude_for_merger=None, merger_
 
     h_plus_shifted = shift_with_zero_padding(h_plus, shift_samples)
     h_cross_shifted = shift_with_zero_padding(h_cross, shift_samples)
-
+    
     return h_plus_shifted, h_cross_shifted, current_merger_idx, target_merger_idx, shift_samples
 
 
@@ -509,14 +511,15 @@ def run_conditioner():
         short_duration=1.0,
         segment_duration=8.0,
         insertion_start_seconds=3.5,
-        merger_fraction=0.8,
+        merger_fraction=0.9,
         ringdown_taper_seconds=0.02,
         cross_sign=1.0,
     )
 
+    savedir = f"../v0p1/results/{TODAY}/taper_debug_plots_{NOW}/"
     plot_tapered_waveform_stages(
         out,
-        outdir="taper_debug_plots",
+        outdir=savedir,
         label="ml_8s_taper_test",
     )
 
@@ -525,6 +528,12 @@ def run_conditioner():
     freqs = out["freqs"]
     hp_fd = out["hp_fd"]
     hc_fd = out["hc_fd"]
+
+    # -- Save configuration to file
+    config_save_path = os.path.join(savedir, "ml_8s_taper_test_config.json")
+    os.makedirs(savedir, exist_ok=True)
+    with open(config_save_path, "w") as f:
+        json.dump(params, f, indent=4)
 
     print("Merger time in 8 s segment:", out["merger_time_in_segment"])
     print("For Bilby use start_time = geocent_time -", out["merger_time_in_segment"])
