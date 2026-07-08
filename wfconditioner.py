@@ -328,12 +328,16 @@ def build_8s_tapered_ml_waveform(
     """
     n_short = int(round(short_duration * sampling_frequency))
 
-    amplitude_raw, phase_raw = get_amp_phase_from_mlwavegen(
-        mass_1=mass_1,
-        mass_2=mass_2,
-        chi_1=chi_1,
-        chi_2=chi_2,
-    )
+    if amplitude is None and phase is None:
+        amplitude_raw, phase_raw = get_amp_phase_from_mlwavegen(
+            mass_1=mass_1,
+            mass_2=mass_2,
+            chi_1=chi_1,
+            chi_2=chi_2,
+        )
+    else:
+        amplitude_raw = as_1d_float_array(amplitude, "amplitude")
+        phase_raw = as_1d_float_array(phase, "phase")
 
     amplitude_raw = resample_to_length(amplitude_raw, n_short)
     phase_raw = resample_to_length(phase_raw, n_short)
@@ -442,7 +446,8 @@ def build_8s_tapered_ml_waveform(
     }
 
 
-def get_conditioned_waveform(amplitude, phase, **kwargs):
+def get_conditioned_waveform(amplitude, phase, scale_factor=10**20, 
+                             plot_result=False, **kwargs):
     """
     Get conditioned waveform from amplitude and phase, with optional parameters.
 
@@ -452,6 +457,8 @@ def get_conditioned_waveform(amplitude, phase, **kwargs):
         The amplitude of the waveform.
     phase : array-like
         The phase of the waveform.
+    scale_factor : float
+        The factor by which to scale the waveform.
     **kwargs : dict
         Additional keyword arguments to pass to `build_8s_tapered_ml_waveform`.
 
@@ -468,7 +475,15 @@ def get_conditioned_waveform(amplitude, phase, **kwargs):
         phase=phase,
         **kwargs
     )
-    return (out["hp_8s_final"], out["hc_8s_final"])
+    hp_cond, hc_cond = out["hp_8s_final"] * scale_factor, out["hc_8s_final"] * scale_factor
+    if plot_result:
+        savedir = f"../v0p1/results/{TODAY}/taper_debug_plots_{NOW}/"
+        plot_tapered_waveform_stages(
+            out,
+            outdir=savedir,
+            label="amp-phase_conditioning_test",
+        )
+    return (hp_cond, hc_cond)
 
 
 def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
@@ -561,7 +576,6 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(freqs, np.maximum(np.abs(hp_fd), eps), label=r"$|\tilde h_+(f)|$")
     ax.plot(freqs, np.maximum(np.abs(hc_fd), eps), label=r"$|\tilde h_\times(f)|$")
-    ax.set_yscale("log")
     ax.set_xlim(0, result["sampling_frequency"] / 2.0)
     ax.set_xlabel("Frequency [Hz]")
     ax.set_ylabel("Frequency-domain strain amplitude")
@@ -569,6 +583,7 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     ax.legend()
     fig.tight_layout()
     putils.beautifyPlot(ax)
+    ax.set_yscale("log")
     fig.savefig(os.path.join(outdir, f"{label}_stage6_fft_log.png"), dpi=250)
     plt.close(fig)
 

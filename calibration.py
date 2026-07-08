@@ -1182,6 +1182,22 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             mismatch_phase[i] = calculate_cosine_distance(recon_phase, orig_phase)
             mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
             mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
+
+            # -- now embed the amp/phase in 8s long data, such that merger occurs at fixed 6.4 s timestamp!
+            from wfconditioner import get_conditioned_waveform
+            recon_hp_cond, recon_hc_cond = get_conditioned_waveform(
+                recon_amp.cpu().numpy(), 
+                recon_phase.cpu().numpy()
+                )
+            orig_hp_cond, orig_hc_cond = get_conditioned_waveform(
+                orig_amp.cpu().numpy(), 
+                orig_phase.cpu().numpy()
+                )
+            mismatch_hplus_cond = calc_polarization_mismatch(recon_hp_cond, orig_hp_cond, delta_t, f_lower)
+            mismatch_hcross_cond = calc_polarization_mismatch(recon_hc_cond, orig_hc_cond, delta_t, f_lower)
+            print(f"Mismatch values for the conditioned waveforms (hplus, hcross): ({mismatch_hplus_cond:.4e}, {mismatch_hcross_cond:.4e})")
+            exit()
+
             logger.debug(f"Batch {bidx+1}/{len(testloader)}, Sample {i+1}/{calibrator_input.shape[0]}, Mismatch (Amp, Phase, hplus, hcross): ({mismatch_amp[i]:.4e}, {mismatch_phase[i]:.4e}, {mismatch_hplus[i]:.4e}, {mismatch_hcross[i]:.4e})")
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
