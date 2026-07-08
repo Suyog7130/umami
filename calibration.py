@@ -1186,7 +1186,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
             mismatch_hplus[i] = calc_polarization_mismatch(recon_hp, orig_hp, delta_t, f_lower)
             mismatch_hcross[i] = calc_polarization_mismatch(recon_hc, orig_hc, delta_t, f_lower)
 
-            logger.debug(f"Batch {bidx+1}/{len(testloader)}, Sample {i+1}/{calibrator_input.shape[0]}, Mismatch (Amp, Phase, hplus, hcross): ({mismatch_amp[i]:.4e}, {mismatch_phase[i]:.4e}, {mismatch_hplus[i]:.4e}, {mismatch_hcross[i]:.4e})")
+            logger.info(f"Batch {bidx+1}/{len(testloader)}, Sample {i+1}/{calibrator_input.shape[0]}, Mismatch (Amp, Phase, hplus, hcross): ({mismatch_amp[i]:.4e}, {mismatch_phase[i]:.4e}, {mismatch_hplus[i]:.4e}, {mismatch_hcross[i]:.4e})")
 
 
             # -- now embed the amp/phase in 8s long data, such that merger occurs at fixed 6.4 s timestamp!
@@ -1221,7 +1221,7 @@ def test_calibrator(wfmodel_modelpath=f'trained-models/model-20251004_072338-10'
                     title=f'$m_1 = {labels[i, 0].item():.2f}, m_2 = {labels[i, 1].item():.2f}, \\chi_1(z) = {labels[i, 2].item():.2f}, \\chi_2(z) = {labels[i, 3].item():.2f}$ (Conditioned)',
                     savedir=savedir, savename='calibration-results-conditioned-'
                     )
-            logger.debug(f"Mismatch values for the conditioned waveforms (hplus, hcross): ({mismatch_hplus_cond[i]:.4e}, {mismatch_hcross_cond[i]:.4e})")
+            logger.info(f"Mismatch values for the conditioned waveforms (hplus, hcross): ({mismatch_hplus_cond[i]:.4e}, {mismatch_hcross_cond[i]:.4e})")
 
         dfmm = pd.concat([dfmm, pd.DataFrame({
             'm1': labels[:, 0].cpu().numpy(),
