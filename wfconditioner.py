@@ -307,6 +307,7 @@ def build_8s_tapered_ml_waveform(
     ringdown_taper_seconds=0.02,
     cross_sign=1.0,
     phase_offset=0.0,
+    shift_merger_after_embed=False,
 ):
     """
     Full pipeline:
@@ -346,12 +347,18 @@ def build_8s_tapered_ml_waveform(
         phase_offset=phase_offset,
     )
 
-    hp_shifted, hc_shifted, merger_idx_old, merger_idx_target, shift_samples = shift_merger_to_fraction(
-        hp_start,
-        hc_start,
-        amplitude_for_merger=amplitude_start_tapered,
-        merger_fraction=merger_fraction,
-    )
+    if not shift_merger_after_embed:
+        hp_shifted, hc_shifted, merger_idx_old, merger_idx_target, shift_samples = shift_merger_to_fraction(
+            hp_start,
+            hc_start,
+            amplitude_for_merger=amplitude_start_tapered,
+            merger_fraction=merger_fraction,
+        )
+    else:
+        hp_shifted, hc_shifted = hp_start.copy(), hc_start.copy()
+        merger_idx_old = int(np.argmax(np.sqrt(hp_start**2 + hc_start**2)))
+        merger_idx_target = int(round(merger_fraction * n_short))
+        shift_samples = 0
 
     ringdown_taper_samples = int(round(ringdown_taper_seconds * sampling_frequency))
     end_window = cos2_fall_taper(n_short, ringdown_taper_samples)
@@ -511,9 +518,10 @@ def run_conditioner():
         short_duration=1.0,
         segment_duration=8.0,
         insertion_start_seconds=3.5,
-        merger_fraction=0.9,
+        merger_fraction=0.8,
         ringdown_taper_seconds=0.02,
         cross_sign=1.0,
+        shift_merger_after_embed=True,
     )
 
     savedir = f"../v0p1/results/{TODAY}/taper_debug_plots_{NOW}/"
