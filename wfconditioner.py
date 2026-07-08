@@ -343,28 +343,31 @@ def build_8s_tapered_ml_waveform(
     start_window = sin2_rise_taper(n_short, start_taper_samples)
     amplitude_start_tapered = amplitude_raw * start_window
 
-    hp_start, hc_start = reconstruct_hp_hc_from_amp_phase(
+    hp_start_tapered, hc_start_tapered = reconstruct_hp_hc_from_amp_phase(
         amplitude_start_tapered,
         phase_unwrapped,
         cross_sign=cross_sign,
         phase_offset=phase_offset,
     )
 
-    if not shift_merger_after_embed:
-        hp_shifted, hc_shifted, merger_idx_old, merger_idx_target, shift_samples = shift_merger_to_fraction(
-            hp_start,
-            hc_start,
-            amplitude_for_merger=amplitude_start_tapered,
-            merger_fraction=merger_fraction,
-        )
-    else:
-        hp_shifted, hc_shifted = hp_start.copy(), hc_start.copy()
+    # -- ALWAYS shift after embedding into 8s segment!
+    # if not shift_merger_after_embed:
+    #     hp_shifted, hc_shifted, merger_idx_old, merger_idx_target, shift_samples = shift_merger_to_fraction(
+    #         hp_start,
+    #         hc_start,
+    #         amplitude_for_merger=amplitude_start_tapered,
+    #         merger_fraction=merger_fraction,
+    #     )
+    # else:
+    #     hp_shifted, hc_shifted = hp_start.copy(), hc_start.copy()
+
+    merger_idx_in_short = int(np.argmax(np.sqrt(hp_start_tapered**2 + hc_start_tapered**2)))
 
     ringdown_taper_samples = int(round(ringdown_taper_seconds * sampling_frequency))
     end_window = cos2_fall_taper(n_short, ringdown_taper_samples)
 
-    hp_1s_final = hp_shifted * end_window
-    hc_1s_final = hc_shifted * end_window
+    hp_1s_final = hp_start_tapered * end_window
+    hc_1s_final = hc_start_tapered * end_window
 
     hp_8s, hc_8s, insert_start_idx, insert_end_idx = embed_1s_waveform_in_8s(
         hp_1s_final,
@@ -374,14 +377,13 @@ def build_8s_tapered_ml_waveform(
         insertion_start_seconds=insertion_start_seconds,
     )
 
-    if shift_merger_after_embed:
-        hp_8s, hc_8s, merger_idx_old, merger_idx_target, shift_samples = shift_merger_to_fraction(
-            hp_8s,
-            hc_8s,
-            amplitude_for_merger=np.sqrt(hp_8s**2 + hc_8s**2),
-            merger_fraction=merger_fraction,
-            shifting_after_embed=shift_merger_after_embed
-        )
+    hp_8s_final, hc_8s_final, merger_idx_old, merger_idx_target, shift_samples = shift_merger_to_fraction(
+        hp_8s,
+        hc_8s,
+        amplitude_for_merger=np.sqrt(hp_8s**2 + hc_8s**2),
+        merger_fraction=merger_fraction,
+        shifting_after_embed=shift_merger_after_embed
+    )
 
     freqs, hp_fd = fft_td_waveform(hp_8s, sampling_frequency)
     _, hc_fd = fft_td_waveform(hc_8s, sampling_frequency)
@@ -389,8 +391,9 @@ def build_8s_tapered_ml_waveform(
     t_short = np.arange(n_short) / sampling_frequency
     t_segment = np.arange(len(hp_8s)) / sampling_frequency
 
-    merger_time_in_short = merger_idx_target / sampling_frequency
-    merger_time_in_segment = insertion_start_seconds + merger_time_in_short
+    merger_time_in_short = merger_idx_in_short / sampling_frequency
+    merger_time_in_segment_before_shift = insertion_start_seconds + merger_time_in_short
+    merger_time_in_segment = merger_time_in_segment_before_shift + (shift_samples / sampling_frequency)
 
     return {
         "mass_1": mass_1,
@@ -402,30 +405,33 @@ def build_8s_tapered_ml_waveform(
         "segment_duration": segment_duration,
         "insertion_start_seconds": insertion_start_seconds,
         "insertion_end_seconds": insertion_start_seconds + short_duration,
-        "merger_fraction": merger_fraction,
-        "merger_time_in_short": merger_time_in_short,
-        "merger_time_in_segment": merger_time_in_segment,
         "start_taper_samples": start_taper_samples,
         "start_taper_seconds": start_taper_samples / sampling_frequency,
         "ringdown_taper_samples": ringdown_taper_samples,
         "ringdown_taper_seconds": ringdown_taper_seconds,
-        "merger_idx_old": merger_idx_old,
-        "merger_idx_target": merger_idx_target,
-        "shift_samples": shift_samples,
-        "t_short": t_short,
-        "t_segment": t_segment,
         "amplitude_raw": amplitude_raw,
         "phase_raw": phase_raw,
         "phase_unwrapped": phase_unwrapped,
         "start_window": start_window,
         "end_window": end_window,
         "amplitude_start_tapered": amplitude_start_tapered,
-        "hp_start_tapered": hp_start,
-        "hc_start_tapered": hc_start,
+        "hp_start_tapered": hp_start_tapered,
+        "hc_start_tapered": hc_start_tapered,
         "hp_1s_final": hp_1s_final,
         "hc_1s_final": hc_1s_final,
         "hp_8s": hp_8s,
         "hc_8s": hc_8s,
+        "hp_8s_final": hp_8s_final,
+        "hc_8s_final": hc_8s_final,
+        "merger_fraction": merger_fraction,
+        "merger_time_in_short": merger_time_in_short,
+        "merger_time_in_segment_before_shift": merger_time_in_segment_before_shift,
+        "merger_time_in_segment": merger_time_in_segment,
+        "merger_idx_old": merger_idx_old,
+        "merger_idx_target": merger_idx_target,
+        "shift_samples": shift_samples,
+        "t_short": t_short,
+        "t_segment": t_segment,
         "freqs": freqs,
         "hp_fd": hp_fd,
         "hc_fd": hc_fd,
@@ -448,12 +454,6 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     # -- If `shifted_after_embed`, then update all merger, insertion etc. times
     # -- to reflect the actual merger time of 4.3s within the 8s segment, which is 0.8s in the original 1s waveform.
     # -- Update other windows and taper times accordingly.
-    if shifted_after_embed:
-        result["merger_index_old"] = result["merger_idx_target"]
-        result["merger_idx_target"] = int(round(result["merger_fraction"] * len(result["t_short"])))
-        result["merger_time_in_short"] = result["merger_idx_target"] / result["sampling_frequency"]
-        result["merger_time_in_segment"] = result["insertion_start_seconds"] + result["merger_time_in_short"]
-        result["insertion_end_seconds"] = result["insertion_start_seconds"] + result["short_duration"]
 
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(t, result["amplitude_raw"], label="raw amplitude")
@@ -481,23 +481,24 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(t, result["hp_start_tapered"], label=r"$h_+$ after start taper")
-    ax.plot(t, result["hp_1s_final"], label=r"$h_+$ after shift and end taper")
-    ax.axvline(result["merger_time_in_short"], linestyle="--", label="target merger")
+    ax.plot(t, result["hp_1s_final"], label=r"$h_+$ after start and end taper")
+    ax.plot(t, result["hc_1s_final"], label=r"$h_\times$ after start and end taper")
+    ax.axvline(result["start_taper_seconds"], linestyle="--", label="start taper end")
+    ax.axvline(result["merger_time_in_short"], linestyle="--", label="merger time")
     ax.axvline(1.0 - result["ringdown_taper_seconds"], linestyle=":", label="end taper start")
     ax.set_xlabel("Time in 1 s waveform [s]")
     ax.set_ylabel("Strain")
-    ax.set_title("Stage 3: reconstructed and shifted waveform")
+    ax.set_title("Stage 3: reconstructed tapered waveform")
     ax.legend()
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, f"{label}_stage3_hp_shift_taper.png"), dpi=250)
+    fig.savefig(os.path.join(outdir, f"{label}_stage3_1s_tapered.png"), dpi=250)
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(ts, result["hp_8s"], label=r"$h_+$ embedded in 8 s")
     ax.plot(ts, result["hc_8s"], label=r"$h_\times$ embedded in 8 s")
     ax.axvline(result["insertion_start_seconds"], linestyle=":", label="insertion start")
-    ax.axvline(result["merger_time_in_segment"], linestyle="--", label="merger")
+    ax.axvline(result["merger_time_in_segment_before_shift"], linestyle="--", label="merger")
     ax.axvline(result["insertion_end_seconds"], linestyle=":", label="insertion end")
     ax.set_xlabel("Time in 8 s segment [s]")
     ax.set_ylabel("Strain")
@@ -508,16 +509,28 @@ def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(ts, result["hp_8s_final"], label=r"$h_+$ after merger shift")
+    ax.plot(ts, result["hc_8s_final"], label=r"$h_\times$ after merger shift")
+    ax.axvline(result["merger_time_in_segment"], linestyle="--", label="merger")
+    ax.set_xlabel("Time in 8 s segment [s]")
+    ax.set_ylabel("Strain")
+    ax.set_title("Stage 5: 8 s waveform after merger shift")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(os.path.join(outdir, f"{label}_stage5_8s_after_merger_shift.png"), dpi=250)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(12, 5))
     ax.plot(freqs, np.maximum(np.abs(hp_fd), eps), label=r"$|\tilde h_+(f)|$")
     ax.plot(freqs, np.maximum(np.abs(hc_fd), eps), label=r"$|\tilde h_\times(f)|$")
     ax.set_yscale("log")
     ax.set_xlim(0, result["sampling_frequency"] / 2.0)
     ax.set_xlabel("Frequency [Hz]")
     ax.set_ylabel("Frequency-domain strain amplitude")
-    ax.set_title("Stage 5: Fourier transform of 8 s tapered waveform")
+    ax.set_title("Stage 6: Fourier transform of 8 s tapered waveform")
     ax.legend()
     fig.tight_layout()
-    fig.savefig(os.path.join(outdir, f"{label}_stage5_fft_log.png"), dpi=250)
+    fig.savefig(os.path.join(outdir, f"{label}_stage6_fft_log.png"), dpi=250)
     plt.close(fig)
 
 
