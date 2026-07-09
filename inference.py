@@ -56,14 +56,16 @@ NOW = TODAY + '-' + TIME
 
 # -- define some constants for waveform generation
 SAMPLE_RATE = 8192  # Hz
-DURATION = 1.0  # seconds
+DURATION = 8.0  # seconds
 FMIN = 20.0  # Hz
 FREF = 50.0  # Hz
 LUMINOSITY_DISTANCE = 400.0  # Mpc, should be same as for the ML waveform training data, to avoid bias in amplitudes!
 
 # -- Constants for all waveform generators and IFOs.
 MERGER_TIME = 1126259642.413
-START_TIME = MERGER_TIME - DURATION / 2  # Start time of the data 
+MERGER_TIME_IN_SEGMENT = 6.4   # 80% of the 8s long data segment, after wf conditioning!
+START_TIME = MERGER_TIME - MERGER_TIME_IN_SEGMENT
+
 
 
 if torch.cuda.is_available():
