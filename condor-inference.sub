@@ -87,7 +87,7 @@ should_transfer_files = NO
 environment = "OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 TORCH_NUM_THREADS=1 PYTHONUNBUFFERED=1"
 
 
-+JobBatchName = $(arg_label)
++JobBatchName = "$(arg_label)"
 
 # Remove or modify these if CIT requires a specific accounting group.
 accounting_group = ligo.dev.o4.cbc.waveforms.bilby
