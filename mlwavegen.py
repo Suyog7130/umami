@@ -34,6 +34,9 @@ from optimize import load_flex_model
 from calibration import CalibrationModel
 from cvae import CVAE
 
+
+from wfconditioner import get_conditioned_waveform
+
 logger = logging.getLogger(__name__)
 
 PROJECT_DIR = 'v0p1'
@@ -156,11 +159,34 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     outwaves = ml_wfmodel.generate(labels, convert_to_hphc=False)  # has shape (1, 2=[amp,phase], seq_len)!
     logger.info(f"Generated waveform from ML model with shape: {outwaves.shape}")
 
-    hplus, hcross = ml_calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=True)
-    logger.info(f"Calibrated waveform from ML model with shape: {hplus.shape}, {hcross.shape}")
-    hplus = hplus.squeeze().cpu().numpy()
-    hcross = hcross.squeeze().cpu().numpy()
-    logger.info(f"Calibrated waveform shapes: hplus={hplus.shape}, hcross={hcross.shape}")
+    # -- now embed the amp/phase in 8s long data, such that merger occurs at fixed 6.4 s timestamp!
+    if kwargs.get('perform_waveform_conditioning', True):
+        logger.info("Performing waveform conditioning to embed the amplitude and phase in 8s long data, such that merger occurs at fixed 6.4 s timestamp.")
+        recon_amp, recon_phase = ml_calmodel.calibrate_waveform(outwaves, labels, 
+                                                                convert_to_hphc=False)
+        hplus, hcross = get_conditioned_waveform(
+            recon_amp.cpu().numpy(), 
+            recon_phase.cpu().numpy()
+            )
+        hplus = hplus.cpu().numpy()
+        hcross = hcross.cpu().numpy()
+        logger.info(f"Conditioned waveform shapes: hplus={hplus.shape}, hcross={hcross.shape}")
+    else:
+        logger.warning("Waveform conditioning is disabled. This is not recommended!")
+        hplus, hcross = ml_calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=True)
+        logger.info(f"Calibrated waveform from ML model with shape: {hplus.shape}, {hcross.shape}")
+        hplus = hplus.squeeze().cpu().numpy()
+        hcross = hcross.squeeze().cpu().numpy()
+        logger.info(f"Calibrated waveform shapes: hplus={hplus.shape}, hcross={hcross.shape}")
+
+        # -- pad the waveform to the required length of 8192 samples for Bilby Interferometer.
+        required_length = 8192
+        if len(hplus) < required_length:
+            pad_length = required_length - len(hplus)
+            hplus = np.pad(hplus, (0, pad_length), mode='constant')
+            hcross = np.pad(hcross, (0, pad_length), mode='constant')
+            logger.info(f"Padded waveform to required length of {required_length} samples. New shapes: {hplus.shape}, {hcross.shape}")
+
 
     # # FIXME: We shouldn't actually be doing this augmentation by hand!
     # # -- add two dummy repeated value at the start to makeup for length req by Bilby Interferometer.
@@ -168,14 +194,6 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     # hplus = np.concatenate([[hplus[0],hplus[1]], hplus])
     # hcross = np.concatenate([[hcross[0],hcross[1]], hcross])
     # logger.info(f"Waveform shapes after adding dummy element at the start: {hplus.shape}, {hcross.shape}")
-
-    # -- pad the waveform to the required length of 8192 samples for Bilby Interferometer.
-    required_length = 8192
-    if len(hplus) < required_length:
-        pad_length = required_length - len(hplus)
-        hplus = np.pad(hplus, (0, pad_length), mode='constant')
-        hcross = np.pad(hcross, (0, pad_length), mode='constant')
-        logger.info(f"Padded waveform to required length of {required_length} samples. New shapes: {hplus.shape}, {hcross.shape}")
 
     distance_scale_factor = kwargs.get('distance_scale_factor', None)
     luminosity_distance = kwargs.get('luminosity_distance', 1.0)
