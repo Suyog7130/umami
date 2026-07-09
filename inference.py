@@ -145,7 +145,7 @@ base_injection = make_default_base_injection()
 def make_analysis_priors(
     injection_parameters: Dict[str, float],
     active_keys: Tuple[str, ...] = ("mass_1", "mass_2", "chi_1", "chi_2"),
-    with_mass_ratio_constraint: bool = True,
+    without_mass_ratio_constraint: bool = False,
 ) -> bilby.gw.prior.BBHPriorDict:
     """
     Build priors for one PE run.
@@ -220,9 +220,9 @@ def make_analysis_priors(
     else:        
         priors["chi_2"] = injection_parameters["chi_2"]
 
-    if with_mass_ratio_constraint:
+    if not without_mass_ratio_constraint:
         priors["mass_ratio"] = bilby.gw.prior.Constraint(
-            minimum=1.0/10.0,  # NOTE: m_1>m_2, and m_1/m_2<10.0, but Bilby convention is m2/m1!
+            minimum=1.0/10.0,  # NOTE: m_1>=m_2, and m_1/m_2<10.0, but Bilby convention is m2/m1!
             maximum=1.0,
             name="mass_ratio",
         )
@@ -605,11 +605,11 @@ def main(args, label='umamipe',
     # TODO: For EOB waveforms, priors should be [m_1, m_2, a_1, a_2, tilt_1, tilt_2], since otherwise the "spin1z" and "spin2z" parameters will be ignored by the EOB waveform generator, since internally Bilby requires aforementioned parameter names, and then uses its the `bilby_to_lal_bbh_...` function to convert them to LAL parameters, before calling the waveform model.
 
     # Use the same active priors for drawing injections.
-    if not args.with_mass_ratio_constraint:
+    if args.without_mass_ratio_constraint:
         logger.warning("Running without mass ratio constraint. This may lead to unphysical injections with m1 < m2. So, it is assumed that the MLWaveformGenerator can handles such cases automatically by swapping m1 and m2 internally, and returning the correct waveform.")
     active_priors = make_analysis_priors(
         injection_parameters=base_injection,
-        with_mass_ratio_constraint=args.with_mass_ratio_constraint
+        without_mass_ratio_constraint=args.without_mass_ratio_constraint
     )
     print("Active priors for injection sampling:")
     for key, prior in active_priors.items():
@@ -1299,8 +1299,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--with-original-model', action='store_true',
                         help="Whether to use the original CVAE model instead of the FlexCVAE (default: False)")
-    parser.add_argument('--with-mass-ratio-constraint', action='store_true',
-                        help="Whether to apply a mass ratio constraint on the prior (default: False)")
+    parser.add_argument('--without-mass-ratio-constraint', action='store_true',
+                        help="Whether to disable the mass ratio constraint in the prior (default: False)")
     
     methodargs = parser.add_mutually_exclusive_group(required=True)
     methodargs.add_argument('--run-one-injection', action='store_true',

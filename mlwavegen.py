@@ -144,7 +144,10 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     
     parameters = {model_param: kwargs[model_param] 
                   for model_param in ['mass_1', 'mass_2', 'spin_1z', 'spin_2z']}
-    parameters = _swap_masses_and_spins_if_needed(parameters)
+    
+    if kwargs.get('perform_mass_swap', False):
+        logger.warning("Masses and spins will be swapped if mass_1 < mass_2 to ensure the ML model receives parameters in the expected order. THIS IS NOT RECOMMENDED! Since it distorts the posterior space and then normalizing flow based posterior estimators have trouble learning the correct posterior distribution. Instead ensure that the prior distributions are set such that mass_1 >= mass_2 to avoid this issue.")
+        parameters = _swap_masses_and_spins_if_needed(parameters)
     
     labels = [parameters[key] for key in sorted(parameters.keys())]
     labels = torch.tensor(labels, dtype=torch.float32).unsqueeze(0)  # shape: (1, 4, 1)
