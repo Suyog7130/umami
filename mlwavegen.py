@@ -168,8 +168,6 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
             recon_amp.cpu().numpy(), 
             recon_phase.cpu().numpy()
             )
-        hplus = hplus.cpu().numpy()
-        hcross = hcross.cpu().numpy()
         logger.info(f"Conditioned waveform shapes: hplus={hplus.shape}, hcross={hcross.shape}")
     else:
         logger.warning("Waveform conditioning is disabled. This is not recommended!")

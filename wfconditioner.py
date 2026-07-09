@@ -470,7 +470,7 @@ def get_conditioned_waveform(amplitude, phase, scale_factor=10**20,
 
     Returns
     -------
-    tuple
+    tuple : (np.ndarray, np.ndarray)
         A tuple containing the conditioned h_plus and h_cross waveforms after processing.
         These will 8 s long polarization waveforms, with the tapered 1 s waveform embedded such
         that the merger occurs at 6.4 s in the data segment!
