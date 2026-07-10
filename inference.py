@@ -31,8 +31,11 @@ import copy
 from typing import Dict, List, Tuple, Optional, Any
 
 from tqdm import tqdm
-from mlwavegen import MLWaveformGenerator, convert_to_ml_parameters
 
+from pycbc.waveform import get_td_waveform
+from mlwavegen import MLWaveformGenerator, convert_to_ml_parameters
+from wfconditioner import get_conditioned_waveform
+from utils.gwutils import amp_phase_from_polarizations
 from utils.io import save_json, save_pickle, save_txt, write_DONE_file, ensure_dir, check_DONE_file_exists
 
 from utils.generic import init_logging, init_verbosity_args
@@ -57,7 +60,7 @@ NOW = TODAY + '-' + TIME
 # -- define some constants for waveform generation
 SAMPLE_RATE = 8192  # Hz
 DURATION = 8.0  # seconds
-FMIN = 20.0  # Hz
+FMIN = 12.0  # Hz
 FREF = 50.0  # Hz
 LUMINOSITY_DISTANCE = 400.0  # Mpc, should be same as for the ML waveform training data, to avoid bias in amplitudes!
 
@@ -488,11 +491,50 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
     return results
 
 
-def make_wf_generator(type: {'eob', 'ml'}, 
+
+
+
+def pycbc_seobnrv4_time_domain_source_model(time_array, 
+                                            mass_1, mass_2, chi_1, chi_2, luminosity_distance=1.0):
+    """
+    Bilby-compatible time-domain source model using PyCBC get_td_waveform.
+
+    Returns:
+        {"plus": hp, "cross": hc}
+    """
+    hp, hc = get_td_waveform(
+        approximant="SEOBNRv4",
+        mass1=mass_1,
+        mass2=mass_2,
+        chi1z=chi_1,
+        chi2z=chi_2,
+        inclination=base_injection["theta_jn"],
+        coa_phase=base_injection["phase"],
+        delta_t=1/(DURATION*SAMPLE_RATE),
+        f_lower=FMIN,
+        f_ref=FREF
+    )
+
+    hp = np.asarray(hp)
+    hc = np.asarray(hc)
+
+    amp_arr, phase_arr = amp_phase_from_polarizations(hp, hc)
+    hplus, hcross = get_conditioned_waveform(amp_arr, phase_arr,
+                                             scale_factor=1.0,  # No scaling req! 
+                                             plot_result=True)
+    
+    if luminosity_distance != 1.0:
+        hplus /= luminosity_distance
+        hcross /= luminosity_distance
+
+    return {"plus": hplus, "cross": hcross}
+
+
+def make_wf_generator(type: {'eob_bilby', 'eob', 'ml'}, 
                       wfkwargs: Dict = {},
                       wf_source_model = None,
                       parameter_converter = None) -> WaveformGenerator:
-    if type=='eob':
+    if type=='eob_bilby':
         if wf_source_model is None:
             wf_source_model = bilby.gw.source.lal_binary_black_hole
         if parameter_converter is None:
@@ -514,6 +556,19 @@ def make_wf_generator(type: {'eob', 'ml'},
         )
         assert wfgen.start_time == START_TIME, f"Waveform generator start time {wfgen.start_time} does not match expected {START_TIME}"
         return wfgen
+    
+    elif type=='eob':
+        wfgen = WaveformGenerator(
+            duration=DURATION,
+            sampling_frequency=SAMPLE_RATE,
+            time_domain_source_model=pycbc_seobnrv4_time_domain_source_model,
+            parameter_conversion=None,
+            start_time=START_TIME,
+            waveform_arguments={}
+        )
+        assert wfgen.start_time == START_TIME, f"Waveform generator start time {wfgen.start_time} does not match expected {START_TIME}"
+        return wfgen
+
     elif type=='ml':
         if 'distance_scale_factor' not in wfkwargs:
             wfkwargs['distance_scale_factor'] = LUMINOSITY_DISTANCE

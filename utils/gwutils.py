@@ -224,6 +224,32 @@ def calculate_cosine_distance(target, reconstructed):
     cos_dist = 1 - cos_sim
     return cos_dist
 
+def amp_phase_from_polarizations(hp, hc, use_pycbc=False):
+    """
+    Convert hplus and hcross polarizations to amplitude and phase.
+
+    Parameters
+    ----------
+    hp : array_like
+        The hplus polarization time series.
+    hc : array_like
+        The hcross polarization time series.
+
+    Returns
+    -------
+    amp : ndarray
+        The amplitude time series.
+    phase : ndarray
+        The phase time series (radians).
+    """
+    if use_pycbc:
+        amp = pycbc.waveform.utils.amplitude_from_polarizations(hp, hc)
+        phase = pycbc.waveform.utils.phase_from_polarizations(hp, hc, remove_start_phase=False)
+    else:
+        amp = np.sqrt(hp**2 + hc**2)
+        phase = np.unwrap(np.arctan2(hc, hp))
+    return amp, phase
+
 def polarizations_from_amp_phase(amp, phase, scale_factor=None,
                                  scale_polarizations_instead=False, phase_zero=None):
     """
