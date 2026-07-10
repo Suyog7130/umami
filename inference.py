@@ -64,7 +64,7 @@ DURATION = 8.0  # seconds
 # NOTE: My ML training has $f_{min}\in [11,60]$ with mean of 19.5 Hz
 # FIXME: This `FMIN` value should ideally be lower than the lowest f_low value used in ML model training.
 # But then the duration of the data exceeds the length of 8 second!
-FMIN = 16.0  # Hz   
+FMIN = 14.0  # Hz   
 
 FREF = 50.0  # Hz
 LUMINOSITY_DISTANCE = 400.0  # Mpc, should be same as for the ML waveform training data, to avoid bias in amplitudes!
@@ -529,11 +529,14 @@ def pycbc_seobnrv4_time_domain_source_model(time_array,
         f_ref=FREF
     )
 
+    hp = hp.trim_zeros()
+    hc = hc.trim_zeros()
+
     amp_arr, phase_arr = amp_phase_from_polarizations(hp, hc, use_pycbc=True)
     hplus, hcross = get_conditioned_waveform(amp_arr, phase_arr,
                                              scale_factor=1.0,  # No scaling req! 
                                              plot_result=True,
-                                             do_not_resample_length_to_one_second=True,)
+                                             truncate_wf_to_1s=True)
     
     if luminosity_distance != 1.0:
         hplus /= luminosity_distance

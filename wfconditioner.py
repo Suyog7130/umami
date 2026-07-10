@@ -322,6 +322,7 @@ def build_8s_tapered_ml_waveform(
     shift_merger_after_embed=True,
     short_duration=1.0,
     do_not_resample_length_to_one_second=False,
+    truncate_wf_to_1s=False,
 ):
     """
     Full pipeline:
@@ -345,6 +346,8 @@ def build_8s_tapered_ml_waveform(
         phase_raw = as_1d_float_array(phase, "phase")
     
     if do_not_resample_length_to_one_second:
+        # NOTE: Never resample real signals, that changes the actual physics!
+
         # Use the full length of the amp/phase without resampling to one second.
         # In this case, the `insertion_start_seconds` is interpreted from actual waveform length.
         n_short = len(amplitude)
@@ -360,7 +363,20 @@ def build_8s_tapered_ml_waveform(
         logger.info(f"Amplitude length: {len(amplitude_raw)}, Phase length: {len(phase_raw)}")
         logger.info(f"Duration of the signal in seconds: {len(amplitude_raw) / sampling_frequency}")
 
+    elif truncate_wf_to_1s:
+        # -- Instead, if the actual waveform is longer than 1 second, then truncate part of the inspiral!
+        # -- This replicates how the ML model was trained, where the inspiral is truncated to 1 second.
+
+        n_short = int(round(short_duration * sampling_frequency))
+
+        if len(amplitude_raw) > n_short:
+            diff = len(amplitude_raw) - n_short
+            amplitude_raw = amplitude_raw[diff:]
+            phase_raw = phase_raw[diff:]
+
     else:
+        # -- Otherwise, we assume conditioning is being done for the ML model and we resample 8191 to 8192 samples!
+        # -- This is not a problem since ML2ML PP plot is diagonal!
         n_short = int(round(short_duration * sampling_frequency))
         amplitude_raw = resample_to_length(amplitude_raw, n_short)
         phase_raw = resample_to_length(phase_raw, n_short)
