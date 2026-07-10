@@ -495,7 +495,13 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
 
 
 def pycbc_seobnrv4_time_domain_source_model(time_array, 
-                                            mass_1, mass_2, chi_1, chi_2, luminosity_distance=1.0):
+        mass_1, mass_2, chi_1, chi_2, 
+        theta_jn,
+        psi,
+        ra,
+        dec,
+        phase,
+        luminosity_distance=1.0):
     """
     Bilby-compatible time-domain source model using PyCBC get_td_waveform.
 
@@ -508,20 +514,20 @@ def pycbc_seobnrv4_time_domain_source_model(time_array,
         mass2=mass_2,
         chi1z=chi_1,
         chi2z=chi_2,
-        inclination=base_injection["theta_jn"],
-        coa_phase=base_injection["phase"],
+        theta_jn=theta_jn,
+        psi=psi,
+        coa_phase=phase,
+        ra=ra,
+        dec=dec,
         delta_t=1/(DURATION*SAMPLE_RATE),
         f_lower=FMIN,
         f_ref=FREF
     )
 
-    hp = np.asarray(hp)
-    hc = np.asarray(hc)
-
-    amp_arr, phase_arr = amp_phase_from_polarizations(hp, hc)
+    amp_arr, phase_arr = amp_phase_from_polarizations(hp, hc, use_pycbc=True)
     hplus, hcross = get_conditioned_waveform(amp_arr, phase_arr,
                                              scale_factor=1.0,  # No scaling req! 
-                                             plot_result=True)
+                                             plot_result=False)
     
     if luminosity_distance != 1.0:
         hplus /= luminosity_distance
