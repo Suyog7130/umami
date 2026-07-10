@@ -41,9 +41,9 @@ from inference import (
 
 NOW = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
-DEFAULT_DURATION = 1.0
+DEFAULT_DURATION = 8.0
 DEFAULT_SAMPLING_FREQUENCY = 8192.0
-DEFAULT_FMIN = 20.0
+DEFAULT_FMIN = 12
 DEFAULT_FREF = 50.0
 DEFAULT_OUTDIR = f"out_ml2ml_pe_debug_{NOW}"
 DEFAULT_LABEL = "ml2ml_pe_debug"
@@ -1023,7 +1023,7 @@ def main():
         return
 
     priors = make_analysis_priors(injection_parameters=base_injection,
-                        with_mass_ratio_constraint=not args.without_mass_ratio_constraint)
+                                  without_mass_ratio_constraint=args.without_mass_ratio_constraint)
     
     injection_parameters = sample_injection_from_priors(
         base_injection=base_injection, active_priors=priors
