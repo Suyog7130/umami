@@ -313,7 +313,6 @@ def build_8s_tapered_ml_waveform(
     amplitude=None,
     phase=None,
     sampling_frequency=8192,
-    short_duration=1.0,
     segment_duration=8.0,
     insertion_start_seconds=3.5,
     merger_fraction=0.8,
@@ -321,6 +320,8 @@ def build_8s_tapered_ml_waveform(
     cross_sign=1.0,
     phase_offset=0.0,
     shift_merger_after_embed=True,
+    short_duration=1.0,
+    do_not_resample_length_to_one_second=False,
 ):
     """
     Full pipeline:
@@ -332,8 +333,6 @@ def build_8s_tapered_ml_waveform(
         embed into 8s segment
         FFT
     """
-    n_short = int(round(short_duration * sampling_frequency))
-
     if amplitude is None and phase is None:
         amplitude_raw, phase_raw = get_amp_phase_from_mlwavegen(
             mass_1=mass_1,
@@ -344,9 +343,30 @@ def build_8s_tapered_ml_waveform(
     else:
         amplitude_raw = as_1d_float_array(amplitude, "amplitude")
         phase_raw = as_1d_float_array(phase, "phase")
+    
+    if do_not_resample_length_to_one_second:
+        # Use the full length of the amp/phase without resampling to one second.
+        # In this case, the `insertion_start_seconds` is interpreted from actual waveform length.
+        n_short = len(amplitude)
+        amplitude_raw = amplitude_raw.copy()
+        phase_raw = phase_raw.copy()
 
-    amplitude_raw = resample_to_length(amplitude_raw, n_short)
-    phase_raw = resample_to_length(phase_raw, n_short)
+        # NOTE: My ML training has $f_{min}\in [11,60]$ with mean of 19.5 Hz
+        # FIXME: This `FMIN` value should ideally be lower than the lowest f_low value used in ML model training.
+        # But then the duration of the data exceeds the length of 8 second!
+        insertion_start_seconds = 1.0
+
+        logger.info("Using full length of amplitude and phase without resampling to 1 second.")
+        logger.info(f"Amplitude length: {len(amplitude_raw)}, Phase length: {len(phase_raw)}")
+        logger.info(f"Duration of the signal in seconds: {len(amplitude_raw) / sampling_frequency}")
+
+    else:
+        n_short = int(round(short_duration * sampling_frequency))
+        amplitude_raw = resample_to_length(amplitude_raw, n_short)
+        phase_raw = resample_to_length(phase_raw, n_short)
+
+    assert len(amplitude_raw) == len(phase_raw) == n_short, "Amplitude and phase must have the same length as n_short"
+
     phase_unwrapped = np.unwrap(phase_raw)
 
     start_taper_samples = find_one_cycle_taper_length_from_phase(

@@ -60,7 +60,12 @@ NOW = TODAY + '-' + TIME
 # -- define some constants for waveform generation
 SAMPLE_RATE = 8192  # Hz
 DURATION = 8.0  # seconds
-FMIN = 12.0  # Hz
+
+# NOTE: My ML training has $f_{min}\in [11,60]$ with mean of 19.5 Hz
+# FIXME: This `FMIN` value should ideally be lower than the lowest f_low value used in ML model training.
+# But then the duration of the data exceeds the length of 8 second!
+FMIN = 16.0  # Hz   
+
 FREF = 50.0  # Hz
 LUMINOSITY_DISTANCE = 400.0  # Mpc, should be same as for the ML waveform training data, to avoid bias in amplitudes!
 
@@ -491,9 +496,6 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
     return results
 
 
-
-
-
 def pycbc_seobnrv4_time_domain_source_model(time_array, 
         mass_1, mass_2, chi_1, chi_2, 
         theta_jn,
@@ -503,7 +505,10 @@ def pycbc_seobnrv4_time_domain_source_model(time_array,
         phase,
         luminosity_distance=1.0):
     """
-    Bilby-compatible time-domain source model using PyCBC get_td_waveform.
+    Bilby-compatible time-domain source model using PyCBC get_td_waveform,
+    which generates a waveform in the time domain with a set low frequency cutoff,
+    and adds this signal to a 8 second data segment with a fixed merger time of 6.4 second.
+    The signal is also conditioned such that the start and ends are tapered smoothly to zero.
 
     Returns:
         {"plus": hp, "cross": hc}
@@ -527,7 +532,8 @@ def pycbc_seobnrv4_time_domain_source_model(time_array,
     amp_arr, phase_arr = amp_phase_from_polarizations(hp, hc, use_pycbc=True)
     hplus, hcross = get_conditioned_waveform(amp_arr, phase_arr,
                                              scale_factor=1.0,  # No scaling req! 
-                                             plot_result=False)
+                                             plot_result=True,
+                                             do_not_resample_length_to_one_second=True,)
     
     if luminosity_distance != 1.0:
         hplus /= luminosity_distance
