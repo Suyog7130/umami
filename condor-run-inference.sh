@@ -77,6 +77,7 @@ echo "Checking core imports..."
 echo "Running inference.py..."
 
 "${PYTHON_EXE}" inference.py --run-one-injection --quiet \
+    # --truncate-eob-waveform-to-1s \
     --label "${LABEL}" \
     --injection-index "${INJECTION_INDEX}" \
     --sampler "${SAMPLER}" \

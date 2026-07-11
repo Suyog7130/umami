@@ -496,6 +496,8 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
     return results
 
 
+TRUNCATE_EOB_WAVEFORM_TO_1S = False
+
 def pycbc_seobnrv4_time_domain_source_model(time_array, 
         mass_1, mass_2, chi_1, chi_2, 
         theta_jn,
@@ -535,8 +537,8 @@ def pycbc_seobnrv4_time_domain_source_model(time_array,
     amp_arr, phase_arr = amp_phase_from_polarizations(hp, hc, use_pycbc=True)
     hplus, hcross = get_conditioned_waveform(amp_arr, phase_arr,
                                              scale_factor=1.0,  # No scaling req! 
-                                             plot_result=True,
-                                             truncate_wf_to_1s=True)
+                                             plot_result=False,
+                                             truncate_wf_to_1s=TRUNCATE_EOB_WAVEFORM_TO_1S)
     
     if luminosity_distance != 1.0:
         hplus /= luminosity_distance
@@ -545,11 +547,11 @@ def pycbc_seobnrv4_time_domain_source_model(time_array,
     return {"plus": hplus, "cross": hcross}
 
 
-def make_wf_generator(type: {'eob_bilby', 'eob', 'ml'}, 
+def make_wf_generator(type: {'eobbilby', 'eob', 'ml'}, 
                       wfkwargs: Dict = {},
                       wf_source_model = None,
                       parameter_converter = None) -> WaveformGenerator:
-    if type=='eob_bilby':
+    if type=='eobbilby':
         if wf_source_model is None:
             wf_source_model = bilby.gw.source.lal_binary_black_hole
         if parameter_converter is None:
@@ -641,7 +643,7 @@ def set_sampler_kwargs(args, sampler):
 
 
 def main(args, label='umamipe', 
-         pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml', 
+         pe_run_type: {'ml2ml', 'eobbilby2ml', 'eobbilby2eobbilby', 'eob2ml', 'eob2eob'} = 'ml2ml', 
          sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',):
     label = label + f'_{pe_run_type}_{sampler}'
     project_dir = f'../{args.project_dir}/'
@@ -691,6 +693,13 @@ def main(args, label='umamipe',
     # Perform a check that the prior does not extend to a parameter space longer than the data
     active_priors.validate_prior(DURATION, FMIN)
 
+    if args.truncate_eob_waveform_to_1s:
+        global TRUNCATE_EOB_WAVEFORM_TO_1S
+        TRUNCATE_EOB_WAVEFORM_TO_1S = True
+        logger.warning("We will be truncating EOB waveforms to 1 second duration for injection and/or recovery.")
+    else:
+        logger.warning("Not truncating EOB waveforms to 1 second duration. It is assumed for waveform conditioning that the actual EOB waveform length is shorter than 8 second long data segment it will be embedded into.")
+
     wfkwargs={'wfmodel_modelpath': model_path, 
                 'wfmodel_configpath': config_path,
                 'calibrator_modelpath': calmodel_path}
@@ -699,15 +708,24 @@ def main(args, label='umamipe',
         base_injection['luminosity_distance'] = args.distance_factor
         logger.info(f"Using distance factor / luminosity distance for ML waveform generator: {args.distance_factor} Mpc")
     if pe_run_type == 'eob2eob':
+        # -- this uses PyCBC SEOBNRv4 time-domain waveform generator!
         injection_generator = make_wf_generator('eob')
         waveform_generator = make_wf_generator('eob')
         logger.info("Initialized EOB waveform generator for both injection and recovery.")
+    elif pe_run_type == 'eobbilby2eobbilby':
+        # -- this uses bilby waveform generator, without conditioning!
+        injection_generator = make_wf_generator('eobbilby')
+        waveform_generator = make_wf_generator('eobbilby')
+        logger.info("Initialized EOB Bilby waveform generator for both injection and recovery.")
     else:
         waveform_generator = make_wf_generator('ml', wfkwargs=wfkwargs)
         if pe_run_type == 'ml2ml':
             injection_generator = make_wf_generator('ml', wfkwargs=wfkwargs)
             logger.info("Initialized ML waveform generator for both injection and recovery.")
-        if pe_run_type == 'eob2ml':
+        elif pe_run_type == 'eobbilby2ml':
+            injection_generator = make_wf_generator('eobbilby')
+            logger.info("Initialized EOB Bilby waveform generator for injection and ML waveform generator for recovery.")
+        elif pe_run_type == 'eob2ml':
             injection_generator = make_wf_generator('eob')
             logger.info("Initialized EOB waveform generator for injection and ML waveform generator for recovery.")
 
@@ -1348,13 +1366,16 @@ if __name__ == "__main__":
     parser.add_argument('--force', action='store_true',
                         help="Force overwrite of existing results for the given injection (default: False)")
     
-    parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml'], default='ml2ml',
+    parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml', 'eobbilby2ml'], default='ml2ml',
                         help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
     parser.add_argument('--sampler', type=str, choices=['nessai', 'dynesty', 'pocomc'], default='nessai',
                         help="Sampler to use for parameter estimation: 'nessai' for neural density estimation sampler, 'dynesty' for nested sampling, 'pocomc' for preconditioned Monte Carlo (default: nessai)")
     
     parser.add_argument('--distance-factor', type=float, default=None,
                         help="Distance scale factor for the injection (default: %(default)s)")
+    parser.add_argument('--truncate-eob-waveform-to-1s', action='store_true',
+                        help="Whether to truncate the EOB waveform to 1 second (default: False)")
+
     
     parser.add_argument('--nlive', type=int, default=300,
                         help="Number of live points for the sampler (default: %(default)s)")
