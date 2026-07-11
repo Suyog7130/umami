@@ -162,7 +162,7 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, 
                         labels_mean=None, labels_std=None,
                         inputnames=['ml_hp', 'ml_hc'], 
                         targetnames=['target_hp_residual', 'target_hc_residual'],
-                        perform_conditioning=True
+                        perform_conditioning=False,
     ):
     """
     Generate the fine tuner input and target data for a batch of original waveforms and labels.
@@ -198,9 +198,14 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, 
 
     if perform_conditioning:
         amp_mlcal, phase_mlcal = calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=False)
-        hp_mlcond, hc_mlcond = get_batched_conditioned_waveforms(amp_mlcal, phase_mlcal)
+        hp_mlcond, hc_mlcond = get_batched_conditioned_waveforms(amp_mlcal, phase_mlcal, 
+                                                                 segment_duration=2.0,
+                                                                 insertion_start_seconds=0.5,
+                                                                 use_passed_amplitude_phase=True)
         amp_orig, phase_orig = amp_phase_from_polarizations(orig_hp, orig_hc)
-        hp_origcond, hc_origcond = get_batched_conditioned_waveforms(amp_orig, phase_orig, scale_factor=1.0)
+        hp_origcond, hc_origcond = get_batched_conditioned_waveforms(amp_orig, phase_orig, 
+                                                                 scale_factor=1.0, segment_duration=2.0, insertion_start_seconds=0.5,
+                                                                 use_passed_amplitude_phase=True)
         hp_ml_final, hc_ml_final = hp_mlcond, hc_mlcond
         hp_orig_final, hc_orig_final = hp_origcond, hc_origcond
     else:
@@ -241,27 +246,26 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, 
     param_s1z = param_s1z.unsqueeze(-1).expand(-1, hp_ml_final.shape[-1])
     param_s2z = param_s2z.unsqueeze(-1).expand(-1, hp_ml_final.shape[-1])
 
-    fig, ax = plt.subplots(4, 1, figsize=(12, 12))
-    ax[0].plot(hp_ml_final[0].cpu().numpy(), label=inputnames[0])
-    ax[0].plot(hp_orig_final[0].cpu().numpy(), label='original_hp')
-    ax[0].set_title('ML Generated HP vs Original HP')
-    ax[0].legend()
-    ax[1].plot(target_hp_residual[0].cpu().numpy(), label=targetnames[0])
-    ax[1].set_title('Target HP Residual')
-    ax[1].legend()
-    ax[2].plot(hc_ml_final[0].cpu().numpy(), label=inputnames[1])
-    ax[2].plot(hc_orig_final[0].cpu().numpy(), label='original_hc')
-    ax[2].set_title('ML Generated HC vs Original HC')
-    ax[2].legend()
-    ax[3].plot(target_hc_residual[0].cpu().numpy(), label=targetnames[1])
-    ax[3].set_title(targetnames[1])
-    ax[3].legend()
-    putils.beautifyPlot(ax, top=True, right=True)
-    plt.tight_layout()
-    plt.savefig(f'finetuner_input_example_{NOW}.png', dpi=300, bbox_inches='tight')
-    plt.show()
-    plt.close()
-    exit()
+    # fig, ax = plt.subplots(4, 1, figsize=(12, 12))
+    # ax[0].plot(hp_ml_final[0].cpu().numpy(), label=inputnames[0])
+    # ax[0].plot(hp_orig_final[0].cpu().numpy(), label='original_hp')
+    # ax[0].set_title('ML Generated HP vs Original HP')
+    # ax[0].legend()
+    # ax[1].plot(target_hp_residual[0].cpu().numpy(), label=targetnames[0])
+    # ax[1].set_title('Target HP Residual')
+    # ax[1].legend()
+    # ax[2].plot(hc_ml_final[0].cpu().numpy(), label=inputnames[1])
+    # ax[2].plot(hc_orig_final[0].cpu().numpy(), label='original_hc')
+    # ax[2].set_title('ML Generated HC vs Original HC')
+    # ax[2].legend()
+    # ax[3].plot(target_hc_residual[0].cpu().numpy(), label=targetnames[1])
+    # ax[3].set_title(targetnames[1])
+    # ax[3].legend()
+    # putils.beautifyPlot(ax, top=True, right=True)
+    # plt.tight_layout()
+    # plt.savefig(f'finetuner_input_example_{NOW}.png', dpi=300, bbox_inches='tight')
+    # plt.show()
+    # plt.close()
 
     if labels_mean is None or labels_std is None:
         labels_mean = wfmodel.MODEL_CONFIG['labels_mean']
@@ -304,6 +308,7 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, 
 
 
 def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modelname,
+                        perform_conditioning=True,
                         timestamp = NOW):
     """
     Generate and save the fine tuner input and target data to HDF files.
@@ -377,6 +382,7 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
                 attr=attr,
                 inputnames=inputnames,
                 targetnames=targetnames,
+                perform_conditioning=perform_conditioning
             )
         hf_file.close()
     logger.info(f"Finished generating and saving finetuner input and target data for {datasets[i]} set to HDF file: {savename}")
@@ -388,7 +394,8 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
         'calibrator_modelname': calibrator_modelname,
         'inputnames': inputnames,
         'targetnames': targetnames,
-        'timestamp': timestamp
+        'timestamp': timestamp,
+        'perform_conditioning': perform_conditioning,
     }
     config_fname = f'finetuner_data_{timestamp}_config.json'
     with open(os.path.join(savedir, config_fname), 'w') as f:

@@ -321,6 +321,7 @@ def build_8s_tapered_ml_waveform(
     short_duration=1.0,
     do_not_resample_length_to_one_second=False,
     truncate_wf_to_1s=False,
+    use_passed_amplitude_phase=False
 ):
     """
     Full pipeline:
@@ -371,6 +372,12 @@ def build_8s_tapered_ml_waveform(
             diff = len(amplitude_raw) - n_short
             amplitude_raw = amplitude_raw[diff:]
             phase_raw = phase_raw[diff:]
+
+    elif use_passed_amplitude_phase:
+        # -- do not resample 8191 length arrays to 8192, instead, simply we append zeros later!
+        n_short = len(amplitude)
+        amplitude_raw = amplitude_raw.copy()
+        phase_raw = phase_raw.copy()
 
     else:
         # -- Otherwise, we assume conditioning is being done for the ML model and we resample 8191 to 8192 samples!
@@ -536,7 +543,9 @@ def get_batched_conditioned_waveforms(amp_batch, phase_batch, scale_factor=10**2
     if len(amp_batch) != len(phase_batch):
         raise ValueError("Amplitude and phase batches must have the same length")
     
-    output_size = int(SAMPLE_RATE * DURATION)  # 8192 * 8 = 65536 samples for 8 seconds
+    segment_duration = kwargs.get("segment_duration", 8.0)
+    
+    output_size = int(SAMPLE_RATE * segment_duration)  # 8192 * 8 = 65536 samples for 8 seconds
     out_hp_batch = np.zeros((len(amp_batch), output_size), dtype=np.float64)
     out_hc_batch = np.zeros((len(phase_batch), output_size), dtype=np.float64)
 
