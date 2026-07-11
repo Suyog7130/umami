@@ -43,7 +43,7 @@ from calibration import (
     merger_weighted_mse_loss_func
 )
 
-from wfconditioner import get_conditioned_waveform
+from wfconditioner import get_batched_conditioned_waveforms
 from plotutils import putils
 
 from utils.io import ensure_dirs_and_files, ensure_dir
@@ -198,9 +198,9 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, 
 
     if perform_conditioning:
         amp_mlcal, phase_mlcal = calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=False)
-        hp_mlcond, hc_mlcond = get_conditioned_waveform(amp_mlcal, phase_mlcal)
-        amp_orig, phase_orig = amp_phase_from_polarizations(orig_hp, orig_hc, use_pycbc=True)
-        hp_origcond, hc_origcond = get_conditioned_waveform(amp_orig, phase_orig)
+        hp_mlcond, hc_mlcond = get_batched_conditioned_waveforms(amp_mlcal, phase_mlcal)
+        amp_orig, phase_orig = amp_phase_from_polarizations(orig_hp, orig_hc)
+        hp_origcond, hc_origcond = get_batched_conditioned_waveforms(amp_orig, phase_orig, scale_factor=1.0)
         hp_ml_final, hc_ml_final = hp_mlcond, hc_mlcond
         hp_orig_final, hc_orig_final = hp_origcond, hc_origcond
     else:
@@ -211,7 +211,6 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, 
     assert hp_ml_final.shape == hp_orig_final.shape, f"Shape mismatch: hp_ml_final {hp_ml_final.shape} vs hp_orig_final {hp_orig_final.shape}"
     assert hc_ml_final.shape == hc_orig_final.shape, f"Shape mismatch: hc_ml_final {hc_ml_final.shape} vs hc_orig_final {hc_orig_final.shape}"
 
-    finetuner_input = torch.stack([hp_ml_final, hc_ml_final], dim=1)  # shape (batch_size, 2, num_samples)
 
     # -- Compute residual and normalize them!
     target_hp_residual = hp_orig_final - hp_ml_final
@@ -219,6 +218,18 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, 
 
     logger.debug(f"Computed target residuals with shapes: {target_hp_residual.shape}, {target_hc_residual.shape}")
 
+    # -- convert numpy arrays to torch tensors if needed, and stack them!
+    if not isinstance(hp_ml_final, torch.Tensor):
+        hp_ml_final = torch.tensor(hp_ml_final, dtype=getattr(torch, PRECISION))
+        hc_ml_final = torch.tensor(hc_ml_final, dtype=getattr(torch, PRECISION))
+    if not isinstance(hp_orig_final, torch.Tensor):
+        hp_orig_final = torch.tensor(hp_orig_final, dtype=getattr(torch, PRECISION))
+        hc_orig_final = torch.tensor(hc_orig_final, dtype=getattr(torch, PRECISION))
+    if not isinstance(target_hp_residual, torch.Tensor):
+        target_hp_residual = torch.tensor(target_hp_residual, dtype=getattr(torch, PRECISION))
+        target_hc_residual = torch.tensor(target_hc_residual, dtype=getattr(torch, PRECISION))
+
+    finetuner_input = torch.stack([hp_ml_final, hc_ml_final], dim=1)  # shape (batch_size, 2, num_samples)
     finetuner_target = torch.stack([target_hp_residual, target_hc_residual], dim=1)  # shape (batch_size, 2, num_samples)
     logger.debug(f"Stacked finetuner input shape: {finetuner_input.shape}, target shape: {finetuner_target.shape}")
 
@@ -248,6 +259,7 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, 
     putils.beautifyPlot(ax, top=True, right=True)
     plt.tight_layout()
     plt.savefig(f'finetuner_input_example_{NOW}.png', dpi=300, bbox_inches='tight')
+    plt.show()
     plt.close()
     exit()
 

@@ -39,9 +39,7 @@ NOW = TODAY + '-' + TIME
 
 # -- define some constants for waveform generation
 SAMPLE_RATE = 8192  # Hz
-DURATION = 1.0  # seconds
-FMIN = 20.0  # Hz
-FREF = 50.0  # Hz
+DURATION = 8.0  # seconds
 
 
 if torch.cuda.is_available():
@@ -527,8 +525,32 @@ def get_conditioned_waveform(amplitude, phase, scale_factor=10**20,
             outdir=savedir,
             label="amp-phase_conditioning_test",
         )
-
     return (hp_cond, hc_cond)
+
+
+def get_batched_conditioned_waveforms(amp_batch, phase_batch, scale_factor=10**20, 
+                                      plot_result=False, **kwargs):
+    """
+    Get conditioned waveforms for a batch of amplitude and phase arrays.
+    """
+    if len(amp_batch) != len(phase_batch):
+        raise ValueError("Amplitude and phase batches must have the same length")
+    
+    output_size = int(SAMPLE_RATE * DURATION)  # 8192 * 8 = 65536 samples for 8 seconds
+    out_hp_batch = np.zeros((len(amp_batch), output_size), dtype=np.float64)
+    out_hc_batch = np.zeros((len(phase_batch), output_size), dtype=np.float64)
+
+    for i, (amp, phase) in enumerate(zip(amp_batch, phase_batch)):
+        hp_cond, hc_cond = get_conditioned_waveform(
+            amplitude=amp,
+            phase=phase,
+            scale_factor=scale_factor,
+            plot_result=plot_result,
+            **kwargs
+        )
+        out_hp_batch[i] = hp_cond
+        out_hc_batch[i] = hc_cond
+    return out_hp_batch, out_hc_batch
 
 
 def plot_tapered_waveform_stages(result, outdir=".", label="ml_taper_debug",
