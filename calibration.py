@@ -1362,17 +1362,24 @@ def plot_calibrated_mm_hist(hdf_path, results_dir=None,
                  fname=fname, now=NOW, types=types, titles=titles)
     logger.info("Plotted calibrated mismatch histograms.")
 
-    # -- Find and save best and worst performing parameter values based on the mismatch results
-    best_mismatch_idx = dfmm[types[0]].idxmin()
-    worst_mismatch_idx = dfmm[types[0]].idxmax()
+    # -- Find and save best, and worst performing parameter values based on the mismatch results
+    best_mismatch_idx = dfmm[types[2]].idxmin()
+    worst_mismatch_idx = dfmm[types[2]].idxmax()
     best_mismatch_params = dfmm.loc[best_mismatch_idx, ['m1', 'm2', 'chi1z', 'chi2z']].to_dict()
     worst_mismatch_params = dfmm.loc[worst_mismatch_idx, ['m1', 'm2', 'chi1z', 'chi2z']].to_dict()
     best_worst_results = {
-        'best_mismatch': dfmm.loc[best_mismatch_idx, types[0]],
+        'best_mismatch': dfmm.loc[best_mismatch_idx, types[2]],
         'best_mismatch_params': best_mismatch_params,
-        'worst_mismatch': dfmm.loc[worst_mismatch_idx, types[0]],
+        'worst_mismatch': dfmm.loc[worst_mismatch_idx, types[2]],
         'worst_mismatch_params': worst_mismatch_params,
     }
+    # -- Now, find and save params for the median mismatch or the closest to the median mismatch value
+    median_mismatch_value = dfmm[types[2]].median()
+    diff_to_median = (dfmm[types[2]] - median_mismatch_value).abs()
+    median_mismatch_idx = diff_to_median.idxmin()
+    median_mismatch_params = dfmm.loc[median_mismatch_idx, ['m1', 'm2', 'chi1z', 'chi2z']].to_dict()
+    best_worst_results['median_mismatch'] = dfmm.loc[median_mismatch_idx, types[2]]
+    best_worst_results['median_mismatch_params'] = median_mismatch_params
     best_worst_fname = os.path.join(results_dir, f'best_worst_mismatch_results_{NOW}.json')
     with open(best_worst_fname, 'w') as f:
         json.dump(best_worst_results, f, indent=4)
