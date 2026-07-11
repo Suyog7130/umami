@@ -466,14 +466,26 @@ def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13,
         ax[i].set_ylabel('Count', fontsize=fontsize)
         ax[i].text(0.95, 0.95, f'{titles[i]}', fontweight='bold',
                    transform=ax[i].transAxes, fontsize=fontsize, va='top', ha='right')
-        _mode = dfmm[t].mode()[0]
-        _mean = dfmm[t].mean()
-        _median = dfmm[t].median()
+        
+        # -- Calculate mode, mean and median of the data by first taking the average of all histogram bins,
+        # and then reporting the statistics of this data. This ensures that the mode reported will be the
+        # average value of the bin with the highest count, rather than some singleton value elsewhere in the data.
+        # _mode = dfmm[t].mode()[0]
+        # _mean = dfmm[t].mean()
+        # _median = dfmm[t].median()
+        counts, bin_edges = np.histogram(dfmm[t], bins=bins)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        _mode = bin_centers[np.argmax(counts)]
+        _mean = np.average(bin_centers, weights=counts)
+        _median = np.median(np.repeat(bin_centers, counts))
+
         logger.info(f"{t}: Mode = {_mode:.2e}, Mean = {_mean:.2e}, Median = {_median:.2e}")
+
         ax[i].text(0.95, 0.85, f'Mode: {_mode:.2e}\nMean: {_mean:.2e}\nMedian: {_median:.2e}', 
                    transform=ax[i].transAxes, fontsize=labelsize, va='top', ha='right')
         ax[i].tick_params(which="both", direction='in', top=True, right=True)
         ax[i].tick_params(labelsize=labelsize)
+
     plt.tight_layout()
     savename = os.path.join(savedir, f'mismatch_hist')
     savename += f'-{fname}' if fname else ''
