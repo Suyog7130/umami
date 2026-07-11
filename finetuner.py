@@ -43,7 +43,7 @@ from calibration import (
     merger_weighted_mse_loss_func
 )
 
-from maincvae import plot_mismatch, plot_polarization_mismatch
+from wfconditioner import get_conditioned_waveform
 from plotutils import putils
 
 from utils.io import ensure_dirs_and_files, ensure_dir
@@ -51,6 +51,7 @@ from utils.gwutils import (
     calculate_cosine_distance,
     polarizations_from_ampfreq,
     polarizations_from_amp_phase,
+    amp_phase_from_polarizations,
     calc_polarization_mismatch,
     calc_chirp_mass,
     calc_chieff,
@@ -73,9 +74,7 @@ NOW = TODAY + '-' + TIME
 
 # -- define some constants for waveform generation
 SAMPLE_RATE = 8192  # Hz
-DURATION = 1.0  # seconds
-FMIN = 20.0  # Hz
-FREF = 50.0  # Hz
+DURATION = 8.0  # seconds
 
 
 if torch.cuda.is_available():
@@ -161,7 +160,9 @@ def calc_residual_via_best_match(orig, ml, delta_t=None, use_psd=True):
 
 def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, attr=None,
                         labels_mean=None, labels_std=None,
-                        inputnames=['ml_hp', 'ml_hc'], targetnames=['target_hp_residual', 'target_hc_residual'],
+                        inputnames=['ml_hp', 'ml_hc'], 
+                        targetnames=['target_hp_residual', 'target_hc_residual'],
+                        perform_conditioning=True
     ):
     """
     Generate the fine tuner input and target data for a batch of original waveforms and labels.
@@ -195,57 +196,60 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, 
     outwaves = wfmodel.generate(labels, convert_to_hphc=False)  # has shape (1, 2=[amp,phase], seq_len)!
     logger.debug(f"Generated waveform from ML model with shape: {outwaves.shape}")
 
-    ml_hp, ml_hc = calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=True)
-    logger.debug(f"Calibrated waveform shape: {ml_hp.shape}, {ml_hc.shape}")
+    if perform_conditioning:
+        amp_mlcal, phase_mlcal = calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=False)
+        hp_mlcond, hc_mlcond = get_conditioned_waveform(amp_mlcal, phase_mlcal)
+        amp_orig, phase_orig = amp_phase_from_polarizations(orig_hp, orig_hc, use_pycbc=True)
+        hp_origcond, hc_origcond = get_conditioned_waveform(amp_orig, phase_orig)
+        hp_ml_final, hc_ml_final = hp_mlcond, hc_mlcond
+        hp_orig_final, hc_orig_final = hp_origcond, hc_origcond
+    else:
+        ml_hp, ml_hc = calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=True)
+        hp_ml_final, hc_ml_final = ml_hp, ml_hc
+        hp_orig_final, hc_orig_final = orig_hp, orig_hc
 
-    assert ml_hp.shape == orig_hp.shape, f"Shape mismatch: ml_hp {ml_hp.shape} vs orig_hp {orig_hp.shape}"
-    assert ml_hc.shape == orig_hc.shape, f"Shape mismatch: ml_hc {ml_hc.shape} vs orig_hc {orig_hc.shape}"
+    assert hp_ml_final.shape == hp_orig_final.shape, f"Shape mismatch: hp_ml_final {hp_ml_final.shape} vs hp_orig_final {hp_orig_final.shape}"
+    assert hc_ml_final.shape == hc_orig_final.shape, f"Shape mismatch: hc_ml_final {hc_ml_final.shape} vs hc_orig_final {hc_orig_final.shape}"
 
-    # # -- compute the residuals between the original and ML-generated waveforms
-    # target_hp_residual = torch.tensor([calc_residual_via_best_match(orig_hp[i].cpu(), ml_hp[i].cpu(), 
-    #                                    delta_t=attr['delta_t'][i]) 
-    #                                    for i in range(orig_hp.shape[0])], dtype=getattr(torch, PRECISION), device=DEVICE)
-    # target_hc_residual = torch.tensor([calc_residual_via_best_match(orig_hc[i].cpu(), ml_hc[i].cpu(), 
-    #                                    delta_t=attr['delta_t'][i]) 
-    #                                    for i in range(orig_hc.shape[0])], dtype=getattr(torch, PRECISION), device=DEVICE)
+    finetuner_input = torch.stack([hp_ml_final, hc_ml_final], dim=1)  # shape (batch_size, 2, num_samples)
 
     # -- Compute residual and normalize them!
-    target_hp_residual = orig_hp - ml_hp
-    target_hc_residual = orig_hc - ml_hc
+    target_hp_residual = hp_orig_final - hp_ml_final
+    target_hc_residual = hc_orig_final - hc_ml_final
 
     logger.debug(f"Computed target residuals with shapes: {target_hp_residual.shape}, {target_hc_residual.shape}")
 
-    finetuner_input = torch.stack([ml_hp, ml_hc], dim=1)  # shape (batch_size, 2, num_samples)
     finetuner_target = torch.stack([target_hp_residual, target_hc_residual], dim=1)  # shape (batch_size, 2, num_samples)
     logger.debug(f"Stacked finetuner input shape: {finetuner_input.shape}, target shape: {finetuner_target.shape}")
 
     param_m1, param_m2, param_s1z, param_s2z = labels[:, 0], labels[:, 1], labels[:, 2], labels[:, 3]
 
     # -- repeat the parameters across the time dimension to match the shape of ml_amp/ml_freq
-    param_m1 = param_m1.unsqueeze(-1).expand(-1, ml_hp.shape[-1])
-    param_m2 = param_m2.unsqueeze(-1).expand(-1, ml_hp.shape[-1])
-    param_s1z = param_s1z.unsqueeze(-1).expand(-1, ml_hp.shape[-1])
-    param_s2z = param_s2z.unsqueeze(-1).expand(-1, ml_hp.shape[-1])
+    param_m1 = param_m1.unsqueeze(-1).expand(-1, hp_ml_final.shape[-1])
+    param_m2 = param_m2.unsqueeze(-1).expand(-1, hp_ml_final.shape[-1])
+    param_s1z = param_s1z.unsqueeze(-1).expand(-1, hp_ml_final.shape[-1])
+    param_s2z = param_s2z.unsqueeze(-1).expand(-1, hp_ml_final.shape[-1])
 
-    # fig, ax = plt.subplots(4, 1, figsize=(12, 12))
-    # ax[0].plot(ml_hp[0].cpu().numpy(), label=inputnames[0])
-    # ax[0].plot(orig_hp[0].cpu().numpy(), label='original_hp')
-    # ax[0].set_title('ML Generated HP vs Original HP')
-    # ax[0].legend()
-    # ax[1].plot(target_hp_residual[0].cpu().numpy(), label=targetnames[0])
-    # ax[1].set_title('Target HP Residual')
-    # ax[1].legend()
-    # ax[2].plot(ml_hc[0].cpu().numpy(), label=inputnames[1])
-    # ax[2].plot(orig_hc[0].cpu().numpy(), label='original_hc')
-    # ax[2].set_title('ML Generated HC vs Original HC')
-    # ax[2].legend()
-    # ax[3].plot(target_hc_residual[0].cpu().numpy(), label=targetnames[1])
-    # ax[3].set_title(targetnames[1])
-    # ax[3].legend()
-    # putils.beautifyPlot(ax, top=True, right=True)
-    # plt.tight_layout()
-    # plt.savefig(f'finetuner_input_example_{NOW}.png', dpi=300, bbox_inches='tight')
-    # plt.close()
+    fig, ax = plt.subplots(4, 1, figsize=(12, 12))
+    ax[0].plot(hp_ml_final[0].cpu().numpy(), label=inputnames[0])
+    ax[0].plot(hp_orig_final[0].cpu().numpy(), label='original_hp')
+    ax[0].set_title('ML Generated HP vs Original HP')
+    ax[0].legend()
+    ax[1].plot(target_hp_residual[0].cpu().numpy(), label=targetnames[0])
+    ax[1].set_title('Target HP Residual')
+    ax[1].legend()
+    ax[2].plot(hc_ml_final[0].cpu().numpy(), label=inputnames[1])
+    ax[2].plot(hc_orig_final[0].cpu().numpy(), label='original_hc')
+    ax[2].set_title('ML Generated HC vs Original HC')
+    ax[2].legend()
+    ax[3].plot(target_hc_residual[0].cpu().numpy(), label=targetnames[1])
+    ax[3].set_title(targetnames[1])
+    ax[3].legend()
+    putils.beautifyPlot(ax, top=True, right=True)
+    plt.tight_layout()
+    plt.savefig(f'finetuner_input_example_{NOW}.png', dpi=300, bbox_inches='tight')
+    plt.close()
+    exit()
 
     if labels_mean is None or labels_std is None:
         labels_mean = wfmodel.MODEL_CONFIG['labels_mean']
@@ -324,7 +328,6 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
             logger.error(f"Provided CALMODEL_PATH does not exist: {calmodel_path}")
             raise FileNotFoundError(f"CALMODEL_PATH file not found at {calmodel_path}")
     logger.info(f"Using CALMODEL_PATH: {calmodel_path}")
-
 
     ml_wfmodel = load_flex_model(model_path=model_path, 
                                 configpath=config_path, 

@@ -940,7 +940,6 @@ def make_ordered_result(result):
     return r
 
 
-
 def swap_dataframe_component_labels(df):
     out = df.copy()
 
@@ -1249,6 +1248,7 @@ def debug_reweight_samples(result, new_likelihood, nsamp=100):
     print("top 5 weights:", np.sort(w)[-5:])
     return df, logl_new, logw, w, n_eff
 
+
 def imp_reweight_posteriors(fname: str, 
                             outdir: str = f'../{PROJECT_DIR}/results/',
                             use_old_likelihood_from_file: bool = True,
@@ -1375,7 +1375,6 @@ if __name__ == "__main__":
                         help="Distance scale factor for the injection (default: %(default)s)")
     parser.add_argument('--truncate-eob-waveform-to-1s', action='store_true',
                         help="Whether to truncate the EOB waveform to 1 second (default: False)")
-
     
     parser.add_argument('--nlive', type=int, default=300,
                         help="Number of live points for the sampler (default: %(default)s)")
