@@ -89,6 +89,7 @@ echo "Running inference.py..."
     --model-name flexcvae-model-backup-20260619-064140-epoch98.pt \
     --model-config modelconfig-flexcvae-20260619-064140.json \
     --calmodel-name calibrator_model_20260623-010953_epoch74.pt \
+    --use-set-injection-params \
     # --truncate-eob-waveform-to-1s \
 
 EXIT_CODE=$?
