@@ -1288,6 +1288,7 @@ def imp_reweight_posteriors(fname: str,
                             outdir: str = f'../{PROJECT_DIR}/results/',
                             use_old_likelihood_from_file: bool = True,
                             use_nested_samples: bool = False,
+                            eob_wf_gen_type: {'eob', 'eobbilby'} = 'eob',
                             npool: int = 8):
     """
     Do importance reweighting for a posterior using built-in `bilby.gw.core.result.reweight`
@@ -1329,8 +1330,11 @@ def imp_reweight_posteriors(fname: str,
     ifos = read_ifos_from_file(fname=fname.replace('_result.json', '_ifos.pkl'), outdir=outdir)
     logger.info(f"Interferometer injection parameters are: {ifos[0].__dict__}")
 
-    waveform_generator = make_wf_generator('eob', 
-                                           wf_source_model=lal_binary_black_hole_aligned_chi,param_converter=identity_parameter_conversion,)
+    if eob_wf_gen_type == 'eobbilby':
+        waveform_generator = make_wf_generator('eobbilby', 
+                                            wf_source_model=lal_binary_black_hole_aligned_chi,param_converter=identity_parameter_conversion,)
+    else:
+        waveform_generator = make_wf_generator('eob')
 
     eob_likelihood = GravitationalWaveTransient(
         interferometers=ifos,
@@ -1338,7 +1342,7 @@ def imp_reweight_posteriors(fname: str,
     )
 
     # Set wfgenerator start_time to that of interferometer geocent_time
-    waveform_generator.start_time = ifos[0].meta_data['geocent_time']
+    waveform_generator.start_time = ifos[0].meta_data['parameters']['geocent_time']
 
     df_dbg, logl_eob_dbg, logw_dbg, w_dbg, neff_dbg = debug_reweight_samples(
         result,
