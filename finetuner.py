@@ -366,13 +366,14 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
                                             batch_size=64,
                                             return_test_loader=True, 
                                             num_workers=0, return_indices=True)
-    if 'train' not in datasets:
+    dataloaders = [wftestloader]
+    if 'valid' in datasets:
         wfvalidloader = set_waveform_dataloaders(target_type='amp_phase', 
                                                 batch_size=64,
                                                 return_only_val_loader=True,
                                                 num_workers=0, return_indices=True)
         dataloaders = [wfvalidloader, wftestloader]
-    else:
+    elif 'train' in datasets and 'valid' in datasets:
         wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type='amp_phase', 
                                                                 batch_size=64,
                                                                 num_workers=0, return_indices=True)
