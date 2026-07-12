@@ -770,6 +770,9 @@ def main(args, label='umamipe',
         # Allow injection index start to wary, so that new runs can be performed via HTCondor.
         injection_index = args.injection_index + args.injection_index_start
 
+        if args.use_set_injection_params:
+            injection_index = 0
+
         if check_DONE_file_exists(outdir, label=label, injection_index=injection_index, check_all_subdirs=False):
             if not args.force:
                 logger.info(f"PE results for injection index {injection_index} already exist. Skipping this injection.")
