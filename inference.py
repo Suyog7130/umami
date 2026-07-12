@@ -132,6 +132,29 @@ def make_default_base_injection() -> Dict[str, float]:
 
 base_injection = make_default_base_injection()
 
+p2m_cond_best_worst_params = {
+    "best_mismatch": 0.0032256899092882874,
+    "best_mismatch_params": {
+        "mass_1": 52.29399871826172,
+        "mass_2": 32.418025970458984,
+        "chi_1": 0.31453636288642883,
+        "chi_2": -0.16409091651439667
+    },
+    "worst_mismatch": 0.2469990280857144,
+    "worst_mismatch_params": {
+        "mass_1": 5.130840301513672,
+        "mass_2": 9.432706832885742,
+        "chi_1": 0.8170799016952515,
+        "chi_2": -0.8445430397987366
+    },
+    "median_mismatch": 0.011362908620650036,
+    "median_mismatch_params": {
+        "mass_1": 65.2022476196289,
+        "mass_2": 22.095273971557617,
+        "chi_1": 0.35439324378967285,
+        "chi_2": 0.8108929991722107
+    }
+}
 
 
 # def signed_chi_to_bilby_spins(params):
@@ -395,10 +418,12 @@ def get_network_optimal_snr(ifos):
         snrs.append(float(ifo.meta_data["optimal_SNR"]))
     return np.sqrt(np.sum(np.asarray(snrs) ** 2))
 
+
 def run_single_injection(run_idx, seed=None, label_base='umamipe', 
                          outdir=f'../{PROJECT_DIR}/results/',
                          active_priors=None,
                          injection_generator=None, waveform_generator=None, 
+                         use_set_injection_params=False,
                          sampler=None, **sampler_kwargs):
     if seed is not None:
         rng_seed = seed + run_idx
@@ -406,10 +431,16 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
     this_label = f"{label_base}_inj_{run_idx:04d}"
     logger.info(f"Running sampler for injection {run_idx} with label {this_label} using sampler {sampler}...")
 
-    injection_parameters = sample_injection_from_priors(
-        base_injection=base_injection,
-        active_priors=active_priors,
-    )
+    if use_set_injection_params:
+        logger.warning("Using pre-defined injection parameters for best mismatch, instead of sampling from priors!")
+        injection_parameters = base_injection.copy()
+        set_params = p2m_cond_best_worst_params["best_mismatch_params"]
+        injection_parameters.update(set_params)
+    else:
+        injection_parameters = sample_injection_from_priors(
+            base_injection=base_injection,
+            active_priors=active_priors,
+        )
     logger.debug(f"Sampled injection parameters for run {run_idx}: {injection_parameters}")
 
     ifos.set_strain_data_from_power_spectral_densities(
@@ -751,7 +782,8 @@ def main(args, label='umamipe',
                                         label_base=label, outdir=outdir,
                                         active_priors=active_priors,
                                         injection_generator=injection_generator, 
-                                        waveform_generator=waveform_generator, 
+                                        waveform_generator=waveform_generator,
+                                        use_set_injection_params=args.use_set_injection_params,
                                         sampler=sampler, **sampler_kwargs)
         
     elif args.run_pe_campaign:
@@ -1365,6 +1397,8 @@ if __name__ == "__main__":
                         help="Ending index of the injection runs to analyze (default: %(default)s)")
     parser.add_argument('--force', action='store_true',
                         help="Force overwrite of existing results for the given injection (default: False)")
+    parser.add_argument('--use-set-injection-params', action='store_true',
+                        help="Whether to use a fixed set of injection parameters instead of random sampling (default: False)")
     
     parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml', 'eobbilby2ml'], default='ml2ml',
                         help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
