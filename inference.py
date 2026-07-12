@@ -1468,7 +1468,7 @@ if __name__ == "__main__":
         logger.info("Running in importance reweighting mode. Will reweight results from a previous run using the provided JSON file.")
         imp_reweight_posteriors(fname=args.results_fname, outdir=args.results_dir, 
                                 npool=args.npool,
-                                use_nested_samples=True)
+                                use_nested_samples=False)
         
     elif args.make_pp_plots:
         logger.info("Running in make-PP-plots mode. Will generate PP plots from previous results.")
