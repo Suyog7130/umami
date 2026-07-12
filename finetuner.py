@@ -353,22 +353,31 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
     ml_calmodel = CalibrationModel(calibrator_modelpath=calmodel_path,
                                    device=None, precision=None)
     logger.info(f"Loaded waveform generation model and calibration model successfully.")
+
+    if ds_to_save is not None:
+        datasets = [ds for ds in ['train', 'valid', 'test'] if ds in ds_to_save]
+        logger.warning(f"Saving only specified datasets: {datasets}")
+    else:
+        datasets = ['train', 'valid', 'test']
+        logger.info(f"Saving all datasets: {datasets}")
     
     # -- Read waveform generation model input data for labels and original waveforms
-    wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type='amp_phase', 
-                                                            batch_size=64,
-                                                            num_workers=0, return_indices=True)
     wftestloader = set_waveform_dataloaders(target_type='amp_phase', 
                                             batch_size=64,
                                             return_test_loader=True, 
                                             num_workers=0, return_indices=True)
-    logger.info(f"Loaded waveform generation model input data for train, valid, and test sets successfully.")
-    dataloaders = [wftrainloader, wfvalidloader, wftestloader]
-
-    if ds_to_save is not None:
-        datasets = [ds for ds in ['train', 'valid', 'test'] if ds in ds_to_save]
+    if 'train' not in datasets:
+        wfvalidloader = set_waveform_dataloaders(target_type='amp_phase', 
+                                                batch_size=64,
+                                                return_only_val_loader=True,
+                                                num_workers=0, return_indices=True)
+        dataloaders = [wfvalidloader, wftestloader]
     else:
-        datasets = ['train', 'valid', 'test']
+        wftrainloader, wfvalidloader = set_waveform_dataloaders(target_type='amp_phase', 
+                                                                batch_size=64,
+                                                                num_workers=0, return_indices=True)
+        dataloaders = [wftrainloader, wfvalidloader, wftestloader]
+    logger.info(f"Set up dataloaders for datasets: {datasets}")
 
     for i in range(len(dataloaders)):
         logger.info(f"Generating and saving fine tuner input and target data for {datasets[i]} set...")
@@ -1808,19 +1817,20 @@ def training_main(args: argparse.Namespace) -> None:
 
     if args.debug_training:
         cfg.num_epochs = 10
+        cfg.batch_size = 128
+        cfg.num_workers = 0
+        cfg.validate_every = 1000  # Skip validation for debug training
+        cfg.max_train_samples = 32000
+        cfg.max_valid_samples = 6400
+        cfg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    elif args.demo_training:
+        cfg.num_epochs = 10
         cfg.batch_size = 32
         cfg.num_workers = 0
         cfg.validate_every = 1000  # Skip validation for debug training
         cfg.max_train_samples = 64
         cfg.max_valid_samples = 32
-        cfg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    elif args.demo_training:
-        cfg.num_epochs = 10
-        cfg.batch_size = 64
-        cfg.num_workers = 0
-        cfg.max_train_samples = 512
-        cfg.max_valid_samples = 64
         cfg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         train_finetuner(model, cfg, do_demo_train_run=True)
         return
