@@ -309,7 +309,7 @@ def get_finetuner_input(wfmodel, calmodel, originals, labels, hf_file, indices, 
 
 def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modelname,
                         perform_conditioning=True,
-                        ds_to_save: {'train', 'val', 'test'} = None,
+                        ds_to_save: Optional[list] = None,
                         timestamp = NOW):
     """
     Generate and save the fine tuner input and target data to HDF files.
@@ -366,7 +366,7 @@ def save_finetuner_data(wfmodel_modelname, wfmodel_configname, calibrator_modeln
     dataloaders = [wftrainloader, wfvalidloader, wftestloader]
 
     if ds_to_save is not None:
-        datasets = ds_to_save
+        datasets = [ds for ds in ['train', 'valid', 'test'] if ds in ds_to_save]
     else:
         datasets = ['train', 'valid', 'test']
 
@@ -1206,7 +1206,10 @@ def plot_running_losses(history: List[Dict[str, float]], outpath: str,
         run_valid_loss.append(row.get("valid_running_loss_total", np.nan))
 
     run_train_loss = np.concatenate(run_train_loss)
-    run_valid_loss = np.concatenate(run_valid_loss) if len(run_valid_loss) > 0 else np.array([])
+    if len(run_valid_loss) > 0 and not np.isnan(run_valid_loss).all():
+        run_valid_loss = np.concatenate([v for v in run_valid_loss if not np.isnan(v).all()])
+    else:
+        run_valid_loss = np.array([])
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(np.arange(len(run_train_loss)), run_train_loss, label="Train loss")
@@ -1808,8 +1811,8 @@ def training_main(args: argparse.Namespace) -> None:
         cfg.batch_size = 32
         cfg.num_workers = 0
         cfg.validate_every = 1000  # Skip validation for debug training
-        cfg.max_train_samples = 256
-        cfg.max_valid_samples = 64
+        cfg.max_train_samples = 64
+        cfg.max_valid_samples = 32
         cfg.device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     elif args.demo_training:
@@ -1891,6 +1894,7 @@ if __name__ == "__main__":
             wfmodel_configname=args.wfmodel_configname,
             calibrator_modelname=args.calibrator_modelname,
             timestamp=args.timestamp,
+            ds_to_save=["valid", "test"],
         )
     if args.train:
         logger.info("Starting fine tuner training...")
