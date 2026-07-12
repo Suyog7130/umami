@@ -1783,7 +1783,7 @@ def training_main(args: argparse.Namespace) -> None:
 
     cfg = FinetunerConfig(
         train_path = "../data/finetuner_data_train_20260711-231450.hdf",
-        valid_path = "../data/finetuner_data_valid_20260703-173318.hdf",
+        valid_path = "../data/finetuner_data_valid_20260712-161254.hdf",
         outdir = f"../v0p1/results/{TODAY}/",
 
         input_names = ['ml_hp', 'ml_hc'],
@@ -1904,7 +1904,7 @@ if __name__ == "__main__":
             wfmodel_configname=args.wfmodel_configname,
             calibrator_modelname=args.calibrator_modelname,
             timestamp=args.timestamp,
-            ds_to_save=["valid", "test"],
+            ds_to_save=["test"],
         )
     if args.train:
         logger.info("Starting fine tuner training...")
