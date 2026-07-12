@@ -441,7 +441,7 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
             base_injection=base_injection,
             active_priors=active_priors,
         )
-    logger.debug(f"Sampled injection parameters for run {run_idx}: {injection_parameters}")
+    logger.info(f"Sampled injection parameters for run {run_idx}: {injection_parameters}")
 
     ifos.set_strain_data_from_power_spectral_densities(
         sampling_frequency=SAMPLE_RATE,
@@ -462,11 +462,11 @@ def run_single_injection(run_idx, seed=None, label_base='umamipe',
         waveform_generator=injection_generator,
         parameters=injection_parameters,
     )
-    logger.debug(f"Injection parameters for run {run_idx}: {injection_parameters}")
+    logger.info(f"Injection parameters for run {run_idx}: {injection_parameters}")
 
     # -- Compute network optimal SNR for the injected signal
     network_snr = get_network_optimal_snr(ifos)
-    logger.debug(f"Network optimal SNR for run {run_idx}: {network_snr}")
+    logger.info(f"Network optimal SNR for run {run_idx}: {network_snr}")
     save_json({"network_optimal_snr": network_snr,
                "H1_optimal_snr": float(ifos[0].meta_data["optimal_SNR"]),
                "L1_optimal_snr": float(ifos[1].meta_data["optimal_SNR"]),}, 
@@ -707,23 +707,6 @@ def main(args, label='umamipe',
             raise FileNotFoundError(f"CALMODEL_PATH file not found at {calmodel_path}")
     logger.info(f"Using CALMODEL_PATH: {calmodel_path}")
 
-    # TODO: For EOB waveforms, priors should be [m_1, m_2, a_1, a_2, tilt_1, tilt_2], since otherwise the "spin1z" and "spin2z" parameters will be ignored by the EOB waveform generator, since internally Bilby requires aforementioned parameter names, and then uses its the `bilby_to_lal_bbh_...` function to convert them to LAL parameters, before calling the waveform model.
-
-    # Use the same active priors for drawing injections.
-    if args.without_mass_ratio_constraint:
-        logger.warning("Running without mass ratio constraint. This may lead to unphysical injections with m1 < m2. So, it is assumed that the MLWaveformGenerator can handles such cases automatically by swapping m1 and m2 internally, and returning the correct waveform.")
-    active_priors = make_analysis_priors(
-        injection_parameters=base_injection,
-        without_mass_ratio_constraint=args.without_mass_ratio_constraint
-    )
-    print("Active priors for injection sampling:")
-    for key, prior in active_priors.items():
-        print(f"  {key}: {prior}")
-    print(f'Active priors for injection sampling: {active_priors.keys()}')
-
-    # Perform a check that the prior does not extend to a parameter space longer than the data
-    active_priors.validate_prior(DURATION, FMIN)
-
     if args.truncate_eob_waveform_to_1s:
         global TRUNCATE_EOB_WAVEFORM_TO_1S
         TRUNCATE_EOB_WAVEFORM_TO_1S = True
@@ -738,6 +721,7 @@ def main(args, label='umamipe',
         wfkwargs['distance_scale_factor'] = args.distance_factor
         base_injection['luminosity_distance'] = args.distance_factor
         logger.info(f"Using distance factor / luminosity distance for ML waveform generator: {args.distance_factor} Mpc")
+
     if pe_run_type == 'eob2eob':
         # -- this uses PyCBC SEOBNRv4 time-domain waveform generator!
         injection_generator = make_wf_generator('eob')
@@ -759,6 +743,25 @@ def main(args, label='umamipe',
         elif pe_run_type == 'eob2ml':
             injection_generator = make_wf_generator('eob')
             logger.info("Initialized EOB waveform generator for injection and ML waveform generator for recovery.")
+    
+    # TODO: For EOB waveforms, priors should be [m_1, m_2, a_1, a_2, tilt_1, tilt_2], since otherwise the "spin1z" and "spin2z" parameters will be ignored by the EOB waveform generator, since internally Bilby requires aforementioned parameter names, and then uses its the `bilby_to_lal_bbh_...` function to convert them to LAL parameters, before calling the waveform model.
+
+    # Use the same active priors for drawing injections.
+    if args.without_mass_ratio_constraint:
+        logger.warning("Running without mass ratio constraint. This may lead to unphysical injections with m1 < m2. So, it is assumed that the MLWaveformGenerator can handles such cases automatically by swapping m1 and m2 internally, and returning the correct waveform.")
+
+    active_priors = make_analysis_priors(
+        injection_parameters=base_injection,
+        without_mass_ratio_constraint=args.without_mass_ratio_constraint
+    )
+
+    logger.info("Active priors for injection sampling:")
+    for key, prior in active_priors.items():
+        logger.info(f"  {key}: {prior}")
+    logger.info(f'Active priors for injection sampling: {active_priors.keys()}')
+
+    # Perform a check that the prior does not extend to a parameter space longer than the data
+    active_priors.validate_prior(DURATION, FMIN)
 
     sampler_kwargs = set_sampler_kwargs(args, sampler)
 
