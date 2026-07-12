@@ -75,6 +75,8 @@ NOW = TODAY + '-' + TIME
 # -- define some constants for waveform generation
 SAMPLE_RATE = 8192  # Hz
 DURATION = 8.0  # seconds
+FMIN = 14.0  # Hz
+FREF = 50.0  # Hz
 
 
 if torch.cuda.is_available():

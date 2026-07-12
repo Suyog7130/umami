@@ -57,7 +57,7 @@ NOW = TODAY + '-' + TIME
 # -- define some constants for waveform generation
 SAMPLE_RATE = 8192  # Hz
 DURATION = 1.0  # seconds
-FMIN = 20.0  # Hz
+FMIN = 14.0  # Hz
 FREF = 50.0  # Hz
 
 
