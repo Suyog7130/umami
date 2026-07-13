@@ -1348,12 +1348,12 @@ def imp_reweight_posteriors(fname: str,
     # Set wfgenerator start_time to that of interferometer geocent_time
     waveform_generator.start_time = ifos[0].meta_data['parameters']['geocent_time']
 
-    logger.info("Running debug reweighting of posterior samples ...")
-    df_dbg, logl_eob_dbg, logw_dbg, w_dbg, neff_dbg = debug_reweight_samples(
-        result,
-        eob_likelihood,
-        nsamp=200,
-    )
+    # logger.info("Running debug reweighting of posterior samples ...")
+    # df_dbg, logl_eob_dbg, logw_dbg, w_dbg, neff_dbg = debug_reweight_samples(
+    #     result,
+    #     eob_likelihood,
+    #     nsamp=200,
+    # )
 
     # sample = result.posterior.iloc[0].to_dict()
     # print("sample keys:", sorted(sample.keys()))

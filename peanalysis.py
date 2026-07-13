@@ -17,6 +17,9 @@ from tqdm import tqdm
 import corner
 
 
+from plotutils import putils
+
+
 # ============================================================
 # Parameter utilities
 # ============================================================
@@ -506,7 +509,10 @@ def plot_weighted_marginal(
     filename=None,
     outdir=None,
     title=None,
-    show_kde_mode=True,
+    show_kde_mode=False,
+    fontsize=15,
+    labelsize=12,
+    _plot_density=False
 ):
     """
     Plot one weighted marginalized posterior.
@@ -526,26 +532,26 @@ def plot_weighted_marginal(
     w = w[finite]
     w = w / np.sum(w)
 
-    plt.figure(figsize=(6.2, 4.2))
+    fig, ax = plt.subplots(1,1, figsize=(6.2, 4.2))
 
     if eob2ml_result is not None and parameter in eob2ml_result.posterior.columns:
         x_ml = eob2ml_result.posterior[parameter].to_numpy(dtype=float)
         x_ml = x_ml[np.isfinite(x_ml)]
-        plt.hist(
+        ax.hist(
             x_ml,
             bins=bins,
-            density=True,
+            density=_plot_density,
             histtype="step",
             linewidth=1.4,
             alpha=0.7,
             label="EOB2ML proposal",
         )
 
-    plt.hist(
+    ax.hist(
         x,
         bins=bins,
         weights=w,
-        density=True,
+        density=_plot_density,
         histtype="step",
         linewidth=2.2,
         label="EOB-reweighted",
@@ -554,10 +560,10 @@ def plot_weighted_marginal(
     if eob2eob_result is not None and parameter in eob2eob_result.posterior.columns:
         x_ref = eob2eob_result.posterior[parameter].to_numpy(dtype=float)
         x_ref = x_ref[np.isfinite(x_ref)]
-        plt.hist(
+        ax.hist(
             x_ref,
             bins=bins,
-            density=True,
+            density=_plot_density,
             histtype="step",
             linewidth=2.0,
             linestyle="--",
@@ -567,25 +573,48 @@ def plot_weighted_marginal(
     if show_kde_mode:
         mode, grid, dens = weighted_kde_mode(x, w)
         if len(grid) > 1:
-            plt.plot(grid, dens, linewidth=1.5, alpha=0.8, label="Weighted KDE")
-        plt.axvline(mode, linestyle="-.", linewidth=1.6, label="Weighted mode")
+            ax.plot(grid, dens, linewidth=1.5, alpha=0.8, label="Weighted KDE")
+        ax.axvline(mode, linestyle="-.", linewidth=1.6, label="Weighted mode")
 
     if injection_parameters is not None and parameter in injection_parameters:
-        plt.axvline(
+        ax.axvline(
             float(injection_parameters[parameter]),
             linestyle=":",
             linewidth=2.0,
             label="Injection",
         )
 
-    plt.xlabel(parameter)
-    plt.ylabel("density")
+    latex_labels = {
+        "mass_1": r"$m_1$",
+        "mass_2": r"$m_2$",
+        "chi_1": r"$\chi_1$",
+        "chi_2": r"$\chi_2$",
+        "spin_1z": r"$\chi_1(z)$",
+        "spin_2z": r"$\chi_2(z)$",
+        "luminosity_distance": r"$d_L$",
+        "theta_jn": r"$\theta_{jn}$",
+        "psi": r"$\psi$",
+        "phase": r"$\phi$",
+        "geocent_time": r"$t_c$",
+        "ra": r"$\alpha$",
+        "dec": r"$\delta$",
+        "mass_ratio": r"$q$",
+        "chirp_mass": r"$\mathcal{M}$",
+    }
 
-    if title is None:
-        title = f"Weighted marginal posterior: {parameter}"
-    plt.title(title)
+    ax.set_xlabel(latex_labels.get(parameter, parameter), fontsize=fontsize)
+    ylabel = "density" if _plot_density else "weighted counts"
+    ax.set_ylabel(ylabel, fontsize=fontsize)
+    ax.set_yscale("log")
+    ax.set_ylim(bottom=1e-5)   # -- if some samples have all the weights, other bins have near zero counts!
+    plt.tick_params(axis="both", which="major", labelsize=labelsize)
+    plt.tight_layout()
 
-    plt.legend(fontsize=9)
+    # if title is None:
+    #     title = f"Weighted marginal posterior: {parameter}"
+    # plt.title(title, fontsize=fontsize)
+
+    plt.legend(fontsize=labelsize-2, loc="upper right")
     plt.tight_layout()
 
     if filename is not None:
@@ -638,6 +667,8 @@ def plot_weighted_corner(
     title_fmt=".3g",
     smooth=1.0,
     bins=40,
+    fontsize=15,
+    labelsize=12,
 ):
     """
     Make a proper weighted corner plot using corner.corner.
@@ -698,6 +729,7 @@ def plot_weighted_corner(
     fig.suptitle(
         f"EOB-reweighted posterior, titles show median and {interval_label} credible interval",
         y=1.02,
+        fontsize=fontsize
     )
 
     if outdir is not None:
