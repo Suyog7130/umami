@@ -729,12 +729,11 @@ def weighted_normalized_residual_loss(
     h_ref: torch.Tensor,
     w_min: float = 0.05,
     gamma: float = 1.0,
-    eps: float = 1e-12
 ) -> torch.Tensor:
     w = amplitude_weights(h_ref, w_min=w_min, gamma=gamma)
     loss = w * (pred_norm - target_norm) ** 2
     denom = w.sum() * pred_norm.shape[1]
-    return loss.sum() / (denom + eps)
+    return loss.sum() / denom if denom > 0 else loss.sum()
 
 
 def overlap_and_mismatch(
@@ -759,7 +758,6 @@ def overlap_and_mismatch(
 def overlap_loss(
     h_true: torch.Tensor,
     h_pred: torch.Tensor,
-    eps: float = 1e-12,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     _, mismatch = overlap_and_mismatch(h_true, h_pred)
     return mismatch.mean(), mismatch
