@@ -1292,6 +1292,7 @@ def imp_reweight_posteriors(fname: str,
                             use_old_likelihood_from_file: bool = True,
                             use_nested_samples: bool = False,
                             eob_wf_gen_type: {'eob', 'eobbilby'} = 'eob',
+                            use_bibly_reweight_function: bool = False,
                             npool: int = 8):
     """
     Do importance reweighting for a posterior using built-in `bilby.gw.core.result.reweight`
@@ -1358,19 +1359,37 @@ def imp_reweight_posteriors(fname: str,
     # eob_likelihood.parameters.update(sample)
     # print("new EOB logL:", eob_likelihood.log_likelihood())
 
-    new_result, new_logl, new_logpriors, _, _ = bilby.core.result.reweight(
-        result=result,
-        label="imp-reweighted",
-        new_likelihood=eob_likelihood,
-        npool=npool,
-        verbose_output=True,
-        n_checkpoint=5000,
-        use_nested_samples=use_nested_samples,
+    if use_bibly_reweight_function:
+        new_result, new_logl, new_logpriors, _, _ = bilby.core.result.reweight(
+            result=result,
+            label="imp-reweighted",
+            new_likelihood=eob_likelihood,
+            npool=npool,
+            verbose_output=True,
+            n_checkpoint=5000,
+            use_nested_samples=use_nested_samples,
+        )
+        new_result.plot_corner(save=True, filename=f"{outdir}/{fname.replace('_result.json', '_corner_imp-reweighted.png')}")
+        savename = f"{outdir}/{fname.replace('_result.json', '_result_imp-reweighted.json')}"
+        new_result.to_json(savename)
+        logger.info(f"Saved importance reweighted result to {savename}")
+        return
+    
+    logger.info("Starting manual importance reweighting of posterior samples...")
+
+    from peanalysis import run_manual_eob_reweighting_workflow
+    
+    weighted_post, summary, diag = run_manual_eob_reweighting_workflow(
+        eob2ml_result=result,
+        eob_likelihood=eob_likelihood,
+        parameters=result.posterior.columns.tolist(),
+        eob2eob_result=None,     # set to None if unavailable
+        interval="90",                     # or "1sigma"
+        proposal_logl_column="log_likelihood",
+        checkpoint_csv="eob_reweighting_checkpoint.csv",
+        out_prefix="injection_000_eob_reweighted",
+        outdir=outdir,
     )
-    new_result.plot_corner(save=True, filename=f"{outdir}/{fname.replace('_result.json', '_corner_imp-reweighted.png')}")
-    savename = f"{outdir}/{fname.replace('_result.json', '_result_imp-reweighted.json')}"
-    new_result.to_json(savename)
-    logger.info(f"Saved importance reweighted result to {savename}")
 
 
 
