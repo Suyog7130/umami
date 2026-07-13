@@ -557,7 +557,7 @@ def mismatch_anal(args, savedir=DIR, now=NOW, cut=0.8):
 
 
 def plot_rom_opt_mm_hist(fname=None, dir=DIR, time=TIME, fontsize=15, labelsize=13):
-    dir = '../results/20260311/'
+    dir = '../cvae@taiwan/results/20260311/'
     time = datetime.now().strftime('%Y%m%d_%H%M%S')
     if fname is None:
         fname = dir + 'mismatch_comparison_results-20260311_002408.csv'
@@ -601,11 +601,11 @@ def plot_uq_hist_from_file(fontsize=15, labelsize=13,
     """
     fig, axes = plt.subplots(1, 2, figsize=(10, 5))
     if datatype == 'nwaves':
-        dir = '../results/20260416/'
+        dir = '../cvae@taiwan/results/20260416/'
         fname = 'uq-hphc-hist-Nwaves-5000-Nruns-100-20260416_083418'
         savename = dir + 'uq-hphc-hist-Nwaves-5000-Nruns-100'
     else:
-        dir = '../results/20260401/'
+        dir = '../cvae@taiwan/results/20260401/'
         fname = 'uq-test-hist-mean-abs-diff-5000-20260401_174233'
         savename = dir + 'uq-hphc-hist-mean-abs-diff-5000'
     dfuq = pd.read_csv(dir+fname+'.csv', header=0)
@@ -630,7 +630,22 @@ def plot_uq_hist_from_file(fontsize=15, labelsize=13,
         ax.set_ylabel('Count', fontsize=fontsize)
         ax.text(xloc, yloc, titles[i], fontweight='bold',
                 transform=ax.transAxes, fontsize=labelsize, va='top', ha=ha)
-        ax.text(xloc, yloc - 0.1, f'Mode: {dfuq[types[i]].mode()[0]:.2e}\nMean: {dfuq[types[i]].mean():.2e}\nMedian: {dfuq[types[i]].median():.2e}',
+        
+        # -- Calculate mode, mean and median of the data by first taking the average of all histogram bins,
+        # and then reporting the statistics of this data. This ensures that the mode reported will be the
+        # average value of the bin with the highest count, rather than some singleton value elsewhere in the data.
+        # _mode = dfmm[t].mode()[0]
+        # _mean = dfmm[t].mean()
+        # _median = dfmm[t].median()
+        counts, bin_edges = np.histogram(dfuq[types[i]], bins=hpbins)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+        _mode = bin_centers[np.argmax(counts)]
+        _mean = np.average(bin_centers, weights=counts)
+        _median = np.median(np.repeat(bin_centers, counts))
+
+        logger.info(f"{types[i]}: Mode = {_mode:.2e}, Mean = {_mean:.2e}, Median = {_median:.2e}")
+
+        ax.text(xloc, yloc - 0.1, f'Mode: {_mode:.2e}\nMean: {_mean:.2e}\nMedian: {_median:.2e}',
                 transform=ax.transAxes, fontsize=labelsize, va='top', ha=ha)
         ax.set_title(None)
         ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
@@ -775,12 +790,14 @@ if __name__ == "__main__":
 
     # plot_running_loss(dir=args.dir, time=args.time)
 
-    mismatch_anal(args, savedir=args.dir)
+    # mismatch_anal(args, savedir=args.dir)
 
     # plot_rom_opt_mm_hist(fontsize=20, labelsize=15)
     # plot_timecompare_from_file()
     # plot_flexcvae_loss(dir=args.dir, time=args.time)
-    # plot_uq_hist_from_file(datatype='nwaves')
+
+    plot_uq_hist_from_file(datatype='nwaves')
+
     # plot_loss_from_file(onlyprintsteps=False)
     # read_params_from_file()
 
