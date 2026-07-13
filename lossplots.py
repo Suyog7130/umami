@@ -17,6 +17,7 @@ import matplotlib.ticker as tck
 
 DIR = '../results/20251023/'
 TIME = '20251023_075320'
+NOW = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 def plot(ax, fname, logscale=False, save=False, show=True,
          label=''):
@@ -496,9 +497,9 @@ def plot_mm_hist(dfmm, log=False, fontsize=15, labelsize=13,
     logging.info(f'Mismatch histograms saved to {savedir}')
 
 
-def mismatch_anal(args, cut=0.8):
+def mismatch_anal(args, savedir=DIR, now=NOW, cut=0.8):
     logging.info("Starting mismatch analysis...")
-    mmfile = DIR + 'mismatch-results-' + TIME + '.h5'
+    mmfile = os.path.join(savedir, f'mismatch-results-{TIME}.h5')
     dfmm = pd.read_hdf(mmfile, key='dfmm')
     # print(dfmm.head())
     logging.info(f"Columns in mismatch DataFrame: {dfmm.columns.tolist()}")
@@ -512,10 +513,10 @@ def mismatch_anal(args, cut=0.8):
 
     # Plot mismatch histograms
     if args.histogram:
-        plot_mm_hist(dfmm, fontsize=args.fontsize, labelsize=args.labelsize)
-        plot_mm_hist(dfmm, log=True, fontsize=args.fontsize, labelsize=args.labelsize)
-        plot_mm_hist(dfmmcut, fname='-cut', fontsize=args.fontsize, labelsize=args.labelsize)
-        plot_mm_hist(dfmmcut, log=True, fname='-cut', fontsize=args.fontsize, labelsize=args.labelsize)
+        plot_mm_hist(dfmm, fontsize=args.fontsize, labelsize=args.labelsize, savedir=savedir, now=now)
+        plot_mm_hist(dfmm, log=True, fontsize=args.fontsize, labelsize=args.labelsize, savedir=savedir, now=now)
+        plot_mm_hist(dfmmcut, fname='-cut', fontsize=args.fontsize, labelsize=args.labelsize, savedir=savedir, now=now)
+        plot_mm_hist(dfmmcut, log=True, fname='-cut', fontsize=args.fontsize, labelsize=args.labelsize, savedir=savedir, now=now)
 
     if args.contour:
         plot_mmcontour_in_qchi_space(dfmm, fontsize=args.fontsize, labelsize=args.labelsize)
@@ -773,11 +774,13 @@ if __name__ == "__main__":
                         datefmt='%Y-%m-%d %H:%M:%S')
 
     # plot_running_loss(dir=args.dir, time=args.time)
-    # mismatch_anal(args)
+
+    mismatch_anal(args, savedir=args.dir)
+
     # plot_rom_opt_mm_hist(fontsize=20, labelsize=15)
     # plot_timecompare_from_file()
     # plot_flexcvae_loss(dir=args.dir, time=args.time)
     # plot_uq_hist_from_file(datatype='nwaves')
     # plot_loss_from_file(onlyprintsteps=False)
-    read_params_from_file()
+    # read_params_from_file()
 
