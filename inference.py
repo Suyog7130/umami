@@ -1348,6 +1348,7 @@ def imp_reweight_posteriors(fname: str,
     # Set wfgenerator start_time to that of interferometer geocent_time
     waveform_generator.start_time = ifos[0].meta_data['parameters']['geocent_time']
 
+    logger.info("Running debug reweighting of posterior samples ...")
     df_dbg, logl_eob_dbg, logw_dbg, w_dbg, neff_dbg = debug_reweight_samples(
         result,
         eob_likelihood,
@@ -1382,7 +1383,7 @@ def imp_reweight_posteriors(fname: str,
     weighted_post, summary, diag = run_manual_eob_reweighting_workflow(
         eob2ml_result=result,
         eob_likelihood=eob_likelihood,
-        parameters=result.posterior.columns.tolist(),
+        parameters=["mass_1", "mass_2", "chi_1", "chi_2"],  # -- ignore other fixed params
         eob2eob_result=None,     # set to None if unavailable
         interval="90",                     # or "1sigma"
         proposal_logl_column="log_likelihood",

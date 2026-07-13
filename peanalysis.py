@@ -814,6 +814,7 @@ def run_manual_eob_reweighting_workflow(
         parameters=list(parameters),
         injection_parameters=inj,
         interval=interval,
+        outdir=outdir,
         filename=f"{out_prefix}_corner_{interval}.png",
         bins=40,
         smooth=1.0,
@@ -828,6 +829,7 @@ def run_manual_eob_reweighting_workflow(
         bins=50,
         interval=interval,
         out_prefix=f"{out_prefix}_marginal",
+        outdir=outdir,
     )
 
     return weighted_post, summary, diag
