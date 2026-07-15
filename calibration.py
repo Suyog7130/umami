@@ -5,6 +5,7 @@ between the generated [amp,freq] and the target [amp,freq], for example.
 """
 
 import os
+import time
 import json
 import h5py
 import argparse
@@ -28,7 +29,7 @@ from optimize import (
     plot_reconstructions
 )
 
-from maincvae import plot_mismatch, plot_polarization_mismatch
+from wfconditioner import get_conditioned_waveform
 from plotutils import putils
 
 from utils.io import ensure_dirs_and_files, ensure_dir
@@ -1386,6 +1387,127 @@ def plot_calibrated_mm_hist(hdf_path, results_dir=None,
     logger.info(f"Saved best and worst mismatch results to {best_worst_fname}")
 
 
+def test_time_complexity(wfmodel_modelname, 
+                        wfmodel_configname, 
+                        calibrator_modelname,
+                        perform_conditioning=True,
+                        device=DEVICE, precision=PRECISION, timestamp=NOW, 
+                        savedir=f'../{PROJECT_DIR}/results/{TODAY}/',):
+    """
+    Test the speed of waveform generation + calibration + (optional) conditioning, for
+    1 to 10^4 waveforms generated in a batch, and plot the time taken vs number of waveforms generated.
+    This will be evaluated on different devices (cpu, mps, cuda/gpu) at precision of float32 and float64!
+    The comparison with ROM and opt, can be performed later using the saved CPU generation time data I have
+    for these.
+    """
+    logger.info(f"Testing time complexity of waveform generation + calibration + conditioning (if enabled) for {wfmodel_modelname} and {calibrator_modelname} on device {device} with precision {precision}.")
+    ensure_dir(savedir)
+
+    Nruns = np.arange(1, 10001)  # test for batch sizes 1 to 10^4 waveforms
+
+    wfmodel = load_flex_model(model_path=wfmodel_modelname, 
+                                configpath=wfmodel_configname, 
+                                device=device, precision=precision)
+    calmodel = CalibrationModel(calibrator_modelpath=calibrator_modelname,
+                                device=device, precision=precision)
+
+    # -- Open CSV file to save results on the go
+    csv_fname = 'calmodel-cond_timecomplexity_results-' if perform_conditioning else 'calmodel_timecomplexity_results-'
+    csv_fname = os.path.join(savedir, csv_fname + str(device) + '-' + timestamp + '.csv')
+    csvfile = open(csv_fname, mode='w', newline='')
+    csvfile.write('num_samples,time_seconds\n')  # Write header row
+    logging.info(f"CSV file opened for writing time complexity results: {csv_fname}")
+
+    # -- create some dummy warm-up runs!
+    # NOTE: To remove the cold-start time from the calculation,
+    # which happens on the first time the model is called. CUDA
+    # will initialize a location on the GPU to store the model,
+    # and setup the necessary instruction sets during the first time.
+    # After the warm-up, the same GPU location is used, so the initial
+    # warm-up time is not required. Plus, till all 100% of the GPU
+    # memory is being used, the time taken for N waveforms to generate
+    # is mostly the same. Changes occur after GPU memory is filled-up!
+    for _ in range(10):
+        labels = torch.tensor([[10, 10, -0.5, 0.5],[10, 10, -0.5, 0.5],[10, 10, -0.5, 0.5]], 
+                                dtype=getattr(torch, precision)).to(device)
+        waves = wfmodel.generate(labels, convert_to_hphc=False)
+        _, _ = calmodel.calibrate_waveform(waves, labels, convert_to_hphc=False)
+    logging.info("Completed warm-up runs to mitigate cold-start time.")
+
+
+    times = []
+    for Nr in Nruns:
+        # Generate random labels within the training range
+        m1 = np.random.uniform(5, 75, Nr)
+        m2 = np.random.uniform(5, 75, Nr)
+        spin1z = np.random.uniform(-0.9, 0.9, Nr)
+        spin2z = np.random.uniform(-0.9, 0.9, Nr)
+        labels = np.vstack((m1, m2, spin1z, spin2z)).T
+        labels = torch.tensor(labels, dtype=getattr(torch, precision)).to(device)
+        logging.info(f'Choosing to test sample size {labels.shape}')
+
+        if device == 'cuda':
+            torch.cuda.synchronize() # Wait for warm-up to finish
+
+        start_time = time.time()
+    
+        outwaves = wfmodel.generate(labels, convert_to_hphc=False)  # has shape (1, 2=[amp,phase], seq_len)!
+        logger.info(f"Generated waveform from ML model with shape: {outwaves.shape}")
+
+        if perform_conditioning:
+            recon_amp, recon_phase = calmodel.calibrate_waveform(outwaves, labels, 
+                                                                    convert_to_hphc=False)
+            hplus, hcross = get_conditioned_waveform(
+                recon_amp.cpu().numpy(), 
+                recon_phase.cpu().numpy()
+                )
+            logger.info(f"Conditioned waveform shapes: hplus={hplus.shape}, hcross={hcross.shape}")
+        else:
+            hplus, hcross = calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=True)
+        
+        if device == 'cuda':
+            torch.cuda.synchronize() # Wait for warm-up to finish
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        times.append(elapsed_time)
+        logging.info(f'Time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
+        # -- Write the result to CSV file each time, so that if the process is interrupted, 
+        # we still have the results up to that point.
+        csvfile.write(f'{Nr},{elapsed_time}\n')
+
+        # -- Flush out memory storage after each run, to avoid pileup of memory and consequent slowdown 
+        # in time taken for generation of samples in later runs.
+        # Otherwise, around 2x10^4 waveforms, the time taken for generation approachs the vertical asymptote, 
+        # which is not expected for a well-behaved model! This is likely due to the GPU memory getting filled 
+        # up and causing slowdown in generation of samples.
+        torch.cuda.empty_cache()
+        logging.debug("End of run. Emptied CUDA cache to prevent memory pileup.")
+
+    # Close the CSV file after writing all results
+    csvfile.close()
+    logging.info(f"Time complexity results saved to CSV file: {csvfile.name}")
+
+    # Plot the time taken v/s number of samples plots
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+    ax.plot(Nruns, times, 'o', color='grey', markersize=6,
+            markeredgewidth=0.25, markeredgecolor='black')
+    ax.set_xlabel('Number of Samples', fontsize=12)
+    ax.set_ylabel('Time (seconds)', fontsize=12)
+    ax.set_xscale('log')
+    ax.set_yscale('log')
+    ax.xaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+    ax.yaxis.set_minor_locator(tck.LogLocator(base=10.0, subs=np.arange(1.0, 10.0) * 0.1, numticks=10))
+    ax.tick_params(which='both', direction='in', top=True, right=True)
+    ax.text(0.05, 0.95, f'N={len(Nruns)}', transform=ax.transAxes, fontsize=10, verticalalignment='top')
+    plt.tight_layout()
+    figname = csv_fname.replace('.csv', '.png')
+    plt.savefig(figname, dpi=300, transparent=True)
+    plt.savefig(figname.replace('.png', '-white.png'), dpi=300)
+    plt.close()
+    logging.info("Time complexity test completed and plot saved.")
+
+
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Train the residual calibrator model for waveform generation.")
@@ -1407,13 +1529,13 @@ if __name__ == "__main__":
                         help='If set, runs a quick dummy training loop for testing purposes.')
     
     savedataparser = parser.add_argument_group('Calibrator Data Generation')
-    savedataparser.add_argument('--wfmodel-modelpath', type=str, default=None, 
+    savedataparser.add_argument('--wfmodel-modelpath', type=str, default='modelconfig-flexcvae-20260619-064140.json', 
                         help='Path to the trained waveform model checkpoint for generating calibrator input data.')
-    savedataparser.add_argument('--wfmodel-configpath', type=str, default=None, 
+    savedataparser.add_argument('--wfmodel-configpath', type=str, default='flexcvae-model-backup-20260619-064140-epoch98.pt', 
                         help='Path to the waveform model config file for generating calibrator input data.')
     
     testparser = parser.add_argument_group('Calibrator Testing')
-    testparser.add_argument('--calibrator-modelpath', type=str, default='calibrator_model_20260622-225329_epoch9.pt',
+    testparser.add_argument('--calibrator-modelpath', type=str, default='calibrator_model_20260623-010953_epoch74.pt',
                         help='Path to the trained calibrator model checkpoint for testing.')
     
     methodargs = parser.add_mutually_exclusive_group(required=True)
@@ -1425,6 +1547,8 @@ if __name__ == "__main__":
                         help='Test the calibrator model using the test dataset.')
     methodargs.add_argument('--plot-results', type=str, default=None,
                         help='Plot the calibrated mismatch histogram from the given HDF file path.')
+    methodargs.add_argument('--test-time-complexity', action='store_true',
+                        help='Test the time complexity of waveform generation + calibration + (optional) conditioning, for 1 to 10^4 waveforms generated in a batch, and plot the time taken vs number of waveforms generated.')
 
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
@@ -1439,6 +1563,7 @@ if __name__ == "__main__":
             wfmodel_configpath=args.wfmodel_configpath,
             timestamp=args.timestamp,
         )
+
     if args.train:
         logger.info("Training the calibrator model...")
         train_calibrator(
@@ -1450,13 +1575,29 @@ if __name__ == "__main__":
             timestamp=args.timestamp,
             num_workers=args.num_workers,
         )
+
     if args.plot_results is not None:
         plot_calibrated_mm_hist(args.plot_results, results_dir=args.results_dir,
                                 conditioned_waveforms=True)
+        
     if args.test:
         test_calibrator(
             calibrator_modelpath=f'../{PROJECT_DIR}/trained-models/'+args.calibrator_modelpath,
             test_datapath='../data/calibrator_data_test_with20260619-064140-epoch98model.hdf',
             batch_size=args.batch_size,
             dummyrun=args.dummy_run
+        )
+
+    if args.test_time_complexity:
+        test_time_complexity(
+            wfmodel_modelname=args.wfmodel_modelpath,
+            wfmodel_configname=args.wfmodel_configpath,
+            calibrator_modelname=f'../{PROJECT_DIR}/trained-models/'+args.calibrator_modelpath,
+            perform_conditioning=True,
+        )
+        test_time_complexity(
+            wfmodel_modelname=args.wfmodel_modelpath,
+            wfmodel_configname=args.wfmodel_configpath,
+            calibrator_modelname=f'../{PROJECT_DIR}/trained-models/'+args.calibrator_modelpath,
+            perform_conditioning=False,
         )
