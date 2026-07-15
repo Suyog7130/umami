@@ -1447,7 +1447,7 @@ def test_time_complexity(wfmodel_modelname, wfmodel_configname, calibrator_model
         labels = torch.tensor(labels, dtype=getattr(torch, precision)).to(device)
         logging.info(f'Choosing to test sample size {labels.shape}')
 
-        if device == 'cuda':
+        if device == torch.device('cuda'):
             torch.cuda.synchronize() # Wait for warm-up to finish
 
         start_time = time.time()
@@ -1457,7 +1457,7 @@ def test_time_complexity(wfmodel_modelname, wfmodel_configname, calibrator_model
 
         hplus, hcross = calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=True)
         
-        if device == 'cuda':
+        if device == torch.device('cuda'):
             torch.cuda.synchronize() # Wait for warm-up to finish
 
         end_time = time.time()
