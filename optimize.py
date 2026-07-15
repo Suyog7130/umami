@@ -877,8 +877,10 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
         if not configpath.endswith('.json'):
             configpath += '.json'
         if not os.path.isfile(configpath):
-            logger.error(f"Provided MODEL_CONFIG path does not exist: {configpath}")
-            raise FileNotFoundError(f"MODEL_CONFIG file not found at {configpath}")
+            configpath = os.path.join('../trained-models', configpath)
+            if not os.path.isfile(configpath):
+                logger.error(f"Provided MODEL_CONFIG path does not exist: {configpath}")
+                raise FileNotFoundError(f"MODEL_CONFIG file not found at {configpath}")
         logger.info(f"Using MODEL_CONFIG: {configpath}")
         MODEL_CONFIG = json.load(open(configpath, 'r'))
     else:
@@ -988,8 +990,10 @@ def load_flex_model(configpath=None, model_path=None, device=DEVICE, precision=P
         logger.info("No model path provided. Model will be initialized with random weights.")
     else:
         if not os.path.isfile(model_path):
-            logger.error(f"Provided model path does not exist: {model_path}")
-            raise FileNotFoundError(f"Model file not found at {model_path}")
+            model_path = os.path.join('../trained-models', model_path)
+            if not os.path.isfile(model_path):
+                logger.error(f"Provided model path does not exist: {model_path}")
+                raise FileNotFoundError(f"Model file not found at {model_path}")
         # -- Check if model weights loaded are of the same precision as our initialized model.
         # -- If not, then convert loaded model to the correct precision before moving to device.
         for name, param in model.named_parameters():

@@ -29,7 +29,6 @@ from optimize import (
     plot_reconstructions
 )
 
-from wfconditioner import get_conditioned_waveform
 from plotutils import putils
 
 from utils.io import ensure_dirs_and_files, ensure_dir
@@ -1387,10 +1386,7 @@ def plot_calibrated_mm_hist(hdf_path, results_dir=None,
     logger.info(f"Saved best and worst mismatch results to {best_worst_fname}")
 
 
-def test_time_complexity(wfmodel_modelname, 
-                        wfmodel_configname, 
-                        calibrator_modelname,
-                        perform_conditioning=True,
+def test_time_complexity(wfmodel_modelname, wfmodel_configname, calibrator_modelname,
                         device=DEVICE, precision=PRECISION, timestamp=NOW, 
                         savedir=f'../{PROJECT_DIR}/results/{TODAY}/',):
     """
@@ -1412,7 +1408,7 @@ def test_time_complexity(wfmodel_modelname,
                                 device=device, precision=precision)
 
     # -- Open CSV file to save results on the go
-    csv_fname = 'calmodel-cond_timecomplexity_results-' if perform_conditioning else 'calmodel_timecomplexity_results-'
+    csv_fname = 'calmodel_timecomplexity_results-'
     csv_fname = os.path.join(savedir, csv_fname + str(device) + '-' + timestamp + '.csv')
     csvfile = open(csv_fname, mode='w', newline='')
     csvfile.write('num_samples,time_seconds\n')  # Write header row
@@ -1436,7 +1432,7 @@ def test_time_complexity(wfmodel_modelname,
 
 
     times = []
-    for Nr in Nruns:
+    for Nr in tqdm(Nruns, desc='Generated Waveforms', unit='wf'):
         # Generate random labels within the training range
         m1 = np.random.uniform(5, 75, Nr)
         m2 = np.random.uniform(5, 75, Nr)
@@ -1454,23 +1450,16 @@ def test_time_complexity(wfmodel_modelname,
         outwaves = wfmodel.generate(labels, convert_to_hphc=False)  # has shape (1, 2=[amp,phase], seq_len)!
         logger.info(f"Generated waveform from ML model with shape: {outwaves.shape}")
 
-        if perform_conditioning:
-            recon_amp, recon_phase = calmodel.calibrate_waveform(outwaves, labels, 
-                                                                    convert_to_hphc=False)
-            hplus, hcross = get_conditioned_waveform(
-                recon_amp.cpu().numpy(), 
-                recon_phase.cpu().numpy()
-                )
-            logger.info(f"Conditioned waveform shapes: hplus={hplus.shape}, hcross={hcross.shape}")
-        else:
-            hplus, hcross = calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=True)
+        hplus, hcross = calmodel.calibrate_waveform(outwaves, labels, convert_to_hphc=True)
         
         if device == 'cuda':
             torch.cuda.synchronize() # Wait for warm-up to finish
+
         end_time = time.time()
         elapsed_time = end_time - start_time
         times.append(elapsed_time)
         logging.info(f'Time taken to generate {Nr} samples: {elapsed_time:.4f} seconds')
+
         # -- Write the result to CSV file each time, so that if the process is interrupted, 
         # we still have the results up to that point.
         csvfile.write(f'{Nr},{elapsed_time}\n')
@@ -1529,9 +1518,9 @@ if __name__ == "__main__":
                         help='If set, runs a quick dummy training loop for testing purposes.')
     
     savedataparser = parser.add_argument_group('Calibrator Data Generation')
-    savedataparser.add_argument('--wfmodel-modelpath', type=str, default='modelconfig-flexcvae-20260619-064140.json', 
+    savedataparser.add_argument('--wfmodel-modelpath', type=str, default='flexcvae-model-backup-20260619-064140-epoch98.pt', 
                         help='Path to the trained waveform model checkpoint for generating calibrator input data.')
-    savedataparser.add_argument('--wfmodel-configpath', type=str, default='flexcvae-model-backup-20260619-064140-epoch98.pt', 
+    savedataparser.add_argument('--wfmodel-configpath', type=str, default='modelconfig-flexcvae-20260619-064140.json', 
                         help='Path to the waveform model config file for generating calibrator input data.')
     
     testparser = parser.add_argument_group('Calibrator Testing')
@@ -1593,11 +1582,4 @@ if __name__ == "__main__":
             wfmodel_modelname=args.wfmodel_modelpath,
             wfmodel_configname=args.wfmodel_configpath,
             calibrator_modelname=f'../{PROJECT_DIR}/trained-models/'+args.calibrator_modelpath,
-            perform_conditioning=True,
-        )
-        test_time_complexity(
-            wfmodel_modelname=args.wfmodel_modelpath,
-            wfmodel_configname=args.wfmodel_configpath,
-            calibrator_modelname=f'../{PROJECT_DIR}/trained-models/'+args.calibrator_modelpath,
-            perform_conditioning=False,
         )
