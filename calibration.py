@@ -1396,10 +1396,15 @@ def test_time_complexity(wfmodel_modelname, wfmodel_configname, calibrator_model
     The comparison with ROM and opt, can be performed later using the saved CPU generation time data I have
     for these.
     """
-    logger.info(f"Testing time complexity of waveform generation + calibration + conditioning (if enabled) for {wfmodel_modelname} and {calibrator_modelname} on device {device} with precision {precision}.")
+    logger.info("Starting time complexity test for waveform generation and calibration...")
     ensure_dir(savedir)
 
-    Nruns = np.arange(1, 10001)  # test for batch sizes 1 to 10^4 waveforms
+    if device==torch.device('mps'):
+        logger.warning("Nonzero op are only supported for macOS 14.0 or later. Switching to CPU.")
+        device = torch.device('cpu')
+
+    max_wfs = 100 if device==torch.device('cpu') else 10000
+    Nruns = np.arange(1, max_wfs + 1)  # test for batch sizes 1 to max_wfs waveforms
 
     wfmodel = load_flex_model(model_path=wfmodel_modelname, 
                                 configpath=wfmodel_configname, 
