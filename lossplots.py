@@ -326,25 +326,32 @@ def plot_loss_from_file(fontsize=12, val_plot_type: {'scatter', None} = None,
 
 
 
-def plot_mmcontour_in_qchi_space(dfmm, fontsize=15, labelsize=13, fname=''):
+def plot_mmcontour_in_qchi_space(dfmm, fontsize=15, labelsize=13, 
+                                 fname='', savedir=DIR, now=TIME, types=None, titles=None):
     """
     Plot the mismatches in the mass ratio and chi_eff plane as contours.
     """
     logging.info("Plotting mismatches in the mass ratio and chi_eff plane.")
-    titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
+    if types is None:
+        types = ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']
+    if titles is None:
+        titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
 
     # Create a grid of points
     q = dfmm['mass_ratio'].values
-    chi = dfmm['chi_eff'].values
+    try:
+        chi = dfmm['chi_eff'].values
+    except KeyError:
+        chi = dfmm['chieff'].values
     xi = np.linspace(min(q), max(q), 100)
     yi = np.linspace(min(chi), max(chi), 100)
     xi, yi = np.meshgrid(xi, yi)
 
     # Interpolate mismatch values onto the grid
-    zi_amp = griddata((q, chi), dfmm['mismatch_amp'].values, (xi, yi), method='linear')
-    zi_freq = griddata((q, chi), dfmm['mismatch_freq'].values, (xi, yi), method='linear')
-    zi_hplus = griddata((q, chi), dfmm['mismatch_hplus'].values, (xi, yi), method='linear')
-    zi_hcross = griddata((q, chi), dfmm['mismatch_hcross'].values, (xi, yi), method='linear')
+    zi_amp = griddata((q, chi), dfmm[types[0]].values, (xi, yi), method='linear')
+    zi_freq = griddata((q, chi), dfmm[types[1]].values, (xi, yi), method='linear')
+    zi_hplus = griddata((q, chi), dfmm[types[2]].values, (xi, yi), method='linear')
+    zi_hcross = griddata((q, chi), dfmm[types[3]].values, (xi, yi), method='linear')
     data = [zi_amp, zi_freq, zi_hplus, zi_hcross]
 
     # Plotting
@@ -362,20 +369,28 @@ def plot_mmcontour_in_qchi_space(dfmm, fontsize=15, labelsize=13, fname=''):
         ax.tick_params(labelsize=labelsize)
 
     plt.tight_layout()
-    savename = DIR + f'mmcontour_in_qchi'
-    savename += fname if fname else ''
-    plt.savefig(savename+'-'+TIME+'.png', dpi=300, bbox_inches='tight', transparent=True)
-    plt.savefig(savename+'-white'+'-'+TIME+'.png', dpi=300, bbox_inches='tight')
+    savename = savedir + f'mmcontour_in_qchi'
+    savename += f'-{fname}' if fname else ''
+    plt.savefig(savename+'-'+now+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(savename+'-white'+'-'+now+'.png', dpi=300, bbox_inches='tight')
     logging.info(f"Mismatch in q-chi_eff plane plot saved to {savename}")
     plt.close()
 
 
-def plot_mm_vs_mass(dfmm, fontsize=15, labelsize=13, fname=''):
+def plot_mm_vs_mass(dfmm, fontsize=15, labelsize=13, 
+                    fname='', savedir=DIR, now=TIME, types=None, titles=None):
     kinds = ['chirp_mass', 'total_mass', 'mass_ratio']
-    types = [['mismatch_amp', 'mismatch_freq'],
-             ['mismatch_hplus', 'mismatch_hcross']]
-    titles = [['Amplitude', 'Frequency'], 
-              ['$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']]
+    if types is None:
+        types = [['mismatch_amp', 'mismatch_freq'],
+                 ['mismatch_hplus', 'mismatch_hcross']]
+    elif len(types)==4:
+        types = [types[:2], types[2:]]
+
+    if titles is None:
+        titles = [['Amplitude', 'Frequency'], 
+                  ['$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']]
+    elif len(titles)==4:
+        titles = [titles[:2], titles[2:]]
 
     for kind in kinds:
         fig, ax = plt.subplots(1,2,figsize=(10,5))
@@ -391,26 +406,40 @@ def plot_mm_vs_mass(dfmm, fontsize=15, labelsize=13, fname=''):
             ax[i].tick_params(which='both', direction='in', top=True, right=True)
             ax[i].tick_params(labelsize=labelsize)
             ax[i].legend(fontsize=labelsize)
-        savename = DIR + f'mm_vs_{kind}'
-        savename += fname if fname else ''
+
+        savename = savedir + f'mm_vs_{kind}'
+        savename += f'-{fname}' if fname else ''
         plt.tight_layout()
-        plt.savefig(savename+'-'+TIME+'.png', dpi=300, bbox_inches='tight', transparent=True)
-        plt.savefig(savename+'-white'+'-'+TIME+'.png', dpi=300, bbox_inches='tight')
+        plt.savefig(savename+'-'+now+'.png', dpi=300, bbox_inches='tight', transparent=True)
+        plt.savefig(savename+'-white'+'-'+now+'.png', dpi=300, bbox_inches='tight')
         logging.info(f"Mismatch vs {kind} plot saved to {savename}")
         plt.close()
 
 
-def plot_mm_vs_chieff(dfmm, fontsize=15, labelsize=13, fname=''):
-    types = [['mismatch_amp', 'mismatch_freq'],
-             ['mismatch_hplus', 'mismatch_hcross']]
-    titles = [['Amplitude', 'Frequency'], 
-              ['$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']]
-    
+def plot_mm_vs_chieff(dfmm, fontsize=15, labelsize=13, 
+                      fname='', savedir=DIR, now=TIME, types=None, titles=None):
+    if types is None:
+        types = [['mismatch_amp', 'mismatch_freq'],
+                 ['mismatch_hplus', 'mismatch_hcross']]
+    elif len(types)==4:
+        types = [types[:2], types[2:]]
+
+    if titles is None:
+        titles = [['Amplitude', 'Frequency'], 
+                  ['$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']]
+    elif len(titles)==4:
+        titles = [titles[:2], titles[2:]]
+
+    try:
+        chi_eff = dfmm['chi_eff']
+    except KeyError:
+        chi_eff = dfmm['chieff']
+
     fig, ax = plt.subplots(1, 2, figsize=(10, 5))
     for i in range(len(types)):
-        ax[i].plot(dfmm['chi_eff'], dfmm[types[i][0]], 'o', label=titles[i][0],
+        ax[i].plot(chi_eff, dfmm[types[i][0]], 'o', label=titles[i][0],
                    markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
-        ax[i].plot(dfmm['chi_eff'], dfmm[types[i][1]], 's', label=titles[i][1],
+        ax[i].plot(chi_eff, dfmm[types[i][1]], 's', label=titles[i][1],
                    markersize=3, alpha=0.5, markeredgewidth=0.25, markeredgecolor='black')
         ax[i].set_xlabel('$\\chi_{\\rm eff}$', fontsize=fontsize)
         ax[i].set_ylabel('Mismatch', fontsize=fontsize)
@@ -419,11 +448,12 @@ def plot_mm_vs_chieff(dfmm, fontsize=15, labelsize=13, fname=''):
         ax[i].tick_params(which='both', direction='in', top=True, right=True)
         ax[i].tick_params(labelsize=labelsize)
         ax[i].legend(fontsize=labelsize)
-    savename = DIR + f'mm_vs_chieff'
-    savename += fname if fname else ''
+
+    savename = savedir + f'mm_vs_chieff'
+    savename += f'-{fname}' if fname else ''
     plt.tight_layout()
-    plt.savefig(savename+'-'+TIME+'.png', dpi=300, bbox_inches='tight', transparent=True)
-    plt.savefig(savename+'-white'+'-'+TIME+'.png', dpi=300, bbox_inches='tight')
+    plt.savefig(savename+'-'+now+'.png', dpi=300, bbox_inches='tight', transparent=True)
+    plt.savefig(savename+'-white'+'-'+now+'.png', dpi=300, bbox_inches='tight')
     logging.info(f"Mismatch vs chi_eff plot saved to {savename}")
     plt.close()
 

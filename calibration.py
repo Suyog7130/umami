@@ -29,6 +29,13 @@ from optimize import (
     plot_reconstructions
 )
 
+from lossplots import (
+    plot_mmcontour_in_qchi_space, 
+    plot_mm_hist, 
+    plot_mm_vs_mass, 
+    plot_mm_vs_chieff
+)
+
 from plotutils import putils
 
 from utils.io import ensure_dirs_and_files, ensure_dir
@@ -1326,13 +1333,12 @@ def plot_calibration_results(original: torch.Tensor,
     logger.info("Saved all calibration result plots.")
 
 
-def plot_calibrated_mm_hist(hdf_path, results_dir=None,
+def plot_calibrated_mm_results(hdf_path, results_dir=None,
                             wftype: {'amp_freq', 'amp_phase'} = 'amp_phase',
                             conditioned_waveforms=False):
     """
     Read the calibrated mismatch results from the HDF file and return as a pandas DataFrame.
     """
-    from lossplots import plot_mm_hist
     if wftype == 'amp_freq':
         types = ['mismatch_amp', 'mismatch_freq', 'mismatch_hplus', 'mismatch_hcross']
         titles = ['Amplitude', 'Frequency', '$\\mathbf{h_{+}}$', '$\\mathbf{h_{\\times}}$']
@@ -1354,13 +1360,24 @@ def plot_calibrated_mm_hist(hdf_path, results_dir=None,
         hdf_path = os.path.join(results_dir, hdf_path)
     if not os.path.exists(hdf_path):
         raise FileNotFoundError(f"Calibrated mismatch results HDF file not found: {hdf_path}")
+    
     dfmm = pd.read_hdf(hdf_path, key='mismatch_results')
+
     logger.info(f"Read calibrated mismatch results from {hdf_path}, with {len(dfmm)} entries.")
+    logger.info(f"Columns in the DataFrame: {dfmm.columns.tolist()}")
+
     fname = 'calibrated'
     fname += '-conditioned' if conditioned_waveforms else ''
+
     plot_mm_hist(dfmm, savedir=results_dir, 
                  fname=fname, now=NOW, types=types, titles=titles)
     logger.info("Plotted calibrated mismatch histograms.")
+    
+    plot_mmcontour_in_qchi_space(dfmm, savedir=results_dir,
+                                 fname=fname, now=NOW, types=types, titles=titles)
+    plot_mm_vs_mass(dfmm, savedir=results_dir, fname=fname, now=NOW, types=types, titles=titles)
+    plot_mm_vs_chieff(dfmm, savedir=results_dir, fname=fname, now=NOW, types=types, titles=titles)
+    logger.info("Plotted calibrated mismatch contour plots in q-chi space, and vs mass and chieff.")
 
     # -- Find and save best, and worst performing parameter values based on the mismatch results
     best_mismatch_idx = dfmm[types[2]].idxmin()
@@ -1512,6 +1529,9 @@ if __name__ == "__main__":
     parser.add_argument('--results-dir', type=str, default=None,
                         help='Directory where the results file is located. If provided, the script will look for the results file in this directory.')
     
+    parser.add_argument('--conditioned-waveforms', action='store_true',
+                        help='If set, the calibrator will be tested on conditioned waveforms instead of the original waveforms. This is useful for testing the calibrator on waveforms that have been processed by the waveform conditioner.')
+    
     trainparser = parser.add_argument_group('Training Hyperparameters')
     trainparser.add_argument('--batch-size', type=int, default=64, 
                         help='Batch size for training the calibrator model.')
@@ -1571,8 +1591,8 @@ if __name__ == "__main__":
         )
 
     if args.plot_results is not None:
-        plot_calibrated_mm_hist(args.plot_results, results_dir=args.results_dir,
-                                conditioned_waveforms=True)
+        plot_calibrated_mm_results(args.plot_results, results_dir=args.results_dir,
+                                conditioned_waveforms=args.conditioned_waveforms)
         
     if args.test:
         test_calibrator(
