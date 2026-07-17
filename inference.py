@@ -845,30 +845,122 @@ def main(args, label='umamipe',
 
 
 
-def analyze_results(fname: str = None, 
-                    results: Optional[List[bilby.gw.result.CBCResult]] = None,
-                    label: str = 'umamipe',
-                    outdir: str = f'../{PROJECT_DIR}/results/'):
+# ------
+# PE Bias Estimation
+# ------
+
+
+def extract_marginalized_posteriors(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
+                  label: str = 'umamipe',
+                  pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
+                  sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',
+                  outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
+                  save_to_outdir: bool = False,
+                  fontsize=15, labelsize=13):
+    """
+    Extract marginalized posterior samples for the specified parameters from a Bilby result object.
+    These posteriors are then plotted as single parameter marginalized histograms, with the true
+    injection value shown as a vertical line.
+    Then marginalied posteriors are also calculated for the derived parameters, chirp_mass and chi_eff!
+    All these plots are saved to the same directory as the result object, with the derived quantity
+    posteriors also saved to a JSON file for later analysis.
+
+    Arguments
+    ---------
+    results_dir : str
+        Directory containing the Bilby result JSON files.
+    label : str
+        Label used to identify the result files.
+    pe_run_type : str
+        Type of parameter estimation run, e.g., 'ml2ml', 'eob2ml', 'eob2eob'.
+    sampler : str
+        Sampler used for the parameter estimation, e.g., 'nessai', 'dynesty', 'pocomc'.
+    outdir : str
+        Directory to save the marginalized posterior plots and JSON files.
+    save_to_outdir : bool
+        If True, save the marginalized posterior plots and JSON files to the specified outdir.
+    """
+    result_fname = os.path.join(results_dir, f"{label}_{pe_run_type}_{sampler}_result.json")
+    if not os.path.isfile(result_fname):
+        logger.error(f"Result file not found: {result_fname}")
+        raise FileNotFoundError(f"Result file not found: {result_fname}")
     
-    if results is None:
-        if not fname.endswith('.json'):
-            fname += '.json'
-        results = bilby.gw.result.CBCResult.from_json(f"{outdir}/{fname}")
-    if not isinstance(results, list):
-        results = [results]
+    logger.info(f"Loading Bilby result from: {result_fname}")
+    result = bilby.gw.result.CBCResult.from_json(result_fname)
 
-    # Bilby built-in PP plot
-    fig, pvals = make_pp_plot(
-        results,
-        filename=f"{outdir}/{label}_pp-plot.png",
-        save=True,
-    )
-    print("Combined p-value:", pvals.combined_pvalue)
+    posterior = result.posterior
+    injection_parameters = result.injection_parameters
 
-    # Plot the inferred waveform superposed on the actual data.
-    # results[0].plot_waveform_posterior(n_samples=100)
-    logger.info("Saved PP plot, waveform posterior plot, and corner plot for the first injection result.")
+    # Extract marginalized posteriors for the specified parameters
+    parameters_of_interest = ["mass_1", "mass_2", "chi_1", "chi_2"]
+    marginalized_posteriors = {param: posterior[param].values 
+                               for param in parameters_of_interest if param in posterior.columns}
+    
+    # Extract derived parameters: chirp_mass and chi_eff
+    marginalized_posteriors["chirp_mass"] = chirp_mass(posterior["mass_1"], 
+                                                       posterior["mass_2"]).values
+    marginalized_posteriors["chi_eff"] = chi_eff(posterior["mass_1"], 
+                                                 posterior["mass_2"], 
+                                                 posterior["chi_1"], 
+                                                 posterior["chi_2"]).values
+    
+    # Save marginalized posteriors to JSON file
+    savedir = outdir if save_to_outdir else results_dir
+    ensure_dir(savedir)
+    marginalized_posteriors_fname = os.path.join(savedir, f"{label}_{pe_run_type}_{sampler}_marginalized_posteriors.json")
+    logger.info(f"Saving marginalized posteriors to: {marginalized_posteriors_fname}")
+    save_json(marginalized_posteriors, marginalized_posteriors_fname)
 
+    # Store the distance and ratio, of posterior mode and median, from the true value, for each param!
+    param_distances = {}
+    param_ratios = {}
+    for i, param in enumerate(marginalized_posteriors):
+        if param in injection_parameters:
+            # Calculate distance from true value
+            mode = np.median(marginalized_posteriors[param])
+            median = np.median(marginalized_posteriors[param])
+            true_value = injection_parameters[param]
+            param_distances[param] = {
+                "mode": np.abs(mode - true_value),
+                "median": np.abs(median - true_value)
+            }
+            # Calculate ratio from true value
+            param_ratios[param] = {
+                "mode": mode / true_value if true_value != 0 else np.inf,
+                "median": median / true_value if true_value != 0 else np.inf
+            }
+    distances_fname = os.path.join(savedir, f"{label}_{pe_run_type}_{sampler}_param_distances.json")
+    ratios_fname = os.path.join(savedir, f"{label}_{pe_run_type}_{sampler}_param_ratios.json")
+    logger.info(f"Saving parameter distances to: {distances_fname}")
+    logger.info(f"Saving parameter ratios to: {ratios_fname}")
+    save_json(param_distances, distances_fname)
+    save_json(param_ratios, ratios_fname)
+
+    # Plot marginalized posteriors with true injection values
+    latex_labels = ["$m_1$", "$m_2$", "$\\chi_1$", "$\\chi_2$", "$\\mathcal{M}$", "$\\chi_{\\rm eff}$"]
+    for i, param in enumerate(marginalized_posteriors):
+        plt.figure(figsize=(8, 6))
+        plt.hist(marginalized_posteriors[param], bins=50, density=True, alpha=0.7, label='Posterior')
+        if param in injection_parameters:
+            plt.axvline(injection_parameters[param], color='r', linestyle='--', label='True Value')
+        plt.title(f'Marginalized Posterior for {param}', fontsize=fontsize)
+        plt.xlabel(latex_labels[i], fontsize=fontsize)
+        plt.ylabel('Probability Density', fontsize=fontsize)
+        plt.legend(loc='best', fontsize=labelsize)
+        plot_fname = os.path.join(savedir, f"{label}_{pe_run_type}_{sampler}_{param}_posterior.png")
+        logger.info(f"Saving marginalized posterior plot for {param} to: {plot_fname}")
+        plt.tight_layout()
+        plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
+        plt.show()
+        plt.close()
+    logger.info("Completed extraction and plotting of marginalized posteriors.")
+    
+
+
+
+# ------
+# PP plots
+# ------
 
 
 def chirp_mass(mass_1, mass_2):
@@ -1225,6 +1317,10 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
     print("Combined p-value for derived parameters:", pvals.combined_pvalue)
 
 
+# ------
+# Re-weighting
+# ------
+
 
 def read_ifos_from_file(fname: str, outdir: str = f'../{PROJECT_DIR}/results/'):
     if not fname.endswith('.pkl'):
@@ -1465,12 +1561,12 @@ if __name__ == "__main__":
                               help="Whether to run the full PE campaign (default: False)")
     methodargs.add_argument('--plot-corner-from-result-file', action='store_true',
                               help="Whether to plot a corner plot from a previous result file (default: False)")
-    methodargs.add_argument('--analyze-only', action='store_true', 
-                              help="Whether to only analyze results from a previous run, using the provided JSON file (default: False)")
     methodargs.add_argument('--imp-reweight', action='store_true',
                               help="Whether to perform importance reweighting on a previous result, using the provided JSON file (default: False)")
     methodargs.add_argument('--make-pp-plots', action='store_true',
                               help="Whether to make PP plots from a previous run, using the provided JSON file (default: False)")
+    methodargs.add_argument('--extract-marginalized-posteriors', action='store_true',
+                              help="Whether to extract marginalized posteriors from a previous result, using the provided JSON file (default: False)")
     
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
@@ -1478,13 +1574,8 @@ if __name__ == "__main__":
 
     # Force PyTorch's spawn context globally
     mp.set_start_method('spawn', force=True)
-
-    if args.analyze_only:
-        logger.info("Running in analyze-only mode. Will analyze results from a previous run using the provided JSON file.")
-        analyze_results(fname=args.results_fname, label=args.label, 
-                        outdir=f'../{PROJECT_DIR}/results/{TODAY}')
     
-    elif args.imp_reweight:
+    if args.imp_reweight:
         logger.info("Running in importance reweighting mode. Will reweight results from a previous run using the provided JSON file.")
         imp_reweight_posteriors(fname=args.results_fname, outdir=args.results_dir, 
                                 npool=args.npool,
@@ -1495,13 +1586,15 @@ if __name__ == "__main__":
         make_pp_plots(results_dir=args.results_dir, label=args.label, 
                       pe_run_type=args.pe_run_type, sampler=args.sampler,
                       outdir=f'../{PROJECT_DIR}/results/{TODAY}/')
+        
+    elif args.extract_marginalized_posteriors:
+        logger.info("Running in extract-marginalized-posteriors mode.")
+        extract_marginalized_posteriors(results_dir=args.results_dir,
+                                        label=args.label, 
+                                        pe_run_type=args.pe_run_type,
+                                        sampler=args.sampler,)
     
     else:
         main(args, label=args.label, 
             pe_run_type=args.pe_run_type,
             sampler=args.sampler,)
-    
-
-    # analyze_results(fname='ml2ml-4d_20260607-153120_inj_0001_result.json', 
-    #                 label=args.label, 
-    #                 outdir=f'../{PROJECT_DIR}/results/{TODAY}')
