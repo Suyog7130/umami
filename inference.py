@@ -5,6 +5,7 @@ using Bilby, and obtain a Probability-Probability plot.
 """
 
 import os
+import glob
 import copy
 import json
 import time
@@ -15,6 +16,7 @@ import numpy as np
 import pandas as pd
 from scipy.special import logsumexp
 import matplotlib.pyplot as plt
+import matplotlib.ticker as tck
 
 import torch
 import torch.multiprocessing as mp
@@ -850,13 +852,12 @@ def main(args, label='umamipe',
 # ------
 
 
-def extract_marginalized_posteriors(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
-                  label: str = 'umamipe',
-                  pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
-                  sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',
-                  outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
-                  save_to_outdir: bool = False,
-                  fontsize=15, labelsize=13):
+def extract_marginalized_posteriors(
+        results_fname: str = None,
+        results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
+        outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
+        save_to_outdir: bool = False,
+        fontsize=15, labelsize=13):
     """
     Extract marginalized posterior samples for the specified parameters from a Bilby result object.
     These posteriors are then plotted as single parameter marginalized histograms, with the true
@@ -867,6 +868,8 @@ def extract_marginalized_posteriors(results_dir: str = f'../{PROJECT_DIR}/result
 
     Arguments
     ---------
+    results_fname : str
+        Path to the Bilby result JSON file.
     results_dir : str
         Directory containing the Bilby result JSON files.
     label : str
@@ -880,13 +883,16 @@ def extract_marginalized_posteriors(results_dir: str = f'../{PROJECT_DIR}/result
     save_to_outdir : bool
         If True, save the marginalized posterior plots and JSON files to the specified outdir.
     """
-    result_fname = os.path.join(results_dir, f"{label}_{pe_run_type}_{sampler}_result.json")
-    if not os.path.isfile(result_fname):
-        logger.error(f"Result file not found: {result_fname}")
-        raise FileNotFoundError(f"Result file not found: {result_fname}")
-    
-    logger.info(f"Loading Bilby result from: {result_fname}")
-    result = bilby.gw.result.CBCResult.from_json(result_fname)
+    if results_fname is None:
+        raise ValueError("results_fname must be provided to extract marginalized posteriors.")
+    elif not results_fname.endswith('.json'):
+        results_fname += '.json'
+    fname = os.path.join(results_dir, results_fname)
+    if not os.path.isfile(fname):
+        raise FileNotFoundError(f"Results file not found: {fname}")
+
+    result = bilby.gw.result.CBCResult.from_json(fname)
+    logger.info(f"Loaded Bilby result from: {fname}")
 
     posterior = result.posterior
     injection_parameters = result.injection_parameters
@@ -897,17 +903,19 @@ def extract_marginalized_posteriors(results_dir: str = f'../{PROJECT_DIR}/result
                                for param in parameters_of_interest if param in posterior.columns}
     
     # Extract derived parameters: chirp_mass and chi_eff
-    marginalized_posteriors["chirp_mass"] = chirp_mass(posterior["mass_1"], 
-                                                       posterior["mass_2"]).values
-    marginalized_posteriors["chi_eff"] = chi_eff(posterior["mass_1"], 
-                                                 posterior["mass_2"], 
-                                                 posterior["chi_1"], 
-                                                 posterior["chi_2"]).values
+    marginalized_posteriors["chirp_mass"] = chirp_mass(posterior["mass_1"], posterior["mass_2"])
+    marginalized_posteriors["chi_eff"] = chi_eff(posterior["mass_1"],  posterior["mass_2"], 
+                                                 posterior["chi_1"], posterior["chi_2"])
+    
+    # Calculate true values for derived parameters
+    injection_parameters["chirp_mass"] = chirp_mass(injection_parameters["mass_1"], injection_parameters["mass_2"])
+    injection_parameters["chi_eff"] = chi_eff(injection_parameters["mass_1"], injection_parameters["mass_2"], 
+                                              injection_parameters["chi_1"], injection_parameters["chi_2"])
     
     # Save marginalized posteriors to JSON file
     savedir = outdir if save_to_outdir else results_dir
     ensure_dir(savedir)
-    marginalized_posteriors_fname = os.path.join(savedir, f"{label}_{pe_run_type}_{sampler}_marginalized_posteriors.json")
+    marginalized_posteriors_fname = os.path.join(savedir, results_fname.replace('_result.json', '_marginalized_posteriors.json'))
     logger.info(f"Saving marginalized posteriors to: {marginalized_posteriors_fname}")
     save_json(marginalized_posteriors, marginalized_posteriors_fname)
 
@@ -929,30 +937,44 @@ def extract_marginalized_posteriors(results_dir: str = f'../{PROJECT_DIR}/result
                 "mode": mode / true_value if true_value != 0 else np.inf,
                 "median": median / true_value if true_value != 0 else np.inf
             }
-    distances_fname = os.path.join(savedir, f"{label}_{pe_run_type}_{sampler}_param_distances.json")
-    ratios_fname = os.path.join(savedir, f"{label}_{pe_run_type}_{sampler}_param_ratios.json")
+    distances_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_distances.json'))
+    ratios_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_ratios.json'))
     logger.info(f"Saving parameter distances to: {distances_fname}")
     logger.info(f"Saving parameter ratios to: {ratios_fname}")
     save_json(param_distances, distances_fname)
     save_json(param_ratios, ratios_fname)
 
     # Plot marginalized posteriors with true injection values
-    latex_labels = ["$m_1$", "$m_2$", "$\\chi_1$", "$\\chi_2$", "$\\mathcal{M}$", "$\\chi_{\\rm eff}$"]
+    latex_labels = ["$m_1 \, [M_\\odot]$", "$m_2 \, [M_\\odot]$", "$\\chi_1$", "$\\chi_2$", 
+                    "$\\mathcal{M} \, [M_\\odot]$", "$\\chi_{\\rm eff}$"]
     for i, param in enumerate(marginalized_posteriors):
-        plt.figure(figsize=(8, 6))
-        plt.hist(marginalized_posteriors[param], bins=50, density=True, alpha=0.7, label='Posterior')
+        fig, ax = plt.subplots(figsize=(8, 6))
+
+        plt.hist(marginalized_posteriors[param], bins=50, density=True, 
+                 alpha=0.7, label='Posterior', edgecolor='black',)
         if param in injection_parameters:
             plt.axvline(injection_parameters[param], color='r', linestyle='--', label='True Value')
-        plt.title(f'Marginalized Posterior for {param}', fontsize=fontsize)
         plt.xlabel(latex_labels[i], fontsize=fontsize)
         plt.ylabel('Probability Density', fontsize=fontsize)
-        plt.legend(loc='best', fontsize=labelsize)
-        plot_fname = os.path.join(savedir, f"{label}_{pe_run_type}_{sampler}_{param}_posterior.png")
+        plt.legend(loc='upper right', fontsize=labelsize-2)
+        ax.tick_params(which="both", direction='in', top=True, right=True)
+        ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
+        ax.tick_params(labelsize=labelsize)
+
+        # Put mode, median of posterior, and true value in the plot
+        mode = np.median(marginalized_posteriors[param])
+        median = np.median(marginalized_posteriors[param])
+        true_value = injection_parameters[param]
+        textstr = f'Mode: {mode:.3f}\nMedian: {median:.3f}\nTrue: {true_value:.3f}'
+        props = dict(boxstyle='round', facecolor='white', alpha=0.5)
+        ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=labelsize-2, verticalalignment='top', bbox=props)
+
+        plot_fname = os.path.join(savedir, results_fname.replace('_result.json', f'_{param}_posterior.png'))
         logger.info(f"Saving marginalized posterior plot for {param} to: {plot_fname}")
         plt.tight_layout()
         plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
-        plt.show()
         plt.close()
+
     logger.info("Completed extraction and plotting of marginalized posteriors.")
     
 
@@ -1589,10 +1611,10 @@ if __name__ == "__main__":
         
     elif args.extract_marginalized_posteriors:
         logger.info("Running in extract-marginalized-posteriors mode.")
-        extract_marginalized_posteriors(results_dir=args.results_dir,
-                                        label=args.label, 
-                                        pe_run_type=args.pe_run_type,
-                                        sampler=args.sampler,)
+        extract_marginalized_posteriors(
+            results_fname=args.results_fname,
+            results_dir=args.results_dir
+            )
     
     else:
         main(args, label=args.label, 
