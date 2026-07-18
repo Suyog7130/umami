@@ -38,7 +38,15 @@ from pycbc.waveform import get_td_waveform
 from mlwavegen import MLWaveformGenerator, convert_to_ml_parameters
 from wfconditioner import get_conditioned_waveform
 from utils.gwutils import amp_phase_from_polarizations
-from utils.io import save_json, save_pickle, save_txt, write_DONE_file, ensure_dir, check_DONE_file_exists
+from utils.io import (
+    save_json, 
+    load_json,
+    save_pickle, 
+    save_txt, 
+    write_DONE_file, 
+    ensure_dir, 
+    check_DONE_file_exists
+    )
 
 from utils.generic import init_logging, init_verbosity_args
 logger = logging.getLogger(__name__)
@@ -891,6 +899,17 @@ def extract_marginalized_posteriors(
     if not os.path.isfile(fname):
         raise FileNotFoundError(f"Results file not found: {fname}")
 
+    savedir = outdir if save_to_outdir else results_dir
+    ensure_dir(savedir)
+    
+    # -- Check if extracted distance and ratio files already exist, and skip if they do!
+    distances_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_distances.json'))
+    ratios_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_ratios.json'))
+    if os.path.isfile(distances_fname) and os.path.isfile(ratios_fname):
+        logger.info(f"Parameter distances and ratios files already exist: {distances_fname}, {ratios_fname}.")
+        logger.info("Skipping extraction.")
+        return
+
     result = bilby.gw.result.CBCResult.from_json(fname)
     logger.info(f"Loaded Bilby result from: {fname}")
 
@@ -913,8 +932,6 @@ def extract_marginalized_posteriors(
                                               injection_parameters["chi_1"], injection_parameters["chi_2"])
     
     # Save marginalized posteriors to JSON file
-    savedir = outdir if save_to_outdir else results_dir
-    ensure_dir(savedir)
     marginalized_posteriors_fname = os.path.join(savedir, results_fname.replace('_result.json', '_marginalized_posteriors.json'))
     logger.info(f"Saving marginalized posteriors to: {marginalized_posteriors_fname}")
     save_json(marginalized_posteriors, marginalized_posteriors_fname)
@@ -974,25 +991,26 @@ def extract_marginalized_posteriors(
         plt.tight_layout()
         plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
         plt.close()
-
     logger.info("Completed extraction and plotting of marginalized posteriors.")
     
 
 
 def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
-                    outdir=f'../{PROJECT_DIR}/results/{TODAY}/'):
+                    outdir=None):
     """
     Extract the marginalized 1D posteriors from Bilby result objects, for all subdirs in the `results_dir`.
     And then from the distances and ratios of the posterior mode and median from the true injection values, for each parameter,
     calculate the mean and standard deviation of these distances and ratios across all injections. Also, plot the distribution of these distances and ratios for each parameter, and save the plots to the `results_dir`.
     """
+    if outdir is None:
+        outdir = results_dir
     savedir = os.path.join(outdir, f'post_summary_{NOW}/')
     ensure_dir(savedir)
 
     logger.info(f"Analyzing results in directory: {results_dir}")
     all_param_distances = {}
     all_param_ratios = {}
-    
+
     for subdir in os.listdir(results_dir):
         if not os.path.isdir(os.path.join(results_dir, subdir)):
             continue
@@ -1011,8 +1029,8 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                                             fname.replace('_result.json', '_param_distances.json'))
             ratios_fname = os.path.join(os.path.join(results_dir, subdir), 
                                         fname.replace('_result.json', '_param_ratios.json'))
-            distances = json.load_json(distances_fname)
-            ratios = json.load_json(ratios_fname)
+            distances = load_json(distances_fname)
+            ratios = load_json(ratios_fname)
 
             for param in distances:
                 if param not in all_param_distances:
@@ -1069,24 +1087,35 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     save_json(summary_distances, summary_distances_fname)
     save_json(summary_ratios, summary_ratios_fname)
 
+    latex_labels = ["$m_1 \, [M_\\odot]$", "$m_2 \, [M_\\odot]$", "$\\chi_1$", "$\\chi_2$", 
+                    "$\\mathcal{M} \, [M_\\odot]$", "$\\chi_{\\rm eff}$"]
+
     # Plot distributions of distances and ratios for each parameter
-    for param in all_param_distances:
-        modes = [d['mode'] for d in all_param_distances[param]]
-        medians = [d['median'] for d in all_param_distances[param]]
-        fig, ax = plt.subplots(figsize=(8, 6))
-        plt.hist(modes, bins=30, alpha=0.5, label='Mode Distances', edgecolor='black')
-        plt.hist(medians, bins=30, alpha=0.5, label='Median Distances', edgecolor='black')
-        plt.xlabel(f'Distance from True Value for {param}', fontsize=15)
-        plt.ylabel('Count', fontsize=15)
-        plt.legend(loc='upper right', fontsize=13)
-        ax.tick_params(which="both", direction='in', top=True, right=True)
-        ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
-        ax.tick_params(labelsize=13)
-        plot_fname = os.path.join(savedir, f'{param}_distance_distribution_{NOW}.png')
-        logger.info(f"Saving distance distribution plot for {param} to: {plot_fname}")
-        plt.tight_layout()
-        plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
-        plt.close()
+    for quantity, all_param_data in zip(['distances', 'ratios'], [all_param_distances, all_param_ratios]):
+        for i, param in enumerate(all_param_data):
+            if quantity == 'distances':
+                modes = [d['mode'] for d in all_param_distances[param]]
+                medians = [d['median'] for d in all_param_distances[param]]
+                xlabel = 'Distance from True Value'
+            else:
+                modes = [r['mode'] for r in all_param_ratios[param]]
+                medians = [r['median'] for r in all_param_ratios[param]]
+                xlabel = 'Ratio of Inferred to True Value'
+            fig, ax = plt.subplots(figsize=(8, 6))
+            # plt.hist(modes, bins=30, alpha=0.5, label=f'Mode {quantity.capitalize()}', edgecolor='black')
+            plt.hist(medians, bins=30, alpha=0.5, label=f'Median {quantity.capitalize()}', edgecolor='black')
+            plt.xlabel(f'{xlabel} for {latex_labels[i]}', fontsize=15)
+            plt.ylabel('Count', fontsize=15)
+            plt.legend(title=f'N={len(medians)}', loc='upper left', fontsize=13, title_fontsize=15)
+            ax.tick_params(which="both", direction='in', top=True, right=True)
+            ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
+            ax.tick_params(labelsize=13)
+            plot_fname = os.path.join(savedir, f'{param}_{quantity}_distribution_{NOW}.png')
+            logger.info(f"Saving {quantity} distribution plot for {param} to: {plot_fname}")
+            plt.tight_layout()
+            plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
+            plt.close()
+    logger.info("Completed analysis of results and plotting of parameter distance distributions.")
 
 
 # ------
@@ -1698,6 +1727,8 @@ if __name__ == "__main__":
                               help="Whether to make PP plots from a previous run, using the provided JSON file (default: False)")
     methodargs.add_argument('--extract-marginalized-posteriors', action='store_true',
                               help="Whether to extract marginalized posteriors from a previous result, using the provided JSON file (default: False)")
+    methodargs.add_argument('--analyze-results', action='store_true',
+                              help="Whether to analyze a previous result files without running new injections (default: False)")
     
     parser = init_verbosity_args(parser)
     args = parser.parse_args()
@@ -1725,6 +1756,12 @@ if __name__ == "__main__":
             results_dir=args.results_dir
             )
     
+    elif args.analyze_results:
+        logger.info("Running in analyze-results mode. Will analyze posteriors from previous results files.")
+        analyze_results(
+            results_dir=args.results_dir
+        )
+
     else:
         main(args, label=args.label, 
             pe_run_type=args.pe_run_type,

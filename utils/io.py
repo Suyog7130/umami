@@ -48,6 +48,11 @@ def save_json(obj: dict, path: str) -> None:
     with open(path, 'w') as f:
         json.dump(_make_json_serializable(obj), f, indent=2)
 
+def load_json(path: str) -> dict:
+    ensure_file(path)
+    with open(path, 'r') as f:
+        return json.load(f)
+
 def save_pickle(obj, path):
     ensure_dir(os.path.dirname(path))
     with open(path, 'wb') as f:
