@@ -1020,6 +1020,9 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
 
         if label in subdir and pe_run_type in subdir and sampler in subdir:
             logger.info(f"Found result directory: {subdir} for PP plot generation...")
+        else:
+            logger.info(f"Skipping directory: {subdir} as it does not match label: {label}, pe_run_type: {pe_run_type}, sampler: {sampler}")
+            continue
 
         for fname in os.listdir(os.path.join(results_dir, subdir)):
             if not fname.endswith('_result.json'):
