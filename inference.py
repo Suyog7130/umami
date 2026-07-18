@@ -1102,8 +1102,8 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                 medians = [r['median'] for r in all_param_ratios[param]]
                 xlabel = 'Ratio of Inferred to True Value'
             fig, ax = plt.subplots(figsize=(8, 6))
-            # plt.hist(modes, bins=30, alpha=0.5, label=f'Mode {quantity.capitalize()}', edgecolor='black')
-            plt.hist(medians, bins=30, alpha=0.5, label=f'Median {quantity.capitalize()}', edgecolor='black')
+            # plt.hist(modes, bins=30, alpha=0.5, label=f'with posterior mode', edgecolor='black')
+            plt.hist(medians, bins=30, alpha=0.5, label=f'with posterior median', edgecolor='black')
             plt.xlabel(f'{xlabel} for {latex_labels[i]}', fontsize=15)
             plt.ylabel('Count', fontsize=15)
             plt.legend(title=f'N={len(medians)}', loc='upper left', fontsize=13, title_fontsize=15)
