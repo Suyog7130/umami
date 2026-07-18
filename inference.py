@@ -979,6 +979,115 @@ def extract_marginalized_posteriors(
     
 
 
+def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
+                    outdir=f'../{PROJECT_DIR}/results/{TODAY}/'):
+    """
+    Extract the marginalized 1D posteriors from Bilby result objects, for all subdirs in the `results_dir`.
+    And then from the distances and ratios of the posterior mode and median from the true injection values, for each parameter,
+    calculate the mean and standard deviation of these distances and ratios across all injections. Also, plot the distribution of these distances and ratios for each parameter, and save the plots to the `results_dir`.
+    """
+    savedir = os.path.join(outdir, f'post_summary_{NOW}/')
+    ensure_dir(savedir)
+
+    logger.info(f"Analyzing results in directory: {results_dir}")
+    all_param_distances = {}
+    all_param_ratios = {}
+    
+    for subdir in os.listdir(results_dir):
+        if not os.path.isdir(os.path.join(results_dir, subdir)):
+            continue
+
+        for fname in os.listdir(os.path.join(results_dir, subdir)):
+            if not fname.endswith('_result.json'):
+                continue
+            logger.info(f"Processing result file: {fname} in subdir: {subdir}")
+
+            extract_marginalized_posteriors(
+                results_fname=fname,
+                results_dir=os.path.join(results_dir, subdir),
+            )
+
+            distances_fname = os.path.join(os.path.join(results_dir, subdir), 
+                                            fname.replace('_result.json', '_param_distances.json'))
+            ratios_fname = os.path.join(os.path.join(results_dir, subdir), 
+                                        fname.replace('_result.json', '_param_ratios.json'))
+            distances = json.load_json(distances_fname)
+            ratios = json.load_json(ratios_fname)
+
+            for param in distances:
+                if param not in all_param_distances:
+                    all_param_distances[param] = []
+                all_param_distances[param].append(distances[param])
+            for param in ratios:
+                if param not in all_param_ratios:
+                    all_param_ratios[param] = []
+                all_param_ratios[param].append(ratios[param])
+
+    # Write metadata about the analysis to a JSON file
+    analysis_metadata = {
+        'results_dir': results_dir,
+        'outdir': outdir,
+        'savedir': savedir,
+        'num_injections': sum(len(all_param_distances[param]) for param in all_param_distances),
+        'parameters_analyzed': list(all_param_distances.keys()),
+        'result_dirs': [d for d in os.listdir(results_dir) if os.path.isdir(os.path.join(results_dir, d))],
+        'result_files': [f for f in os.listdir(results_dir) if f.endswith('_result.json')],
+    }
+    metadata_fname = os.path.join(savedir, f'analysis_metadata_{NOW}.json')
+    logger.info(f"Saving analysis metadata to: {metadata_fname}")
+    save_json(analysis_metadata, metadata_fname)
+    
+    # Now calculate mean and std of distances and ratios for each parameter
+    summary_distances = {}
+    summary_ratios = {}
+    for param in all_param_distances:
+        modes = [d['mode'] for d in all_param_distances[param]]
+        medians = [d['median'] for d in all_param_distances[param]]
+        summary_distances[param] = {
+            'mode_mean': np.mean(modes),
+            'mode_std': np.std(modes),
+            'median_mean': np.mean(medians),
+            'median_std': np.std(medians)
+        }
+    for param in all_param_ratios:
+        modes = [r['mode'] for r in all_param_ratios[param]]
+        medians = [r['median'] for r in all_param_ratios[param]]
+        summary_ratios[param] = {
+            'mode_mean': np.mean(modes),
+            'mode_std': np.std(modes),
+            'median_mean': np.mean(medians),
+            'median_std': np.std(medians)
+        }
+    logger.info(f"Summary of parameter distances: {summary_distances}")
+    logger.info(f"Summary of parameter ratios: {summary_ratios}")
+
+    # Save summary to JSON files
+    summary_distances_fname = os.path.join(savedir, 'summary_param_distances.json')
+    summary_ratios_fname = os.path.join(savedir, 'summary_param_ratios.json')
+    logger.info(f"Saving summary of parameter distances to: {summary_distances_fname}")
+    logger.info(f"Saving summary of parameter ratios to: {summary_ratios_fname}")
+    save_json(summary_distances, summary_distances_fname)
+    save_json(summary_ratios, summary_ratios_fname)
+
+    # Plot distributions of distances and ratios for each parameter
+    for param in all_param_distances:
+        modes = [d['mode'] for d in all_param_distances[param]]
+        medians = [d['median'] for d in all_param_distances[param]]
+        fig, ax = plt.subplots(figsize=(8, 6))
+        plt.hist(modes, bins=30, alpha=0.5, label='Mode Distances', edgecolor='black')
+        plt.hist(medians, bins=30, alpha=0.5, label='Median Distances', edgecolor='black')
+        plt.xlabel(f'Distance from True Value for {param}', fontsize=15)
+        plt.ylabel('Count', fontsize=15)
+        plt.legend(loc='upper right', fontsize=13)
+        ax.tick_params(which="both", direction='in', top=True, right=True)
+        ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
+        ax.tick_params(labelsize=13)
+        plot_fname = os.path.join(savedir, f'{param}_distance_distribution_{NOW}.png')
+        logger.info(f"Saving distance distribution plot for {param} to: {plot_fname}")
+        plt.tight_layout()
+        plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
+        plt.close()
+
 
 # ------
 # PP plots
