@@ -996,7 +996,10 @@ def extract_marginalized_posteriors(
 
 
 def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
-                    outdir=None):
+                  label: str = 'umamipe',
+                  pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
+                  sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',
+                  outdir=None):
     """
     Extract the marginalized 1D posteriors from Bilby result objects, for all subdirs in the `results_dir`.
     And then from the distances and ratios of the posterior mode and median from the true injection values, for each parameter,
@@ -1014,6 +1017,9 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     for subdir in os.listdir(results_dir):
         if not os.path.isdir(os.path.join(results_dir, subdir)):
             continue
+
+        if label in subdir and pe_run_type in subdir and sampler in subdir:
+            logger.info(f"Found result directory: {subdir} for PP plot generation...")
 
         for fname in os.listdir(os.path.join(results_dir, subdir)):
             if not fname.endswith('_result.json'):
@@ -1759,7 +1765,10 @@ if __name__ == "__main__":
     elif args.analyze_results:
         logger.info("Running in analyze-results mode. Will analyze posteriors from previous results files.")
         analyze_results(
-            results_dir=args.results_dir
+            results_dir=args.results_dir,
+            label=args.label,
+            pe_run_type=args.pe_run_type,
+            sampler=args.sampler,
         )
 
     else:
