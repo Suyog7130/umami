@@ -865,7 +865,8 @@ def extract_marginalized_posteriors(
         results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         save_to_outdir: bool = False,
-        fontsize=15, labelsize=13):
+        fontsize=15, labelsize=13,
+        nolog=False):
     """
     Extract marginalized posterior samples for the specified parameters from a Bilby result object.
     These posteriors are then plotted as single parameter marginalized histograms, with the true
@@ -891,6 +892,9 @@ def extract_marginalized_posteriors(
     save_to_outdir : bool
         If True, save the marginalized posterior plots and JSON files to the specified outdir.
     """
+    if nolog:
+        logger.setLevel(logging.WARNING)
+
     if results_fname is None:
         raise ValueError("results_fname must be provided to extract marginalized posteriors.")
     elif not results_fname.endswith('.json'):
@@ -1014,24 +1018,27 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     all_param_distances = {}
     all_param_ratios = {}
 
-    for subdir in os.listdir(results_dir):
+    subdirs = os.listdir(results_dir)
+
+    for subdir in tqdm(subdirs, desc="Processing"):
         if not os.path.isdir(os.path.join(results_dir, subdir)):
             continue
 
         if label in subdir and pe_run_type in subdir and sampler in subdir:
             logger.info(f"Found result directory: {subdir} for PP plot generation...")
         else:
-            logger.info(f"Skipping directory: {subdir} as it does not match label: {label}, pe_run_type: {pe_run_type}, sampler: {sampler}")
+            logger.debug(f"Skipping directory: {subdir} as it does not match label: {label}, pe_run_type: {pe_run_type}, sampler: {sampler}")
             continue
 
         for fname in os.listdir(os.path.join(results_dir, subdir)):
             if not fname.endswith('_result.json'):
                 continue
-            logger.info(f"Processing result file: {fname} in subdir: {subdir}")
+            logger.debug(f"Processing result file: {fname} in subdir: {subdir}")
 
             extract_marginalized_posteriors(
                 results_fname=fname,
                 results_dir=os.path.join(results_dir, subdir),
+                nolog=True,
             )
 
             distances_fname = os.path.join(os.path.join(results_dir, subdir), 
@@ -1049,6 +1056,8 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                 if param not in all_param_ratios:
                     all_param_ratios[param] = []
                 all_param_ratios[param].append(ratios[param])
+
+    logger.setLevel(logging.INFO)
 
     # Write metadata about the analysis to a JSON file
     analysis_metadata = {
