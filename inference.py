@@ -14,6 +14,8 @@ import logging
 import datetime
 import numpy as np
 import pandas as pd
+
+import scipy
 from scipy.special import logsumexp
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
@@ -866,7 +868,7 @@ def extract_marginalized_posteriors(
         outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         save_to_outdir: bool = False,
         fontsize=15, labelsize=13,
-        nolog=False):
+        nolog=False, force=False):
     """
     Extract marginalized posterior samples for the specified parameters from a Bilby result object.
     These posteriors are then plotted as single parameter marginalized histograms, with the true
@@ -891,6 +893,8 @@ def extract_marginalized_posteriors(
         Directory to save the marginalized posterior plots and JSON files.
     save_to_outdir : bool
         If True, save the marginalized posterior plots and JSON files to the specified outdir.
+    force : bool
+        If True, overwrite existing files.
     """
     if nolog:
         logger.setLevel(logging.WARNING)
@@ -909,7 +913,7 @@ def extract_marginalized_posteriors(
     # -- Check if extracted distance and ratio files already exist, and skip if they do!
     distances_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_distances.json'))
     ratios_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_ratios.json'))
-    if os.path.isfile(distances_fname) and os.path.isfile(ratios_fname):
+    if os.path.isfile(distances_fname) and os.path.isfile(ratios_fname) and not force:
         logger.info(f"Parameter distances and ratios files already exist: {distances_fname}, {ratios_fname}.")
         logger.info("Skipping extraction.")
         return
@@ -946,7 +950,7 @@ def extract_marginalized_posteriors(
     for i, param in enumerate(marginalized_posteriors):
         if param in injection_parameters:
             # Calculate distance from true value
-            mode = np.median(marginalized_posteriors[param])
+            mode = scipy.stats.mode(marginalized_posteriors[param], keepdims=True).mode[0]
             median = np.median(marginalized_posteriors[param])
             true_value = injection_parameters[param]
             param_distances[param] = {
@@ -1003,7 +1007,7 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                   label: str = 'umamipe',
                   pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
                   sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',
-                  outdir=None):
+                  outdir=None, force=False):
     """
     Extract the marginalized 1D posteriors from Bilby result objects, for all subdirs in the `results_dir`.
     And then from the distances and ratios of the posterior mode and median from the true injection values, for each parameter,
@@ -1039,6 +1043,7 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                 results_fname=fname,
                 results_dir=os.path.join(results_dir, subdir),
                 nolog=True,
+                force=force
             )
 
             distances_fname = os.path.join(os.path.join(results_dir, subdir), 
@@ -1781,6 +1786,7 @@ if __name__ == "__main__":
             label=args.label,
             pe_run_type=args.pe_run_type,
             sampler=args.sampler,
+            force=args.force,
         )
 
     else:
