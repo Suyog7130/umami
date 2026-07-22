@@ -789,7 +789,7 @@ def run_manual_eob_reweighting_workflow(
     proposal_logl_is_already_tempered=False,
     extra_fixed=None,
     checkpoint_csv="eob_reweighting_checkpoint.csv",
-    out_prefix="eob_reweighted",
+    out_prefix="eob-reweighted",
     outdir=None,
 ):
     """

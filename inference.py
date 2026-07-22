@@ -1715,7 +1715,7 @@ def imp_reweight_posteriors(fname: str,
         interval="90",                     # or "1sigma"
         proposal_logl_column="log_likelihood",
         checkpoint_csv="eob_reweighting_checkpoint.csv",
-        out_prefix="injection_000_eob_reweighted",
+        out_prefix=fname.replace('_result.json', '_eob-reweighted'),
         outdir=outdir,
     )
 
