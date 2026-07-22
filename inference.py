@@ -1125,14 +1125,16 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                 medians = [r['median'] for r in all_param_ratios[param]]
                 xlabel = 'Ratio of Inferred to True Value'
             fig, ax = plt.subplots(figsize=(8, 6))
-            # plt.hist(modes, bins=30, alpha=0.5, label=f'with posterior mode', edgecolor='black')
-            plt.hist(medians, bins=30, alpha=0.5, label=f'with posterior median', edgecolor='black')
+            plt.hist(modes, bins=30, alpha=0.5, label=f'with post mode (max={np.max(modes):.2f})', edgecolor='black')
+            plt.hist(medians, bins=30, alpha=0.5, label=f'with post median (max={np.max(medians):.2f})', edgecolor='black')
             plt.xlabel(f'{xlabel} for {latex_labels[i]}', fontsize=15)
             plt.ylabel('Count', fontsize=15)
-            plt.legend(title=f'N={len(medians)}', loc='upper left', fontsize=13, title_fontsize=15)
+            plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=13, title_fontsize=15)
             ax.tick_params(which="both", direction='in', top=True, right=True)
             ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
             ax.tick_params(labelsize=13)
+            # ax.text(0.05, 0.95, f'Max (with mode): {np.max(modes):.3f}\nMax (with median): {np.max(medians):.3f}',
+            #         transform=ax.transAxes, fontsize=13, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
             plot_fname = os.path.join(savedir, f'{param}_{quantity}_distribution_{NOW}.png')
             logger.info(f"Saving {quantity} distribution plot for {param} to: {plot_fname}")
             plt.tight_layout()
