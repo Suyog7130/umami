@@ -867,6 +867,7 @@ def extract_marginalized_posteriors(
         results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         save_to_outdir: bool = False,
+        correct_bias: bool = False,
         fontsize=15, labelsize=13,
         nolog=False, force=False):
     """
@@ -1124,9 +1125,21 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                 modes = [r['mode'] for r in all_param_ratios[param]]
                 medians = [r['median'] for r in all_param_ratios[param]]
                 xlabel = 'Ratio of Inferred to True Value'
+
+            bins = 30
+            mode_counts, mode_edges = np.histogram(modes, bins=bins)
+            mode_max_bin_idx = np.argmax(mode_counts)
+            mode_peak_center = 0.5 * (mode_edges[mode_max_bin_idx] + mode_edges[mode_max_bin_idx + 1])
+
+            median_counts, median_edges = np.histogram(medians, bins=bins)
+            median_max_bin_idx = np.argmax(median_counts)
+            median_peak_center = 0.5 * (median_edges[median_max_bin_idx] + median_edges[median_max_bin_idx + 1])
+
             fig, ax = plt.subplots(figsize=(8, 6))
-            plt.hist(modes, bins=30, alpha=0.5, label=f'with post mode (max={np.max(modes):.2f})', edgecolor='black')
-            plt.hist(medians, bins=30, alpha=0.5, label=f'with post median (max={np.max(medians):.2f})', edgecolor='black')
+            plt.hist(modes, bins=bins, alpha=0.5,  edgecolor='black',
+                     label=f'with post mode (peak={mode_peak_center:.2f})')
+            plt.hist(medians, bins=bins, alpha=0.5,  edgecolor='black',
+                     label=f'with post median (peak={median_peak_center:.2f})')
             plt.xlabel(f'{xlabel} for {latex_labels[i]}', fontsize=15)
             plt.ylabel('Count', fontsize=15)
             plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=13, title_fontsize=15)
