@@ -1034,6 +1034,7 @@ def extract_marginalized_posteriors(
         plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
         plt.close()
     logger.info("Completed extraction and plotting of marginalized posteriors.")
+    return injection_parameters, marginalized_posteriors, param_distances, param_ratios
     
 
 
@@ -1055,6 +1056,7 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     logger.info(f"Analyzing results in directory: {results_dir}")
     all_param_distances = {}
     all_param_ratios = {}
+    all_inj_params = {}
 
     subdirs = os.listdir(results_dir)
 
@@ -1096,7 +1098,23 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                     all_param_ratios[param] = []
                 all_param_ratios[param].append(ratios[param])
 
+            # -- Store injection parameters for later analysis
+            injection_params = load_json(os.path.join(os.path.join(results_dir, subdir), 
+                                                  fname.replace('_result.json', '_injection_parameters.json')))
+            for param in injection_params:
+                if param not in all_inj_params:
+                    all_inj_params[param] = []
+                all_inj_params[param].append(injection_params[param])
+
     logger.setLevel(logging.INFO)
+
+    # Save derived quantities (chirp_mass and chi_eff) to `all_inj_params` for later analysis
+    all_inj_params['chirp_mass'] = chirp_mass(np.array(all_inj_params['mass_1']), 
+                                              np.array(all_inj_params['mass_2']))
+    all_inj_params['chi_eff'] = chi_eff(np.array(all_inj_params['mass_1']),
+                                        np.array(all_inj_params['mass_2']),
+                                        np.array(all_inj_params['chi_1']), 
+                                        np.array(all_inj_params['chi_2']))
 
     # Write metadata about the analysis to a JSON file
     analysis_metadata = {
@@ -1190,15 +1208,15 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
             # Now plot True value v/s distance/ratio from true value for different params, across all injections!
             fig, ax = plt.subplots(figsize=(8, 6))
             if quantity == 'distances':
-                plt.scatter([injection_parameters[param] for injection_parameters in all_param_distances[param]],
+                plt.scatter(all_inj_params[param],
                             [d['mode'] for d in all_param_distances[param]], alpha=0.5, label='Post Mode Distance')
-                plt.scatter([injection_parameters[param] for injection_parameters in all_param_distances[param]],
+                plt.scatter(all_inj_params[param],
                             [d['median'] for d in all_param_distances[param]], alpha=0.5, label='Post Median Distance')
                 plt.ylabel(f'Distance from True Value for {latex_labels[i]}', fontsize=15)
             else:
-                plt.scatter([injection_parameters[param] for injection_parameters in all_param_ratios[param]],
+                plt.scatter(all_inj_params[param],
                             [r['mode'] for r in all_param_ratios[param]], alpha=0.5, label='Post Mode Ratio')
-                plt.scatter([injection_parameters[param] for injection_parameters in all_param_ratios[param]],
+                plt.scatter(all_inj_params[param],
                             [r['median'] for r in all_param_ratios[param]], alpha=0.5, label='Post Median Ratio')
                 plt.ylabel(f'Ratio of Inferred to True Value for {latex_labels[i]}', fontsize=15)
             plt.xlabel(f'True Value of {latex_labels[i]}', fontsize=15)
