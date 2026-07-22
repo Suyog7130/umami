@@ -17,8 +17,11 @@ import pandas as pd
 
 import scipy
 from scipy.special import logsumexp
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
+
+plt.rcParams['mathtext.fontset'] = 'cm'
 
 import torch
 import torch.multiprocessing as mp
@@ -97,6 +100,16 @@ elif torch.backends.mps.is_available():
 else:
     DEVICE = torch.device("cpu")
     PRECISION = 'float32'  # Use float32 for CPU
+
+
+LATEX_LABELS = {
+    "mass_1": r"$m_1 \, [M_\odot]$",
+    "mass_2": r"$m_2 \, [M_\odot]$",
+    "chi_1": r"$\chi_1$",
+    "chi_2": r"$\chi_2$",
+    "chirp_mass": r"$\mathcal{M} \, [M_\odot]$",
+    "chi_eff": r"$\chi_{\rm eff}$",
+}
 
 
 # bilby.core.utils.setup_logger(outdir=f'../logs/{TODAY}', label='umamipe', log_level="INFO")
@@ -239,28 +252,28 @@ def make_analysis_priors(
 
     if "mass_1" in active_keys:
         priors["mass_1"] = bilby.core.prior.Uniform(
-            30, 75, name="mass_1", latex_label="$m_1$"
+            30, 75, name="mass_1", latex_label=LATEX_LABELS["mass_1"]
         )
     else:
         priors["mass_1"] = injection_parameters["mass_1"]
 
     if "mass_2" in active_keys:
         priors["mass_2"] = bilby.core.prior.Uniform(
-            30, 75, name="mass_2", latex_label="$m_2$"
+            30, 75, name="mass_2", latex_label=LATEX_LABELS["mass_2"]
         )
     else:
         priors["mass_2"] = injection_parameters["mass_2"]
 
     if "chi_1" in active_keys:
         priors["chi_1"] = bilby.core.prior.Uniform(
-            -0.80, 0.80, name="chi_1", latex_label="$\\chi_1$"
+            -0.80, 0.80, name="chi_1", latex_label=LATEX_LABELS["chi_1"]
         )
     else:
         priors["chi_1"] = injection_parameters["chi_1"]
 
     if "chi_2" in active_keys:
         priors["chi_2"] = bilby.core.prior.Uniform(
-            -0.80, 0.80, name="chi_2", latex_label="$\\chi_2$"
+            -0.80, 0.80, name="chi_2", latex_label=LATEX_LABELS["chi_2"]
         )
     else:        
         priors["chi_2"] = injection_parameters["chi_2"]
@@ -1004,8 +1017,6 @@ def extract_marginalized_posteriors(
     save_json(param_ratios, ratios_fname)
 
     # Plot marginalized posteriors with true injection values
-    latex_labels = [r"$m_1 \, [M_\\odot]$", r"$m_2 \, [M_\\odot]$", r"$\\chi_1$", r"$\\chi_2$", 
-                    r"$\\mathcal{M} \, [M_\\odot]$", r"$\chi_{\\rm eff}$"]
     for i, param in enumerate(marginalized_posteriors):
         fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -1013,7 +1024,7 @@ def extract_marginalized_posteriors(
                  alpha=0.7, label='Posterior', edgecolor='black')
         if param in injection_parameters:
             plt.axvline(injection_parameters[param], color='r', linestyle='--', label='True Value')
-        plt.xlabel(latex_labels[i], fontsize=fontsize)
+        plt.xlabel(LATEX_LABELS.get(param, param), fontsize=fontsize)
         plt.ylabel('Probability Density', fontsize=fontsize)
         plt.legend(loc='upper right', fontsize=labelsize-2)
         ax.tick_params(which="both", direction='in', top=True, right=True)
@@ -1162,9 +1173,6 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     save_json(summary_distances, summary_distances_fname)
     save_json(summary_ratios, summary_ratios_fname)
 
-    latex_labels = [r"$m_1 \, [M_\\odot]$", r"$m_2 \, [M_\\odot]$", r"$\\chi_1$", r"$\\chi_2$", 
-                    r"$\\mathcal{M} \, [M_\\odot]$", r"$\\chi_{\\rm eff}$"]
-
     # Plot distributions of distances and ratios for each parameter
     for quantity, all_param_data in zip(['distances', 'ratios'], [all_param_distances, all_param_ratios]):
         for i, param in enumerate(all_param_data):
@@ -1191,7 +1199,7 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                      label=f'with post mode (peak={mode_peak_center:.2f})')
             plt.hist(medians, bins=bins, alpha=0.5,  edgecolor='black',
                      label=f'with post median (peak={median_peak_center:.2f})')
-            plt.xlabel(f'{xlabel} for {latex_labels[i]}', fontsize=15)
+            plt.xlabel(f'{xlabel} for {LATEX_LABELS.get(param, param)}', fontsize=15)
             plt.ylabel('Count', fontsize=15)
             plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=13, title_fontsize=15)
             ax.tick_params(which="both", direction='in', top=True, right=True)
@@ -1214,7 +1222,7 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                 plt.scatter(all_inj_params[param],
                             [d['median'] for d in all_param_distances[param]], 
                             marker='s', color='red', alpha=0.5, label='Post Median Distance')
-                plt.ylabel(f'Distance from True Value for {latex_labels[i]}', fontsize=15)
+                plt.ylabel(f'Distance from True Value for {LATEX_LABELS.get(param, param)}', fontsize=15)
             else:
                 plt.scatter(all_inj_params[param],
                             [r['mode'] for r in all_param_ratios[param]], 
@@ -1222,8 +1230,8 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                 plt.scatter(all_inj_params[param],
                             [r['median'] for r in all_param_ratios[param]], 
                             marker='s', color='red', alpha=0.5, label='Post Median Ratio')
-                plt.ylabel(f'Ratio of Inferred to True Value for {latex_labels[i]}', fontsize=15)
-            plt.xlabel(f'True Value of {latex_labels[i]}', fontsize=15)
+                plt.ylabel(f'Ratio of Inferred to True Value for {LATEX_LABELS.get(param, param)}', fontsize=15)
+            plt.xlabel(f'True Value of {LATEX_LABELS.get(param, param)}', fontsize=15)
             plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=13, title_fontsize=15)
             ax.tick_params(which="both", direction='in', top=True, right=True)
             ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
