@@ -862,6 +862,33 @@ def main(args, label='umamipe',
 # ------
 
 
+def correct_posterior_bias(posterior_samples: pd.DataFrame,
+                           primary_mass_factor: float = 1.1) -> pd.DataFrame:
+    """
+    Corrects for bias in the posterior samples assuming that it only occurs in the
+    primary mass parameter (mass_1), which is often overestimated. We correct the
+    bias by simply shifting the posterior samples by some fixed amount, which we already
+    estimated from previous runs!
+
+    Arguments
+    ---------
+        posterior_samples: (pd.DataFrame)
+            The posterior samples to correct.
+        primary_mass_factor: (float)
+            The factor by which to correct the primary mass bias.
+
+    Returns:
+        pd.DataFrame: The bias-corrected posterior samples.
+    """
+    corrected_samples = posterior_samples.copy()
+    for param in corrected_samples.columns:
+        if param == "mass_1":
+            corrected_samples[param] = corrected_samples[param] / primary_mass_factor
+        else:
+            corrected_samples[param] = corrected_samples[param]
+    return corrected_samples
+
+
 def extract_marginalized_posteriors(
         results_fname: str = None,
         results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
@@ -922,7 +949,13 @@ def extract_marginalized_posteriors(
     result = bilby.gw.result.CBCResult.from_json(fname)
     logger.info(f"Loaded Bilby result from: {fname}")
 
-    posterior = result.posterior
+    if correct_bias:
+        logger.info("Correcting for bias in the posterior samples assuming that .")
+        result.posterior = correct_posterior_bias(result.posterior)
+        logger.info("Bias correction applied to posterior samples.")
+    else:
+        posterior = result.posterior
+
     injection_parameters = result.injection_parameters
 
     # Extract marginalized posteriors for the specified parameters
