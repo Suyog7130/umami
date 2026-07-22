@@ -964,14 +964,14 @@ def extract_marginalized_posteriors(
                                for param in parameters_of_interest if param in posterior.columns}
     
     # Extract derived parameters: chirp_mass and chi_eff
-    marginalized_posteriors["chirp_mass"] = chirp_mass(posterior["mass_1"], posterior["mass_2"])
-    marginalized_posteriors["chi_eff"] = chi_eff(posterior["mass_1"],  posterior["mass_2"], 
-                                                 posterior["chi_1"], posterior["chi_2"])
+    marginalized_posteriors["chirp_mass"] = calculate_chirp_mass(posterior["mass_1"], posterior["mass_2"])
+    marginalized_posteriors["chi_eff"] = calculate_chi_eff(posterior["mass_1"],  posterior["mass_2"], 
+                                                           posterior["chi_1"], posterior["chi_2"])
     
     # Calculate true values for derived parameters
-    injection_parameters["chirp_mass"] = chirp_mass(injection_parameters["mass_1"], injection_parameters["mass_2"])
-    injection_parameters["chi_eff"] = chi_eff(injection_parameters["mass_1"], injection_parameters["mass_2"], 
-                                              injection_parameters["chi_1"], injection_parameters["chi_2"])
+    injection_parameters["chirp_mass"] = calculate_chirp_mass(injection_parameters["mass_1"], injection_parameters["mass_2"])
+    injection_parameters["chi_eff"] = calculate_chi_eff(injection_parameters["mass_1"], injection_parameters["mass_2"], 
+                                                        injection_parameters["chi_1"], injection_parameters["chi_2"])
     
     # Save marginalized posteriors to JSON file
     marginalized_posteriors_fname = os.path.join(savedir, results_fname.replace('_result.json', '_marginalized_posteriors.json'))
@@ -1109,9 +1109,9 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     logger.setLevel(logging.INFO)
 
     # Save derived quantities (chirp_mass and chi_eff) to `all_inj_params` for later analysis
-    all_inj_params['chirp_mass'] = chirp_mass(np.array(all_inj_params['mass_1']), 
+    all_inj_params['chirp_mass'] = calculate_chirp_mass(np.array(all_inj_params['mass_1']), 
                                               np.array(all_inj_params['mass_2']))
-    all_inj_params['chi_eff'] = chi_eff(np.array(all_inj_params['mass_1']),
+    all_inj_params['chi_eff'] = calculate_chi_eff(np.array(all_inj_params['mass_1']),
                                         np.array(all_inj_params['mass_2']),
                                         np.array(all_inj_params['chi_1']), 
                                         np.array(all_inj_params['chi_2']))
@@ -1238,13 +1238,13 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
 # ------
 
 
-def chirp_mass(mass_1, mass_2):
+def calculate_chirp_mass(mass_1, mass_2):
     mass_1 = np.asarray(mass_1)
     mass_2 = np.asarray(mass_2)
     return (mass_1 * mass_2) ** (3.0 / 5.0) / (mass_1 + mass_2) ** (1.0 / 5.0)
 
 
-def chi_eff(mass_1, mass_2, chi_1, chi_2):
+def calculate_chi_eff(mass_1, mass_2, chi_1, chi_2):
     mass_1 = np.asarray(mass_1)
     mass_2 = np.asarray(mass_2)
     chi_1 = np.asarray(chi_1)
@@ -1262,11 +1262,11 @@ def add_derived_parameters_to_result(result):
     r = copy.deepcopy(result)
     post = r.posterior.copy()
 
-    post["chirp_mass"] = chirp_mass(
+    post["chirp_mass"] = calculate_chirp_mass(
         post["mass_1"],
         post["mass_2"],
     )
-    post["chi_eff"] = chi_eff(
+    post["chi_eff"] = calculate_chi_eff(
         post["mass_1"],
         post["mass_2"],
         post["chi_1"],
@@ -1277,13 +1277,13 @@ def add_derived_parameters_to_result(result):
 
     inj = dict(r.injection_parameters)
     inj["chirp_mass"] = float(
-        chirp_mass(
+        calculate_chirp_mass(
             inj["mass_1"],
             inj["mass_2"],
         )
     )
     inj["chi_eff"] = float(
-        chi_eff(
+        calculate_chi_eff(
             inj["mass_1"],
             inj["mass_2"],
             inj["chi_1"],
@@ -1364,10 +1364,10 @@ def swap_dataframe_component_labels(df):
 
     if "mass_1" in out.columns and "mass_2" in out.columns:
         out["mass_ratio"] = out["mass_2"] / out["mass_1"]
-        out["chirp_mass"] = chirp_mass(out["mass_1"], out["mass_2"])
+        out["chirp_mass"] = calculate_chirp_mass(out["mass_1"], out["mass_2"])
 
     if all(k in out.columns for k in ["mass_1", "mass_2", "chi_1", "chi_2"]):
-        out["chi_eff"] = chi_eff(
+        out["chi_eff"] = calculate_chi_eff(
             out["mass_1"],
             out["mass_2"],
             out["chi_1"],
@@ -1393,11 +1393,11 @@ def swap_dict_component_labels(d):
 
     if "mass_1" in out and "mass_2" in out:
         out["mass_ratio"] = out["mass_2"] / out["mass_1"]
-        out["chirp_mass"] = float(chirp_mass(out["mass_1"], out["mass_2"]))
+        out["chirp_mass"] = float(calculate_chirp_mass(out["mass_1"], out["mass_2"]))
 
     if all(k in out for k in ["mass_1", "mass_2", "chi_1", "chi_2"]):
         out["chi_eff"] = float(
-            chi_eff(out["mass_1"], out["mass_2"], out["chi_1"], out["chi_2"])
+            calculate_chi_eff(out["mass_1"], out["mass_2"], out["chi_1"], out["chi_2"])
         )
     return out
 
