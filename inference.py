@@ -1186,6 +1186,32 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
             plt.tight_layout()
             plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
             plt.close()
+
+            # Now plot True value v/s distance/ratio from true value for different params, across all injections!
+            fig, ax = plt.subplots(figsize=(8, 6))
+            if quantity == 'distances':
+                plt.scatter([injection_parameters[param] for injection_parameters in all_param_distances[param]],
+                            [d['mode'] for d in all_param_distances[param]], alpha=0.5, label='Post Mode Distance')
+                plt.scatter([injection_parameters[param] for injection_parameters in all_param_distances[param]],
+                            [d['median'] for d in all_param_distances[param]], alpha=0.5, label='Post Median Distance')
+                plt.ylabel(f'Distance from True Value for {latex_labels[i]}', fontsize=15)
+            else:
+                plt.scatter([injection_parameters[param] for injection_parameters in all_param_ratios[param]],
+                            [r['mode'] for r in all_param_ratios[param]], alpha=0.5, label='Post Mode Ratio')
+                plt.scatter([injection_parameters[param] for injection_parameters in all_param_ratios[param]],
+                            [r['median'] for r in all_param_ratios[param]], alpha=0.5, label='Post Median Ratio')
+                plt.ylabel(f'Ratio of Inferred to True Value for {latex_labels[i]}', fontsize=15)
+            plt.xlabel(f'True Value of {latex_labels[i]}', fontsize=15)
+            plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=13, title_fontsize=15)
+            ax.tick_params(which="both", direction='in', top=True, right=True)
+            ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
+            ax.tick_params(labelsize=13)
+            plot_fname = os.path.join(savedir, f'{param}_true_vs_{quantity}_{NOW}.png')
+            logger.info(f"Saving True value v/s {quantity} plot for {param} to: {plot_fname}")
+            plt.tight_layout()
+            plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
+            plt.close()
+
     logger.info("Completed analysis of results and plotting of parameter distance distributions.")
 
 
@@ -1718,6 +1744,7 @@ def imp_reweight_posteriors(fname: str,
         out_prefix=fname.replace('_result.json', '_eob-reweighted'),
         outdir=outdir,
     )
+    logging.info(f"Completed manual importance reweighting of posterior samples. Summary: {summary}")
 
 
 
