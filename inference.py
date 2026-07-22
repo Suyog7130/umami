@@ -1209,15 +1209,19 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
             fig, ax = plt.subplots(figsize=(8, 6))
             if quantity == 'distances':
                 plt.scatter(all_inj_params[param],
-                            [d['mode'] for d in all_param_distances[param]], alpha=0.5, label='Post Mode Distance')
+                            [d['mode'] for d in all_param_distances[param]], 
+                            marker='o', color='blue', alpha=0.5, label='Post Mode Distance')
                 plt.scatter(all_inj_params[param],
-                            [d['median'] for d in all_param_distances[param]], alpha=0.5, label='Post Median Distance')
+                            [d['median'] for d in all_param_distances[param]], 
+                            marker='s', color='red', alpha=0.5, label='Post Median Distance')
                 plt.ylabel(f'Distance from True Value for {latex_labels[i]}', fontsize=15)
             else:
                 plt.scatter(all_inj_params[param],
-                            [r['mode'] for r in all_param_ratios[param]], alpha=0.5, label='Post Mode Ratio')
+                            [r['mode'] for r in all_param_ratios[param]], 
+                            marker='o', color='blue', alpha=0.5, label='Post Mode Ratio')
                 plt.scatter(all_inj_params[param],
-                            [r['median'] for r in all_param_ratios[param]], alpha=0.5, label='Post Median Ratio')
+                            [r['median'] for r in all_param_ratios[param]], 
+                            marker='s', color='red', alpha=0.5, label='Post Median Ratio')
                 plt.ylabel(f'Ratio of Inferred to True Value for {latex_labels[i]}', fontsize=15)
             plt.xlabel(f'True Value of {latex_labels[i]}', fontsize=15)
             plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=13, title_fontsize=15)
