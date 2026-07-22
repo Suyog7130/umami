@@ -1004,13 +1004,13 @@ def extract_marginalized_posteriors(
     save_json(param_ratios, ratios_fname)
 
     # Plot marginalized posteriors with true injection values
-    latex_labels = ["$m_1 \, [M_\odot]$", "$m_2 \, [M_\odot]$", "$\chi_1$", "$\chi_2$", 
-                    "$\mathcal{M} \, [M_\odot]$", "$\chi_{\\rm eff}$"]
+    latex_labels = [r"$m_1 \, [M_\\odot]$", r"$m_2 \, [M_\\odot]$", r"$\\chi_1$", r"$\\chi_2$", 
+                    r"$\\mathcal{M} \, [M_\\odot]$", r"$\chi_{\\rm eff}$"]
     for i, param in enumerate(marginalized_posteriors):
         fig, ax = plt.subplots(figsize=(8, 6))
 
         plt.hist(marginalized_posteriors[param], bins=50, density=True, 
-                 alpha=0.7, label='Posterior', edgecolor='black',)
+                 alpha=0.7, label='Posterior', edgecolor='black')
         if param in injection_parameters:
             plt.axvline(injection_parameters[param], color='r', linestyle='--', label='True Value')
         plt.xlabel(latex_labels[i], fontsize=fontsize)
@@ -1162,8 +1162,8 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     save_json(summary_distances, summary_distances_fname)
     save_json(summary_ratios, summary_ratios_fname)
 
-    latex_labels = ["$m_1 \, [M_\\odot]$", "$m_2 \, [M_\\odot]$", "$\\chi_1$", "$\\chi_2$", 
-                    "$\\mathcal{M} \, [M_\\odot]$", "$\\chi_{\\rm eff}$"]
+    latex_labels = [r"$m_1 \, [M_\\odot]$", r"$m_2 \, [M_\\odot]$", r"$\\chi_1$", r"$\\chi_2$", 
+                    r"$\\mathcal{M} \, [M_\\odot]$", r"$\\chi_{\\rm eff}$"]
 
     # Plot distributions of distances and ratios for each parameter
     for quantity, all_param_data in zip(['distances', 'ratios'], [all_param_distances, all_param_ratios]):
