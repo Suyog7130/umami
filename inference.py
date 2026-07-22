@@ -1004,8 +1004,8 @@ def extract_marginalized_posteriors(
     save_json(param_ratios, ratios_fname)
 
     # Plot marginalized posteriors with true injection values
-    latex_labels = ["$m_1 \, [M_\\odot]$", "$m_2 \, [M_\\odot]$", "$\\chi_1$", "$\\chi_2$", 
-                    "$\\mathcal{M} \, [M_\\odot]$", "$\\chi_{\\rm eff}$"]
+    latex_labels = ["$m_1 \, [M_\odot]$", "$m_2 \, [M_\odot]$", "$\chi_1$", "$\chi_2$", 
+                    "$\mathcal{M} \, [M_\odot]$", "$\chi_{\\rm eff}$"]
     for i, param in enumerate(marginalized_posteriors):
         fig, ax = plt.subplots(figsize=(8, 6))
 
