@@ -1096,9 +1096,9 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
 
     logger.debug(f"Generating waveforms for injection parameters: {inj_params}")
 
-    h_eob_inj = eob_generator.time_domain_source_model(time_array, **inj_params)
+    h_eob_inj = eob_generator.time_domain_strain(inj_params)
     logger.debug("Generated EOB injection waveform.")
-    h_ml_inj = ml_generator.time_domain_source_model(time_array, **inj_params)
+    h_ml_inj = ml_generator.time_domain_strain(inj_params)
     logger.debug("Generated ML injection waveform.")
 
     ax[0].plot(time_array, h_eob_inj['plus'], label='EOB Injection', color='blue')
@@ -1112,9 +1112,9 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
 
     logger.debug(f"Generating waveforms for posterior median parameters: {post_median_params}")
 
-    h_eob_median = eob_generator.time_domain_source_model(time_array, **post_median_params)
+    h_eob_median = eob_generator.time_domain_strain(post_median_params)
     logger.debug("Generated EOB posterior median waveform.")
-    h_ml_median = ml_generator.time_domain_source_model(time_array, **post_median_params)
+    h_ml_median = ml_generator.time_domain_strain(post_median_params)
     logger.debug("Generated ML posterior median waveform.")
 
     ax[1].plot(time_array, h_eob_median['plus'], label='EOB Posterior Median', color='green')
@@ -1127,11 +1127,11 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
 
     logger.debug(f"Generating waveforms for posterior mode parameters: {post_mode_params}")
 
-    h_eob_mode = eob_generator.time_domain_source_model(time_array, **post_mode_params)
+    h_eob_mode = eob_generator.time_domain_strain(post_mode_params)
     logger.debug("Generated EOB posterior mode waveform.")
-    h_ml_mode = ml_generator.time_domain_source_model(time_array, **post_mode_params)
+    h_ml_mode = ml_generator.time_domain_strain(post_mode_params)
     logger.debug("Generated ML posterior mode waveform.")
-    
+
     ax[2].plot(time_array, h_eob_mode['plus'], label='EOB Posterior Mode', color='purple')
     ax[2].plot(time_array, h_ml_mode['plus'], label='ML Posterior Mode', color='brown')
     ax[2].set_title('Waveforms at Posterior Mode \\' \
