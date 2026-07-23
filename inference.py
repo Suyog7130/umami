@@ -42,7 +42,7 @@ from tqdm import tqdm
 from pycbc.waveform import get_td_waveform
 from mlwavegen import MLWaveformGenerator, convert_to_ml_parameters
 from wfconditioner import get_conditioned_waveform
-from utils.gwutils import amp_phase_from_polarizations
+from utils.gwutils import amp_phase_from_polarizations, calc_polarization_mismatch
 from utils.io import (
     save_json, 
     load_json,
@@ -1073,8 +1073,8 @@ def extract_marginalized_posteriors(
     eob_generator = make_wf_generator("eob")
     ml_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
 
-    global PLOT_CONDITIONED_WAVEFORM
-    PLOT_CONDITIONED_WAVEFORM = True  # Enable plotting of conditioned waveforms
+    # global PLOT_CONDITIONED_WAVEFORM
+    # PLOT_CONDITIONED_WAVEFORM = True  # Enable plotting of conditioned waveforms
 
     post_median_params = {param: np.median(marginalized_posteriors[param]) for param in marginalized_posteriors}
     post_mode_params = {param: scipy.stats.mode(marginalized_posteriors[param], keepdims=True).mode[0] 
@@ -1160,6 +1160,12 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
             f'$d_L={param_arr["luminosity_distance"]:.2f}$ Mpc', fontsize=12)
         ax[i].set_xlabel('Time (s)', fontsize=15)
         ax[i].set_ylabel('Strain', fontsize=15)
+
+        # Add mismatch value between this pair of waveforms
+        mismatch = calc_polarization_mismatch(h_eob_wf, h_ml_wf)
+        ax[i].text(0.05, 0.9, f'Mismatch: {mismatch:.3e}', 
+                   transform=ax[i].transAxes, fontsize=12, bbox=dict(facecolor='white', alpha=0.5))
+
         ax[i].legend()
         ax[i].tick_params(which="both", direction='in', top=True, right=True)
 
