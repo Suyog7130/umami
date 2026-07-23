@@ -597,7 +597,7 @@ def pycbc_seobnrv4_time_domain_source_model(time_array,
         coa_phase=phase,
         ra=ra,
         dec=dec,
-        delta_t=1/(DURATION*SAMPLE_RATE),
+        delta_t=1/SAMPLE_RATE,   # -- this should always be such that we have 8192 samples in 1 second!
         f_lower=FMIN,
         f_ref=FREF
     )
@@ -1088,12 +1088,25 @@ def extract_marginalized_posteriors(
         plot_waveforms_comparison(eob_generator, ml_generator, 
                                   injection_parameters, post_median_params, post_mode_params,
                                   outdir=savedir, 
-                                  label=results_fname.replace('_result.json', ''))
+                                  label=results_fname.replace('_result.json', '')
+                                  )
         plot_waveforms_comparison(eob_generator, ml_generator, 
                                   injection_parameters, post_median_params, post_mode_params,
                                   outdir=savedir, 
                                   zoomed=True,
-                                  label=results_fname.replace('_result.json', '_zoomed'))
+                                  label=results_fname.replace('_result.json', '_zoomed')
+                                  )
+
+        # Change luminosity distance to default value of 400 Mpc, and replot zoomed waveforms for comparison
+        injection_parameters['luminosity_distance'] = LUMINOSITY_DISTANCE
+        post_median_params['luminosity_distance'] = LUMINOSITY_DISTANCE
+        post_mode_params['luminosity_distance'] = LUMINOSITY_DISTANCE
+        plot_waveforms_comparison(eob_generator, ml_generator, 
+                                  injection_parameters, post_median_params, post_mode_params,
+                                  outdir=savedir, 
+                                  zoomed=True,
+                                  label=results_fname.replace('_result.json', '_zoomed_d0p4k')
+                                  )
 
     return injection_parameters, marginalized_posteriors, param_distances, param_ratios
 
