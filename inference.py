@@ -21,7 +21,7 @@ from scipy.special import logsumexp
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
 
-plt.rcParams['mathtext.fontset'] = 'cm'
+plt.rcParams['text.usetex'] = True
 
 import torch
 import torch.multiprocessing as mp
@@ -908,8 +908,9 @@ def extract_marginalized_posteriors(
         outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         save_to_outdir: bool = False,
         correct_bias: bool = False,
+        plot_waveforms: bool = False,
         fontsize=15, labelsize=13,
-        nolog=False, force=False):
+        nolog=False, force=False, **kwargs):
     """
     Extract marginalized posterior samples for the specified parameters from a Bilby result object.
     These posteriors are then plotted as single parameter marginalized histograms, with the true
@@ -1045,8 +1046,75 @@ def extract_marginalized_posteriors(
         plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
         plt.close()
     logger.info("Completed extraction and plotting of marginalized posteriors.")
+
+    # Plot original injected EOB waveform and recovery ML and EOB waveforms at posterior median/mode
+    wfkwargs = {'wfmodel_modelpath': kwargs.get('model_path'),
+                'wfmodel_configpath': kwargs.get('config_path'),
+                'calibrator_modelpath': kwargs.get('calmodel_path')}
+    eob_generator = make_wf_generator("eob")
+    ml_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
+
+    post_median_params = {param: np.median(marginalized_posteriors[param]) for param in marginalized_posteriors}
+    post_mode_params = {param: scipy.stats.mode(marginalized_posteriors[param], keepdims=True).mode[0] 
+                        for param in marginalized_posteriors}
+
+    if plot_waveforms:
+        plot_waveforms_comparison(eob_generator, ml_generator, 
+                                  injection_parameters, post_median_params, post_mode_params,
+                                  outdir=savedir, 
+                                  label=results_fname.replace('_result.json', ''))
+
     return injection_parameters, marginalized_posteriors, param_distances, param_ratios
-    
+
+
+def plot_waveforms_comparison(eob_generator, ml_generator,
+                              inj_params, post_median_params, post_mode_params,
+                              outdir, label):
+    """
+    Plot EOB and ML waveforms at injection parameters, posterior median, and posterior mode, for comparison.
+    """
+    fig, ax = plt.subplots(1, 3, figsize=(18, 5), sharey=True)
+    time_array = np.arange(0, DURATION, 1/SAMPLE_RATE)
+
+    h_eob_inj = eob_generator.time_domain_source_model(time_array, **inj_params)
+    h_eob_median = ml_generator.time_domain_source_model(time_array, **post_median_params)
+    h_eob_mode = ml_generator.time_domain_source_model(time_array, **post_mode_params)
+
+    h_ml_inj = ml_generator.time_domain_source_model(time_array, **inj_params)
+    h_ml_median = ml_generator.time_domain_source_model(time_array, **post_median_params)
+    h_ml_mode = ml_generator.time_domain_source_model(time_array, **post_mode_params)
+
+    ax[0].plot(time_array, h_eob_inj['plus'], label='EOB Injection', color='blue')
+    ax[0].plot(time_array, h_ml_inj['plus'], label='ML Injection', color='orange')
+    ax[0].set_title('Waveforms at Injection Parameters \\' \
+        f'$m_1$={inj_params["mass_1"]:.2f}, $m_2$={inj_params["mass_2"]:.2f}, ' \
+        f'$\\chi_1$={inj_params["chi_1"]:.2f}, $\\chi_2$={inj_params["chi_2"]:.2f}')
+    ax[0].set_xlabel('Time (s)')
+    ax[0].set_ylabel('Strain')
+    ax[0].legend()
+
+    ax[1].plot(time_array, h_eob_median['plus'], label='EOB Posterior Median', color='green')
+    ax[1].plot(time_array, h_ml_median['plus'], label='ML Posterior Median', color='red')
+    ax[1].set_title('Waveforms at Posterior Median \\' \
+        f'$m_1$={post_median_params["mass_1"]:.2f}, $m_2$={post_median_params["mass_2"]:.2f}, ' \
+        f'$\\chi_1$={post_median_params["chi_1"]:.2f}, $\\chi_2$={post_median_params["chi_2"]:.2f}')
+    ax[1].set_xlabel('Time (s)')
+    ax[1].legend()
+
+    ax[2].plot(time_array, h_eob_mode['plus'], label='EOB Posterior Mode', color='purple')
+    ax[2].plot(time_array, h_ml_mode['plus'], label='ML Posterior Mode', color='brown')
+    ax[2].set_title('Waveforms at Posterior Mode \\' \
+        f'$m_1$={post_mode_params["mass_1"]:.2f}, $m_2$={post_mode_params["mass_2"]:.2f}, '\
+        f'$\\chi_1$={post_mode_params["chi_1"]:.2f}, $\\chi_2$={post_mode_params["chi_2"]:.2f}')
+    ax[2].set_xlabel('Time (s)')
+    ax[2].legend()
+
+    plt.tight_layout()
+    plot_fname = os.path.join(outdir, f'{label}_waveforms_comparison.png')
+    logger.info(f"Saving waveform comparison plot to: {plot_fname}")
+    plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
+    plt.close()
+
 
 
 def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
@@ -1885,7 +1953,12 @@ if __name__ == "__main__":
         logger.info("Running in extract-marginalized-posteriors mode.")
         extract_marginalized_posteriors(
             results_fname=args.results_fname,
-            results_dir=args.results_dir
+            results_dir=args.results_dir,
+            plot_waveforms=True,
+            force=args.force,
+            model_path='flexcvae-model-backup-20260619-064140-epoch98.pt',
+            config_path='modelconfig-flexcvae-20260619-064140.json',
+            calmodel_path='calibrator_model_20260623-010953_epoch74.pt',
             )
     
     elif args.analyze_results:
