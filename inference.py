@@ -554,6 +554,18 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
 
 TRUNCATE_EOB_WAVEFORM_TO_1S = False
 
+
+def ml_to_eob_param_conversion(parameters):
+    """
+    Convert ML model parameters to EOB model parameters.
+    [spin_1z, spin_2z] -> [chi_1, chi_2] for EOB model.
+    """
+    converted = parameters.copy()
+    converted["chi_1"] = converted.pop("spin_1z")
+    converted["chi_2"] = converted.pop("spin_2z")
+    return converted, []
+
+
 def pycbc_seobnrv4_time_domain_source_model(time_array, 
         mass_1, mass_2, chi_1, chi_2, 
         theta_jn,
@@ -561,7 +573,8 @@ def pycbc_seobnrv4_time_domain_source_model(time_array,
         ra,
         dec,
         phase,
-        luminosity_distance=1.0):
+        luminosity_distance=1.0,
+        **kwargs):
     """
     Bilby-compatible time-domain source model using PyCBC get_td_waveform,
     which generates a waveform in the time domain with a set low frequency cutoff,
@@ -635,7 +648,7 @@ def make_wf_generator(type: {'eobbilby', 'eob', 'ml'},
             duration=DURATION,
             sampling_frequency=SAMPLE_RATE,
             time_domain_source_model=pycbc_seobnrv4_time_domain_source_model,
-            parameter_conversion=None,
+            parameter_conversion=ml_to_eob_param_conversion,
             start_time=START_TIME,
             waveform_arguments={}
         )
