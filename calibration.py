@@ -910,6 +910,11 @@ def load_calibrator_model(model_path, device=DEVICE, precision=PRECISION):
     """
     Loads a trained calibrator model from a checkpoint file.
     """
+    if not os.path.isfile(model_path):
+        model_path = f'../{PROJECT_DIR}/trained-models/{model_path}'  # try relative path from project root
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"Calibrator model checkpoint file not found: {model_path}")
+    
     calmodel = ResidualCalibrationCNN(
         input_channels=6,  # [ml_amp, ml_freq, param_m1, param_m2, param_s1z, param_s2z]
         output_channels=2,
