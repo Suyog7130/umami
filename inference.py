@@ -1123,7 +1123,6 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
     Plot EOB and ML waveforms at injection parameters, posterior median, and posterior mode, for comparison.
     """
     logger.debug(f"Generating waveforms for injection parameters: {inj_params}")
-    fig, ax = plt.subplots(1, 3, figsize=(18, 5))
     time_array = np.arange(0, DURATION, 1/SAMPLE_RATE)
 
     if zoomed:
@@ -1142,8 +1141,11 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
 
     titles = ['Inj', 'Post-Median', 'Post-Mode']
 
+    # Plot EOB v/s ML at different param sets: injection, posterior median, posterior mode
+    fig, ax = plt.subplots(1, 3, figsize=(18, 5))
     for i, param_arr in enumerate([inj_params, post_median_params, post_mode_params]):
         logger.debug(f"Generating waveforms for parameter set {i}: {param_arr}")
+
         h_eob = eob_generator.time_domain_strain(param_arr)
         logger.debug("Generated EOB injection waveform.")
         h_ml = ml_generator.time_domain_strain(param_arr)
@@ -1163,13 +1165,12 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
             f'$\chi_1={param_arr["chi_1"]:.2f}$, $\chi_2={param_arr["chi_2"]:.2f}$, ' \
             f'$d_L={param_arr["luminosity_distance"]:.2f}$ Mpc', fontsize=12)
         ax[i].set_xlabel('Time (s)', fontsize=15)
-        ax[i].set_ylabel('Strain', fontsize=15)
+        ax[i].set_ylabel('$h_+(t)$ Strain', fontsize=15)
 
         # Add mismatch value between this pair of waveforms
         mismatch = calc_polarization_mismatch(h_eob_wf, h_ml_wf)
         ax[i].text(0.05, 0.9, f'Mismatch: {mismatch:.3e}', 
                    transform=ax[i].transAxes, fontsize=12, bbox=dict(facecolor='white', alpha=0.5))
-
         ax[i].legend()
         ax[i].tick_params(which="both", direction='in', top=True, right=True)
 
@@ -1178,6 +1179,43 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
     logger.info(f"Saving waveform comparison plot to: {plot_fname}")
     plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
     plt.close()
+
+    # Now, plot EOB at injection param, v/s ML at diff param sets: injection, posterior median, posterior mode
+    fig, ax = plt.subplots(1, 3, figsize=(18, 5))
+    h_eob_inj = eob_generator.time_domain_strain(inj_params)['plus']
+    for i, param_arr in enumerate([inj_params, post_median_params, post_mode_params]):
+        logger.debug(f"Generating ML waveform for parameter set {i}: {param_arr}")
+
+        h_ml = ml_generator.time_domain_strain(param_arr)
+
+        if zoomed:
+            h_eob_wf = h_eob_inj[start_idx:end_idx]
+            h_ml_wf = h_ml['plus'][start_idx:end_idx]
+        else:
+            h_eob_wf = h_eob_inj
+            h_ml_wf = h_ml['plus']
+
+        ax[i].plot(time_array, h_eob_wf, label='EOB@Inj', color='blue', alpha=0.75)
+        ax[i].plot(time_array, h_ml_wf, label=f'ML@{titles[i]}', color='orange', alpha=0.75)
+        ax[i].set_title(f'{titles[i]}:  ' \
+            f'$m_1={param_arr["mass_1"]:.2f}$, $m_2={param_arr["mass_2"]:.2f}$, ' \
+            f'$\chi_1={param_arr["chi_1"]:.2f}$, $\chi_2={param_arr["chi_2"]:.2f}$, ' \
+            f'$d_L={param_arr["luminosity_distance"]:.2f}$ Mpc', fontsize=12)
+        ax[i].set_xlabel('Time (s)', fontsize=15)
+        ax[i].set_ylabel('$h_+(t)$ Strain', fontsize=15)
+
+        mismatch = calc_polarization_mismatch(h_eob_wf, h_ml_wf)
+        ax[i].text(0.05, 0.9, f'Mismatch: {mismatch:.3e}', 
+                   transform=ax[i].transAxes, fontsize=12, bbox=dict(facecolor='white', alpha=0.5))
+        ax[i].legend()
+        ax[i].tick_params(which="both", direction='in', top=True, right=True)
+
+    plt.tight_layout()
+    plot_fname = os.path.join(outdir, f'{label}_waveforms_comparison_eob_inj.png')
+    logger.info(f"Saving waveform comparison plot (EOB injection) to: {plot_fname}")
+    plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
+    plt.close()
+
     logger.info("Completed waveform comparison plotting.")
 
 
