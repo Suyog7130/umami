@@ -179,7 +179,7 @@ class BaseCoder(nn.Module):
                    is_last: bool = False) -> nn.Sequential:
         if pool_size is None:
             pool_size = kernel_size
-        logging.debug(f"Building conv layer with in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}, dilation={dilation}, pool_size={pool_size}, is_last={is_last}")
+        logger.debug(f"Building conv layer with in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}, dilation={dilation}, pool_size={pool_size}, is_last={is_last}")
         seq = [nn.Conv1d(in_channels, out_channels, kernel_size, dilation=dilation)]
         if self.use_batchnorm:
             seq.append(nn.BatchNorm1d(out_channels))
@@ -199,7 +199,7 @@ class BaseCoder(nn.Module):
         2) a single sizes list, from which we will infer the in/out features for each layer.
         The number of layers is determined by the length of the sizes list or the in/out features lists, and should be consistent. The use_last_activation flag allows for optionally applying an activation function to the last layer, which can be useful for certain configurations (e.g., if the last layer is not meant to be linear).
         """
-        logging.debug(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
+        logger.debug(f"Building FC with in_features={in_features}, out_features={out_features}, sizes={sizes}, n_layers={n_layers}")
         layers: List[nn.Module] = []
         if sizes is not None and len(sizes) > 0:
             in_f, out_f = _pair_from_sizes(sizes)
@@ -207,7 +207,7 @@ class BaseCoder(nn.Module):
             in_f, out_f = list(in_features), list(out_features)
         if n_layers is None:
             n_layers = len(in_f)
-        logging.debug(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
+        logger.debug(f"Building FC with in={in_f}, out={out_f}, n_layers={n_layers}, use_last_activation={use_last_activation}")
         assert n_layers == len(in_f) == len(out_f), f"FC spec length mismatch: n_layers={n_layers}, in_f={len(in_f)}, out_f={len(out_f)}"
         # Robust compatibility check: ensure each in_f[i] matches previous output shape
         for i in range(n_layers):
@@ -259,7 +259,7 @@ class BaseCoder(nn.Module):
             import warnings
             warnings.warn(f"CNN spec mismatch: Reducing n_layers from {n_layers} to {min_len} due to parameter list lengths. in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}, dilation={dilation}, pool_kernel_size={pool_kernel_size}")
             n_layers = min_len
-        logging.debug(f"Building CNN with n_layers={n_layers}, in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}, dilation={dilation}, pool_kernel_size={pool_kernel_size}, use_last_activation={use_last_activation}")
+        logger.debug(f"Building CNN with n_layers={n_layers}, in_channels={in_channels}, out_channels={out_channels}, kernel_size={kernel_size}, dilation={dilation}, pool_kernel_size={pool_kernel_size}, use_last_activation={use_last_activation}")
 
         in_c  = expand(in_channels, n_layers)
         out_c = expand(out_channels, n_layers)
@@ -293,9 +293,9 @@ class BaseCoder(nn.Module):
         Returns:
             int: The size of the flattened CNN output.
         """
-        logging.debug("Calculating CNN output size with config: ")
-        logging.debug(f"Input length: {length}")
-        logging.debug(self.cnn_in_channels, self.cnn_out_channels, self.cnn_kernel_size, self.cnn_dilation, self.cnn_pool_ks)
+        logger.debug("Calculating CNN output size with config: ")
+        logger.debug(f"Input length: {length}")
+        logger.debug(self.cnn_in_channels, self.cnn_out_channels, self.cnn_kernel_size, self.cnn_dilation, self.cnn_pool_ks)
         for i in range(self.n_layers_cnn):
             kernel_size = self.cnn_kernel_size[i]
             dilation = self.cnn_dilation[i]
@@ -306,11 +306,11 @@ class BaseCoder(nn.Module):
             length = length - effective_kernel_size + 1
             # Update length after pooling
             length = length // pool_size
-            logging.debug(f"After CNN layer {i+1}: kernel_size={kernel_size}, dilation={dilation}, pool_size={pool_size}, effective_kernel_size={effective_kernel_size}, output_length={length}")
-        logging.debug(f"Final CNN output length: {length}")
+            logger.debug(f"After CNN layer {i+1}: kernel_size={kernel_size}, dilation={dilation}, pool_size={pool_size}, effective_kernel_size={effective_kernel_size}, output_length={length}")
+        logger.debug(f"Final CNN output length: {length}")
         final_out_channels = self.cnn_out_channels[-1] if self.cnn_out_channels else self.cnn_in_channels[-1]
-        logging.debug(f"Final CNN output channels: {final_out_channels}")
-        logging.debug(f"Final CNN output size: {final_out_channels * length}")
+        logger.debug(f"Final CNN output channels: {final_out_channels}")
+        logger.debug(f"Final CNN output size: {final_out_channels * length}")
         return final_out_channels * length
     
 
@@ -364,18 +364,18 @@ class BaseEncoder(BaseEncoderDecoder):
             # -- post_fc_in_features[0] should match post_fc_sizes[0], if both are provided!
             # -- Plus we need to make sure that the CNN output size matches the post_fc_in_features[0] if CNN is present. 
             # -- So we have to calculate the CNN output size and use that as post_fc_in_features[0] if CNN is present.
-            logging.debug(f"Configuring post-FC layers with post_fc_in_features={self.post_fc_in_features}, post_fc_sizes={self.post_fc_sizes}, and CNN config: in_channels={self.cnn_in_channels}, out_channels={self.cnn_out_channels}, kernel_size={self.cnn_kernel_size}, dilation={self.cnn_dilation}, pool_kernel_size={self.cnn_pool_ks}")
+            logger.debug(f"Configuring post-FC layers with post_fc_in_features={self.post_fc_in_features}, post_fc_sizes={self.post_fc_sizes}, and CNN config: in_channels={self.cnn_in_channels}, out_channels={self.cnn_out_channels}, kernel_size={self.cnn_kernel_size}, dilation={self.cnn_dilation}, pool_kernel_size={self.cnn_pool_ks}")
             if not self.post_fc_sizes[0]==0:
-                logging.warning("post_fc_in_features[0] and post_fc_sizes[0] should both be set to `0` \
+                logger.warning("post_fc_in_features[0] and post_fc_sizes[0] should both be set to `0` \
                                 to automatically determine the correct input size for post-FC layers based on \
                                 CNN output. If not, we will ignore the value for post_fc_in_features[0] and use \
                                 the calculated CNN output size as the input size for post-FC layers.")
             cnn_output_size = self._calculate_cnn_output_size(self.input_shape[1]) # assuming input_shape is (C, L)
             self.post_fc_sizes[0] = cnn_output_size  # update the first size to match the CNN output size
-            logging.info(f"Calculated CNN output size: {cnn_output_size}. Updated post_fc_sizes[0] to match this value.")
+            logger.info(f"Calculated CNN output size: {cnn_output_size}. Updated post_fc_sizes[0] to match this value.")
             if self.concat_labels and self.num_classes:
                 self.post_fc_sizes[0] += self.num_classes  # concatenate labels to CNN output for post-FC layers
-                logging.info(f"After accounting for label concatenation, updated post_fc_sizes[0]: {self.post_fc_sizes[0]}")
+                logger.info(f"After accounting for label concatenation, updated post_fc_sizes[0]: {self.post_fc_sizes[0]}")
             self.post_fc_layers = self.fc(
                         n_layers=self.n_layers_post_fc,
                         sizes=self.post_fc_sizes,
@@ -388,23 +388,23 @@ class BaseEncoder(BaseEncoderDecoder):
             if y is not None and not self.has_post_fc:
                 y_cat = y.view(y.size(0), -1)  # flatten labels
                 z = torch.cat([z, y_cat], dim=1)  # concatenate labels to input for pre-FC layers
-                # logging.debug(f"After concatenating input and labels, z shape: {z.shape}")
+                # logger.debug(f"After concatenating input and labels, z shape: {z.shape}")
             z = self.pre_fc_layers(z)
         else:
             z = x
-        # logging.debug(f"After pre-FC layers, z shape: {z.shape}")
-        # logging.debug(self.n_layers, self.n_layers_cnn, self.n_layers_post_fc)
+        # logger.debug(f"After pre-FC layers, z shape: {z.shape}")
+        # logger.debug(self.n_layers, self.n_layers_cnn, self.n_layers_post_fc)
 
         if self.has_cnn and self.cnn_in_channels and self.cnn_out_channels and self.cnn_kernel_size:
             if self.has_pre_fc:
                 z = z.view(z.size(0), self.cnn_in_channels[0], -1)  # reshape to (B, C, L) for CNN
             else:
                 z = z.view(z.size(0), self.input_shape[0], -1)  # reshape to (B, C, L) for CNN
-            # logging.debug(f"Before CNN layers, z shape: {z.shape}")
+            # logger.debug(f"Before CNN layers, z shape: {z.shape}")
             z = self.cnn_layers(z)
-            # logging.debug(f"After CNN layers, z shape: {z.shape}")
+            # logger.debug(f"After CNN layers, z shape: {z.shape}")
             z = z.view(z.size(0), -1)  # flatten CNN output for post-FC layers
-            # logging.debug(f"After CNN layers, z shape: {z.shape}")
+            # logger.debug(f"After CNN layers, z shape: {z.shape}")
 
             # TODO: In the original I concatenate labels here and then feed them to post-FC layers. 
             # But maybe I should concatenate labels before pre-FC layers? Or even have a separate branch 
@@ -413,15 +413,15 @@ class BaseEncoder(BaseEncoderDecoder):
             if y is not None:
                 y_cat = y.view(y.size(0), -1)  # flatten labels
                 z = torch.cat([z, y_cat], dim=1)  # concatenate labels to CNN output for post-FC layers
-                # logging.debug(f"After concatenating CNN output and labels, z shape: {z.shape}")
+                # logger.debug(f"After concatenating CNN output and labels, z shape: {z.shape}")
 
         if self.has_post_fc:
             # assert self.post_fc_sizes[-1] == self.latent_dim * 2, f"post_fc_sizes[-1] should be {self.latent_dim * 2} to account for mean and logvar channels, but got {self.post_fc_sizes[-1]}"
             z = self.post_fc_layers(z)
-            # logging.debug(f"After post-FC layers, z shape: {z.shape}")
+            # logger.debug(f"After post-FC layers, z shape: {z.shape}")
         # -- Keep first `Batch` dim and reshape rest into `latent_dim` for mean and logvar,
         # -- which was already configured to be 2x the latent_dim in __init__ to account for mean and logvar concatenation.
-        # logging.debug(f"Final encoder output shape after view: {z.view(-1, 2, self.latent_dim).shape}")
+        # logger.debug(f"Final encoder output shape after view: {z.view(-1, 2, self.latent_dim).shape}")
         return z.view(-1, 2, self.latent_dim)  # output shape: (B, C, latent_dim)
 
 class BaseDecoder(BaseEncoderDecoder):
@@ -442,15 +442,15 @@ class BaseDecoder(BaseEncoderDecoder):
             # -- post_fc_in_features[0] should match post_fc_sizes[0], if both are provided!
             # -- Plus we need to make sure that the CNN output size matches the post_fc_in_features[0] if CNN is present. 
             # -- So we have to calculate the CNN output size and use that as post_fc_in_features[0] if CNN is present.
-            logging.debug(f"Configuring post-FC layers with post_fc_in_features={self.post_fc_in_features}, post_fc_sizes={self.post_fc_sizes}, and CNN config: in_channels={self.cnn_in_channels}, out_channels={self.cnn_out_channels}, kernel_size={self.cnn_kernel_size}, dilation={self.cnn_dilation}, pool_kernel_size={self.cnn_pool_ks}")
+            logger.debug(f"Configuring post-FC layers with post_fc_in_features={self.post_fc_in_features}, post_fc_sizes={self.post_fc_sizes}, and CNN config: in_channels={self.cnn_in_channels}, out_channels={self.cnn_out_channels}, kernel_size={self.cnn_kernel_size}, dilation={self.cnn_dilation}, pool_kernel_size={self.cnn_pool_ks}")
             if not self.post_fc_sizes[0]==0:
-                logging.warning("post_fc_in_features[0] and post_fc_sizes[0] should both be set to `0` \
+                logger.warning("post_fc_in_features[0] and post_fc_sizes[0] should both be set to `0` \
                                 to automatically determine the correct input size for post-FC layers based on \
                                 CNN output. If not, we will ignore the value for post_fc_in_features[0] and use \
                                 the calculated CNN output size as the input size for post-FC layers.")
             cnn_output_size = self._calculate_cnn_output_size(self.pre_fc_sizes[-1]) # assuming input_shape is (C, L)
             self.post_fc_sizes[0] = cnn_output_size  # update the first size to match the CNN output size
-            logging.info(f"Calculated CNN output size: {cnn_output_size}. Updated post_fc_sizes[0] to match this value.")
+            logger.info(f"Calculated CNN output size: {cnn_output_size}. Updated post_fc_sizes[0] to match this value.")
             self.post_fc_layers = self.fc(
                         n_layers=self.n_layers_post_fc,
                         sizes=self.post_fc_sizes,
@@ -460,25 +460,25 @@ class BaseDecoder(BaseEncoderDecoder):
         # assert z.size(1) == self.latent_dim, "z latent_dim mismatch"
         # assert y.size(1) == self.num_classes, "y num_classes mismatch"
         y_cat = y_embed if y_embed is not None else y
-        # logging.debug(f"DECODER input z shape: {z.shape}, y shape: {y.shape}, y_embed shape: {y_embed.shape if y_embed is not None else 'N/A'}")
+        # logger.debug(f"DECODER input z shape: {z.shape}, y shape: {y.shape}, y_embed shape: {y_embed.shape if y_embed is not None else 'N/A'}")
         z = torch.cat([z, y_cat], dim=1)
-        # logging.debug(f"DECODER after concatenating z and y_cat, shape: {z.shape}")
+        # logger.debug(f"DECODER after concatenating z and y_cat, shape: {z.shape}")
 
         if self.has_pre_fc:
             z = self.pre_fc_layers(z)
-            # logging.debug(f"DECODER after pre-FC layers, z shape: {z.shape}")
+            # logger.debug(f"DECODER after pre-FC layers, z shape: {z.shape}")
 
         if self.has_cnn and self.cnn_in_channels:
             z = z.view(z.size(0), self.cnn_in_channels[0], -1)
-            # logging.debug(f"DECODER before CNN layers, reshaped z shape: {z.shape}")
+            # logger.debug(f"DECODER before CNN layers, reshaped z shape: {z.shape}")
             z = self.cnn_layers(z)
-            # logging.debug(f"DECODER after CNN layers, z shape: {z.shape}")
+            # logger.debug(f"DECODER after CNN layers, z shape: {z.shape}")
             z = z.view(z.size(0), -1)
 
         if self.has_post_fc and (self.post_fc_sizes or self.post_fc_out_features):
-            # logging.debug(f"DECODER before post-FC layers, z shape: {z.shape}")
+            # logger.debug(f"DECODER before post-FC layers, z shape: {z.shape}")
             z = self.post_fc_layers(z)
-            # logging.debug(f"DECODER after post-FC layers, z shape: {z.shape}")
+            # logger.debug(f"DECODER after post-FC layers, z shape: {z.shape}")
         return z.view(-1, *self.input_shape)
     
 class BaseConditional(BaseCoder):
@@ -543,7 +543,7 @@ def calc_latent_loss(z_mean, z_log_var):
     """
     # Clamp log variance to avoid numerical instability
     z_log_var = torch.clamp(z_log_var, min=-10, max=10)
-    # logging.debug(z_log_var)
+    # logger.debug(z_log_var)
     kl_loss = -0.5 * torch.sum(1 + z_log_var - z_mean.pow(2) - z_log_var.exp(), dim=1)
     return kl_loss.mean()  # Average over the batch
 
@@ -654,7 +654,7 @@ class FlexTwoC2E1D(nn.Module):
         # Override hyperparameters with MODEL_CONFIG values if provided
         # This allows for flexible model configuration while maintaining default values.
         if MODEL_CONFIG is not None:
-            logging.info(f"MODEL_CONFIG provided. Using hyperparameters from MODEL_CONFIG: {MODEL_CONFIG}")
+            logger.info(f"MODEL_CONFIG provided. Using hyperparameters from MODEL_CONFIG: {MODEL_CONFIG}")
             MODEL_CONFIG = check_json_all_numeric(MODEL_CONFIG)
             self.MODEL_CONFIG = MODEL_CONFIG
             input_shape = MODEL_CONFIG.get('input_shape', input_shape)
@@ -670,7 +670,7 @@ class FlexTwoC2E1D(nn.Module):
             self.decoder_input_type = MODEL_CONFIG.get('decoder_input_type', 'concat')
             self.embed_labels_in_decoder = MODEL_CONFIG.get('embed_labels_in_decoder', False)
         else:
-            logging.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
+            logger.info("No MODEL_CONFIG provided. Using default hyperparameter values.")
 
         # If MODEL_CONFIG is provided, it should contain all necessary hyperparameters.
         # If not provided, the default values will be used.
@@ -683,7 +683,7 @@ class FlexTwoC2E1D(nn.Module):
          # This works regardless of whether MODEL_CONFIG is provided or not, 
         # because if MODEL_CONFIG is not provided, the default values will be used.
         if normalize_labels:
-            logging.info("Input parameter normalization is ENABLED. \
+            logger.info("Input parameter normalization is ENABLED. \
                 The model will normalize the input parameters.")
             if labels_mean is None or labels_std is None:
                 logger.warning("normalize_labels is True but labels_mean or labels_std is not provided. \
@@ -701,7 +701,7 @@ class FlexTwoC2E1D(nn.Module):
             logger.warning("labels_mean and labels_std are provided but 'normalize_labels' is False. \
                 This means that labels_mean and labels_std were provided in MODEL_CONFIG. We will use them!")
         else:
-            logging.info("Input parameter normalization is NOT enabled. \
+            logger.info("Input parameter normalization is NOT enabled. \
                 The model will use the raw labels without normalization.")
 
         # The actual layers will be built in forward() based on the config
@@ -723,7 +723,7 @@ class FlexTwoC2E1D(nn.Module):
                                        cnn_dilation=[self.MODEL_CONFIG.get('enc_cnn_dilation', 1), self.MODEL_CONFIG.get('enc_cnn_dilation', 1)],  # default to [1, 1] if not specified in MODEL_CONFIG
                                        cnn_pool_kernel_size=[self.MODEL_CONFIG.get('enc_pool_kernel', 4), self.MODEL_CONFIG.get('enc_pool_kernel', 4)],  # default to [4, 4] if not specified in MODEL_CONFIG
                                        post_fc_sizes=[0, self.MODEL_CONFIG.get('enc_postfc_hidden', 512), self.MODEL_CONFIG.get('enc_postfc_hidden', 512), self.latent_dim_x * 2],)
-        logging.info(f"Encoder for x configured with latent_dim_x={self.latent_dim_x}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=2, n_layers_post_fc=3, has_pre_fc=False, has_cnn=True, has_post_fc=True, activation={self.activation}, last_activation={self.activation}, cnn_in_channels=[2, 16], cnn_out_channels=[16, 32], cnn_kernel_size=[5, 5], cnn_dilation=[1, 1], cnn_pool_kernel_size=[4, 4], post_fc_sizes=[0, 512, 512, {self.latent_dim_x}]")
+        logger.info(f"Encoder for x configured with latent_dim_x={self.latent_dim_x}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=2, n_layers_post_fc=3, has_pre_fc=False, has_cnn=True, has_post_fc=True, activation={self.activation}, last_activation={self.activation}, cnn_in_channels=[2, 16], cnn_out_channels=[16, 32], cnn_kernel_size=[5, 5], cnn_dilation=[1, 1], cnn_pool_kernel_size=[4, 4], post_fc_sizes=[0, 512, 512, {self.latent_dim_x}]")
         self.encoder_key = BaseEncoder(latent_dim=self.latent_dim_key,  # mean and logvar are output in two channels
                                           input_shape=self.key_shape,
                                           num_classes=self.num_classes,
@@ -734,7 +734,7 @@ class FlexTwoC2E1D(nn.Module):
                                           activation=self.activation,
                                           pre_fc_sizes=[self.key_shape[0] * self.key_shape[1], 500, 500, self.latent_dim_key * 2],
                                           )
-        logging.info(f"Encoder for key configured with latent_dim_key={self.latent_dim_key}, input_shape={self.key_shape}, num_classes={self.num_classes}, n_layers=3, has_cnn=False, has_post_fc=False, activation={self.activation}, pre_fc_sizes=[{self.key_shape[0] * self.key_shape[1]}, 500, 500, {self.latent_dim_key}]")
+        logger.info(f"Encoder for key configured with latent_dim_key={self.latent_dim_key}, input_shape={self.key_shape}, num_classes={self.num_classes}, n_layers=3, has_cnn=False, has_post_fc=False, activation={self.activation}, pre_fc_sizes=[{self.key_shape[0] * self.key_shape[1]}, 500, 500, {self.latent_dim_key}]")
         if self.decoder_input_type == 'weighted_sum':
             self.dec_latent_input_dim = max(self.latent_dim_x, self.latent_dim_key)  # we will project both latents to this size before feeding to decoder
         else: # default to concat
@@ -758,21 +758,21 @@ class FlexTwoC2E1D(nn.Module):
                                    cnn_pool_kernel_size=[self.MODEL_CONFIG.get('dec_pool_kernel', 4), self.MODEL_CONFIG.get('dec_pool_kernel', 4), self.MODEL_CONFIG.get('dec_pool_kernel', 4)],  # default to [4, 4, 4] if not specified in MODEL_CONFIG
                                    post_fc_sizes=[0, self.MODEL_CONFIG.get('dec_postfc_hidden', 512), self.input_shape[0] * self.input_shape[1]], # default to [0, 512, input_shape[0] * input_shape[1]] if not specified in MODEL_CONFIG
                                    )
-        logging.info(f"Decoder configured with latent_dim={self.dec_latent_input_dim}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation={self.activation}, pre_fc_sizes=[{self.dec_latent_input_dim + self.num_classes}, 512], cnn_in_channels=[1, {self.MODEL_CONFIG.get('dec_cnn_in', 32) // 2}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}], cnn_out_channels=[{self.MODEL_CONFIG.get('dec_cnn_out', 32) // 2}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}], cnn_kernel_size=[4, 4, 4], cnn_dilation=[1, 2, 2], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
+        logger.info(f"Decoder configured with latent_dim={self.dec_latent_input_dim}, input_shape={self.input_shape}, num_classes={self.num_classes}, n_layers=1, n_layers_cnn=3, has_pre_fc=True, has_cnn=True, has_post_fc=True, activation={self.activation}, pre_fc_sizes=[{self.dec_latent_input_dim + self.num_classes}, 512], cnn_in_channels=[1, {self.MODEL_CONFIG.get('dec_cnn_in', 32) // 2}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}], cnn_out_channels=[{self.MODEL_CONFIG.get('dec_cnn_out', 32) // 2}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}, {self.MODEL_CONFIG.get('dec_cnn_out', 32)}], cnn_kernel_size=[4, 4, 4], cnn_dilation=[1, 2, 2], cnn_pool_kernel_size=[4, 4, 4], post_fc_sizes=[512, {self.input_shape[0] * self.input_shape[1]}]")
         self.conditional_x = BaseConditional(latent_dim=self.latent_dim_x,  # z1 mean and logvar
                                             input_shape=(self.num_classes,),
                                             num_classes=self.num_classes,
                                             n_layers=4, 
                                             activation=self.activation,
                                             pre_fc_sizes=[self.num_classes, self.MODEL_CONFIG.get('cond_fc_min', 128), self.MODEL_CONFIG.get('cond_fc_max', 512), self.MODEL_CONFIG.get('cond_fc_min', 128), self.latent_dim_x * 2])
-        logging.info(f"Label-conditioned encoder for x configured with latent_dim={self.latent_dim_x}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation={self.activation}, pre_fc_sizes=[{self.num_classes}, {self.MODEL_CONFIG.get('cond_fc_min', 128)}, {self.MODEL_CONFIG.get('cond_fc_max', 512)}, {self.MODEL_CONFIG.get('cond_fc_min', 128)}, {self.latent_dim_x * 2}]")
+        logger.info(f"Label-conditioned encoder for x configured with latent_dim={self.latent_dim_x}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation={self.activation}, pre_fc_sizes=[{self.num_classes}, {self.MODEL_CONFIG.get('cond_fc_min', 128)}, {self.MODEL_CONFIG.get('cond_fc_max', 512)}, {self.MODEL_CONFIG.get('cond_fc_min', 128)}, {self.latent_dim_x * 2}]")
         self.conditional_key = BaseConditional(latent_dim=self.latent_dim_key,  # z1prime mean and logvar
                                               input_shape=(self.num_classes,),
                                               num_classes=self.num_classes,
                                               n_layers=4,
                                               activation=self.activation,
                                               pre_fc_sizes=[self.num_classes, self.MODEL_CONFIG.get('cond_fc_min', 128), self.MODEL_CONFIG.get('cond_fc_max', 512), self.MODEL_CONFIG.get('cond_fc_min', 128), self.latent_dim_key * 2])
-        logging.info(f"Label-conditioned encoder for key configured with latent_dim={self.latent_dim_key}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation={self.activation}, pre_fc_sizes=[{self.num_classes}, {self.MODEL_CONFIG.get('cond_fc_min', 128)}, {self.MODEL_CONFIG.get('cond_fc_max', 512)}, {self.MODEL_CONFIG.get('cond_fc_min', 128)}, {self.latent_dim_key * 2}]")
+        logger.info(f"Label-conditioned encoder for key configured with latent_dim={self.latent_dim_key}, input_shape=({self.num_classes},), num_classes={self.num_classes}, n_layers=4, activation={self.activation}, pre_fc_sizes=[{self.num_classes}, {self.MODEL_CONFIG.get('cond_fc_min', 128)}, {self.MODEL_CONFIG.get('cond_fc_max', 512)}, {self.MODEL_CONFIG.get('cond_fc_min', 128)}, {self.latent_dim_key * 2}]")
 
     def normalize_labels(self, labels, batchwise=False):
         """
@@ -794,12 +794,12 @@ class FlexTwoC2E1D(nn.Module):
             batchwise (bool): Whether to calculate mean and std for each batch or use global mean and std.
         """
         if batchwise:
-            logging.warning("Batchwise normalization is not recommended for labels as it can lead " \
+            logger.warning("Batchwise normalization is not recommended for labels as it can lead " \
             "to inconsistent training and inference. Consider using global mean and std for normalization.")
             batch_mean = labels.mean(dim=0, keepdim=True)
             batch_std = labels.std(dim=0, keepdim=True) + 1e-8  # Add small value to avoid division by zero
             return (labels - batch_mean) / batch_std
-        logging.debug(f"Normalizing labels with global mean: {self.labels_mean}, global std: {self.labels_std}")
+        logger.debug(f"Normalizing labels with global mean: {self.labels_mean}, global std: {self.labels_std}")
         return (labels - self.labels_mean) / self.labels_std
                                
     def __call__(self, input, labels, keys):
@@ -818,15 +818,15 @@ class FlexTwoC2E1D(nn.Module):
         during initialization and `labels_mean` and `labels_std` are provided. 
         If `paramsnorm` is False, the labels will be used as they are without normalization.
         """
-        # logging.debug('__call__')
-        logging.debug(f'__call__ with input.shape={input.shape}, labels.shape={labels.shape}, keys.shape={keys.shape}')
+        # logger.debug('__call__')
+        logger.debug(f'__call__ with input.shape={input.shape}, labels.shape={labels.shape}, keys.shape={keys.shape}')
         if hasattr(self, 'labels_mean') and hasattr(self, 'labels_std'):
             if self.labels_mean is None or self.labels_std is None:
-                logging.warning("Labels mean or std is None, skipping normalization.")
+                logger.warning("Labels mean or std is None, skipping normalization.")
             else:
                 labels = self.normalize_labels(labels)
         else:
-            logging.warning("No labels_mean or labels_std found, skipping normalization.")
+            logger.warning("No labels_mean or labels_std found, skipping normalization.")
         return self.forward(input, labels, keys)
 
     def encode_x(self, x, labels):
@@ -841,25 +841,25 @@ class FlexTwoC2E1D(nn.Module):
         """
         latent = self.encoder_x(x, labels)
         z_mean, z_log_var = latent[:, 0, :], latent[:, 1, :]
-        logging.debug(f"Encoded x to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
+        logger.debug(f"Encoded x to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def encode_key(self, keys, labels):
         latent = self.encoder_key(keys, labels)
         z_mean, z_log_var = latent[:, 0, :], latent[:, 1, :]
-        logging.debug(f"Encoded key to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
+        logger.debug(f"Encoded key to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def encode_label_for_x(self, labels):
         latent = self.conditional_x(labels)
         z_mean, z_log_var = latent[:, 0, :], latent[:, 1, :]
-        logging.debug(f"Encoded label for x to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
+        logger.debug(f"Encoded label for x to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def encode_label_for_key(self, labels):
         latent = self.conditional_key(labels)
         z_mean, z_log_var = latent[:, 0, :], latent[:, 1, :]
-        logging.debug(f"Encoded label for key to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
+        logger.debug(f"Encoded label for key to z_mean shape: {z_mean.shape}, z_log_var shape: {z_log_var.shape}")
         return z_mean, z_log_var
     
     def decode(self, z, y, y_embed=None):
@@ -954,7 +954,7 @@ class FlexTwoC2E1D(nn.Module):
             z = torch.cat([z_x, z_key, zy_mu, zykey_mu], dim=1)
         else:
             z = torch.cat([z_x, z_key], dim=1)  # default to concat if unknown type
-            # logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of z_x and z_key.")
+            # logger.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of z_x and z_key.")
         
         recon_x = self.decode(z, y, y_embed)
         zvars = [zx_mu, zx_logvar, zy_mu, zy_logvar, zkey_mu, zkey_logvar, zykey_mu, zykey_logvar]
@@ -987,21 +987,21 @@ class FlexTwoC2E1D(nn.Module):
         """
         zx_mu, zx_logvar, zy_mu, zy_logvar, \
             zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
-        # logging.debug(f'zx_mu={zx_mu}, zx_logvar={zx_logvar}, zy_mu={zy_mu}, zy_logvar={zy_logvar}, \
+        # logger.debug(f'zx_mu={zx_mu}, zx_logvar={zx_logvar}, zy_mu={zy_mu}, zy_logvar={zy_logvar}, \
         #     zkey_mu={zkey_mu}, zkey_logvar={zkey_logvar}, zykey_mu={zykey_mu}, zykey_logvar={zykey_logvar}')
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         # TODO: What is the `reduction` thing doing here?
         recon_loss = F.mse_loss(x_recon, x, reduction='mean')
-        logging.debug(f"Reconstruction Loss: {recon_loss.item()}")
+        logger.debug(f"Reconstruction Loss: {recon_loss.item()}")
 
         # KL divergence for each latent space
         kl_loss_zx = calc_latent_loss(zx_mu, zx_logvar)
         kl_loss_zy = calc_latent_loss(zy_mu, zy_logvar)
         kl_loss_zkey = calc_latent_loss(zkey_mu, zkey_logvar)
         kl_loss_zykey = calc_latent_loss(zykey_mu, zykey_logvar)
-        # logging.debug KL divergence losses for debugging
-        logging.debug(f"KL Loss zx: {kl_loss_zx.item()}, KL Loss zy: {kl_loss_zy.item()}, "
+        # logger.debug KL divergence losses for debugging
+        logger.debug(f"KL Loss zx: {kl_loss_zx.item()}, KL Loss zy: {kl_loss_zy.item()}, "
             f"KL Loss zkey: {kl_loss_zkey.item()}, KL Loss zykey: {kl_loss_zykey.item()}")
 
         # Latent loss between encoders
@@ -1020,15 +1020,15 @@ class FlexTwoC2E1D(nn.Module):
         if filepath is None:
             filepath = 'model_config.json'
         if not '.json' in filepath:
-            logging.warning(f"Model configuration file should be a JSON file. Adding '.json' extension to {filepath}.")
+            logger.warning(f"Model configuration file should be a JSON file. Adding '.json' extension to {filepath}.")
             filepath += '.json'
         if not hasattr(self, 'MODEL_CONFIG'):
-            logging.warning("MODEL_CONFIG attribute not found. Creating a new MODEL_CONFIG dictionary to save hyperparameters.")
+            logger.warning("MODEL_CONFIG attribute not found. Creating a new MODEL_CONFIG dictionary to save hyperparameters.")
             configfile = {}
         else:
             # Change the MODEL_CONFIG attribute to a dictionary if it's not already a dictionary, to ensure we can save the hyperparameters properly.
             if not isinstance(self.MODEL_CONFIG, dict):
-                logging.warning("MODEL_CONFIG attribute is not a dictionary. Converting it to a dictionary to save hyperparameters.")
+                logger.warning("MODEL_CONFIG attribute is not a dictionary. Converting it to a dictionary to save hyperparameters.")
                 self.MODEL_CONFIG = vars(self)
             configfile = self.MODEL_CONFIG
         # Add additional hyperparameters to MODEL_CONFIG before saving
@@ -1091,7 +1091,7 @@ class FlexTwoC2E1D(nn.Module):
         # print(configfile)
         with open(filepath, 'w') as f:
             json.dump(configfile, f, indent=4)
-        logging.info(f"Model configuration saved to {filepath}")
+        logger.info(f"Model configuration saved to {filepath}")
 
 
     def save_model_config(self, filepath=None, **kwargs):
@@ -1125,7 +1125,7 @@ class FlexTwoC2E1D(nn.Module):
         """
         zx_mu, zx_logvar, zy_mu, zy_logvar, \
             zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
-        logging.debug(f'zx_mean={zx_mu}, zx_log_var={zx_logvar}, zy_mean={zy_mu}, zy_log_var={zy_logvar}, \
+        logger.debug(f'zx_mean={zx_mu}, zx_log_var={zx_logvar}, zy_mean={zy_mu}, zy_log_var={zy_logvar}, \
             zkey_mean={zkey_mu}, zkey_log_var={zkey_logvar}, zykey_mean={zykey_mu}, zykey_log_var={zykey_logvar}')
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
@@ -1144,7 +1144,7 @@ class FlexTwoC2E1D(nn.Module):
         kl_loss_zkey = self.latent_loss(zkey_mu, zkey_logvar)
         kl_loss_zykey = self.latent_loss(zykey_mu, zykey_logvar)
         # Print KL divergence losses for debugging
-        logging.info(f"KL Loss zx: {kl_loss_zx.item()}, KL Loss zy: {kl_loss_zy.item()}, "
+        logger.info(f"KL Loss zx: {kl_loss_zx.item()}, KL Loss zy: {kl_loss_zy.item()}, "
             f"KL Loss zkey: {kl_loss_zkey.item()}, KL Loss zykey: {kl_loss_zykey.item()}")
 
         # Latent loss between each encoder and their corresponding label-conditioned encoder
@@ -1177,7 +1177,7 @@ class FlexTwoC2E1D(nn.Module):
         #     # -- remove first dummy element from the frequency series
         #     freq_recon = freq_recon[1:]
         #     freq_orig = freq_orig[1:]
-        #     logging.debug(f'Shapes: amp_recon={amp_recon.shape}, freq_recon={freq_recon.shape}, amp_orig={amp_orig.shape}, freq_orig={freq_orig.shape}')
+        #     logger.debug(f'Shapes: amp_recon={amp_recon.shape}, freq_recon={freq_recon.shape}, amp_orig={amp_orig.shape}, freq_orig={freq_orig.shape}')
         #     # -- calculate start phase / reference phase
         #     hp_hdf = strains[i][0].cpu().detach().numpy()
         #     hc_hdf = strains[i][1].cpu().detach().numpy()
@@ -1187,7 +1187,7 @@ class FlexTwoC2E1D(nn.Module):
         #     hp_orig, hc_orig = polarizations_from_ampfreq(amp_orig, freq_orig, theta0=phase_hdf[0])
         #     mmloss_hp_i = calc_polarization_mismatch(hp_recon, hp_orig, delta_t=delta_t, f_lower=f_lower)
         #     mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=delta_t, f_lower=f_lower)
-        #     logging.debug(f'Mismatch losses for sample {i}: mmloss_hp_i={mmloss_hp_i}, mmloss_hc_i={mmloss_hc_i}')
+        #     logger.debug(f'Mismatch losses for sample {i}: mmloss_hp_i={mmloss_hp_i}, mmloss_hc_i={mmloss_hc_i}')
         #     mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
 
         # -- Calculate the total mismatch loss for the batch (vectorized)
@@ -1229,7 +1229,7 @@ class FlexTwoC2E1D(nn.Module):
             mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
             mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
         
-        logging.info(f'Total mismatch loss for the batch: {mmloss}')
+        logger.info(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + beta * kl_loss + mmloss
         return (total_loss, recon_loss, kl_loss, mmloss)
 
@@ -1264,7 +1264,7 @@ class FlexTwoC2E1D(nn.Module):
         """
         zx_mu, zx_logvar, zy_mu, zy_logvar, \
             zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
-        logging.debug(f'zx_mu={zx_mu}, zx_logvar={zx_logvar}, zy_mu={zy_mu}, zy_logvar={zy_logvar}, \
+        logger.debug(f'zx_mu={zx_mu}, zx_logvar={zx_logvar}, zy_mu={zy_mu}, zy_logvar={zy_logvar}, \
             zkey_mu={zkey_mu}, zkey_logvar={zkey_logvar}, zykey_mu={zykey_mu}, zykey_logvar={zykey_logvar}')
         
         # latent loss between encoders and conditional encoders,
@@ -1277,7 +1277,7 @@ class FlexTwoC2E1D(nn.Module):
         ll1 = F.mse_loss(zx_mu, zy_mu, reduction='mean')
         ll2 = F.mse_loss(zkey_mu, zykey_mu, reduction='mean')
         latent_loss = ll1 + ll2
-        logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
+        logger.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         # TODO: What is the `reduction` thing doing here?
@@ -1323,7 +1323,7 @@ class FlexTwoC2E1D(nn.Module):
             mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=attr['delta_t'][i], f_lower=attr['f_lower'][i])
             mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
         
-        logging.info(f'Total mismatch loss for the batch: {mmloss}')
+        logger.info(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + mmloss + latent_loss
         return (total_loss, recon_loss, mmloss, latent_loss)
     
@@ -1340,7 +1340,7 @@ class FlexTwoC2E1D(nn.Module):
             raise ValueError("Labels must be provided for generation, since the model is conditional on the labels!")
 
         self.eval()  # Set model to evaluation mode
-        logging.info("Model set to evaluation mode for generation.")
+        logger.info("Model set to evaluation mode for generation.")
 
         with torch.no_grad():
             # Encode labels to get the mean and log variance of the latent space
@@ -1384,7 +1384,7 @@ class FlexTwoC2E1D(nn.Module):
                 z = torch.cat([zy, zykey, zy_mu, zykey_mu], dim=1)
             else:
                 z = torch.cat([zy, zykey], dim=1)  # default to concat if unknown type
-                logging.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of zy and zykey.")
+                logger.warning(f"Unknown decoder_input_type '{self.decoder_input_type}'. Defaulting to concatenation of zy and zykey.")
 
             # Decode latent representation to get output Amplitude and Frequency series
             generated_output = self.decode(z, labels, y_embed)
@@ -1458,9 +1458,9 @@ class FlexCAE(FlexTwoC2E1D):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.MODEL_CONFIG['loss_func_type'] not in ['mismatch_nokl', 'mmloss', 'simple_mse']:
-            logging.warning(f"MODEL_CONFIG['loss_func_type'] is set to '{self.MODEL_CONFIG['loss_func_type']}', which is not appropriate for CAE model!")
+            logger.warning(f"MODEL_CONFIG['loss_func_type'] is set to '{self.MODEL_CONFIG['loss_func_type']}', which is not appropriate for CAE model!")
             self.MODEL_CONFIG['loss_func_type'] = 'simple_mse'
-            logging.warning(f"MODEL_CONFIG['loss_func_type'] has been set to 'simple_mse' for the CAE model.")
+            logger.warning(f"MODEL_CONFIG['loss_func_type'] has been set to 'simple_mse' for the CAE model.")
     
 
 class FlexCAEPhase(FlexCAE):
@@ -1508,7 +1508,7 @@ class FlexCAEPhase(FlexCAE):
         """
         zx_mu, zx_logvar, zy_mu, zy_logvar, \
             zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
-        logging.debug(f'zx_mu={zx_mu.shape}, zx_logvar={zx_logvar.shape}, zy_mu={zy_mu.shape}, zy_logvar={zy_logvar.shape}, \
+        logger.debug(f'zx_mu={zx_mu.shape}, zx_logvar={zx_logvar.shape}, zy_mu={zy_mu.shape}, zy_logvar={zy_logvar.shape}, \
             zkey_mu={zkey_mu.shape}, zkey_logvar={zkey_logvar.shape}, zykey_mu={zykey_mu.shape}, zykey_logvar={zykey_logvar.shape}')
 
         # NOTE: If the targets are unnormalized [amp,phase], then there is no need to have the keys as input to the model, since we can have normalized inputs, but the loss function can measure loss wrt unnormalized targets! This is the 1C1E1D kind of model then. We will define this in a new class, however, for current implementation, we keep the Key Encoder and calculate the latent loss terms for all six comparison pairs between the two encoders and two conditional encoders.
@@ -1519,7 +1519,7 @@ class FlexCAEPhase(FlexCAE):
         # ll_cross1 = F.mse_loss(zx_mu, zkey_mu, reduction='mean')
         # ll_cross2 = F.mse_loss(zy_mu, zykey_mu, reduction='mean')
         latent_loss = ll_enc_x + ll_enc_key #+ ll_cond_x + ll_cond_key #+ ll_cross1 + ll_cross2
-        logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
+        logger.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
 
         # Reconstruction loss (e.g., Binary Cross-Entropy or MSE)
         recon_loss = F.mse_loss(x_recon, target, reduction='mean')
@@ -1559,7 +1559,7 @@ class FlexCAEPhase(FlexCAE):
             mmloss_hc_i = calc_polarization_mismatch(hc_recon, hc_orig, delta_t=delta_t[i], f_lower=f_lower[i])
             mmloss += (mmloss_hp_i + mmloss_hc_i) / 2.0
         
-        logging.debug(f'Total mismatch loss for the batch: {mmloss}')
+        logger.debug(f'Total mismatch loss for the batch: {mmloss}')
         total_loss = recon_loss + mmloss + latent_loss
         return (total_loss, recon_loss, mmloss, latent_loss)
     
@@ -1595,12 +1595,12 @@ class FlexCAEPhase(FlexCAE):
         """
         zx_mu, zx_logvar, zy_mu, zy_logvar, \
             zkey_mu, zkey_logvar, zykey_mu, zykey_logvar = zvars
-        # logging.debug(f'zx_mu={zx_mu.shape}, zx_logvar={zx_logvar.shape}, zy_mu={zy_mu.shape}, zy_logvar={zy_logvar.shape}, \
+        # logger.debug(f'zx_mu={zx_mu.shape}, zx_logvar={zx_logvar.shape}, zy_mu={zy_mu.shape}, zy_logvar={zy_logvar.shape}, \
         #     zkey_mu={zkey_mu.shape}, zkey_logvar={zkey_logvar.shape}, zykey_mu={zykey_mu.shape}, zykey_logvar={zykey_logvar.shape}')
         ll1 = F.mse_loss(zx_mu, zy_mu, reduction='mean')
         ll2 = F.mse_loss(zkey_mu, zykey_mu, reduction='mean')
         latent_loss = ll1 + ll2
-        # logging.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
+        # logger.debug(f"Latent loss between encoders and conditional encoders: {latent_loss.item()}")
         
         recon_loss = F.mse_loss(x_recon, target, reduction='mean')
         total_loss = recon_loss + latent_loss

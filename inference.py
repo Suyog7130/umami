@@ -1061,6 +1061,7 @@ def extract_marginalized_posteriors(
     logger.info("Completed extraction and plotting of marginalized posteriors.")
 
     # Plot original injected EOB waveform and recovery ML and EOB waveforms at posterior median/mode
+    logger.info("Generating waveform comparison plots for injected EOB waveform and recovered ML/EOB waveforms at posterior median/mode...")
     wfkwargs = {'wfmodel_modelpath': kwargs.get('model_path'),
                 'wfmodel_configpath': kwargs.get('config_path'),
                 'calibrator_modelpath': kwargs.get('calmodel_path')}
@@ -1070,6 +1071,10 @@ def extract_marginalized_posteriors(
     post_median_params = {param: np.median(marginalized_posteriors[param]) for param in marginalized_posteriors}
     post_mode_params = {param: scipy.stats.mode(marginalized_posteriors[param], keepdims=True).mode[0] 
                         for param in marginalized_posteriors}
+
+    logger.info(f"Injection parameters: {injection_parameters}")
+    logger.info(f"Posterior median parameters: {post_median_params}")
+    logger.info(f"Posterior mode parameters: {post_mode_params}")
 
     if plot_waveforms:
         plot_waveforms_comparison(eob_generator, ml_generator, 
@@ -1089,13 +1094,12 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
     fig, ax = plt.subplots(1, 3, figsize=(18, 5), sharey=True)
     time_array = np.arange(0, DURATION, 1/SAMPLE_RATE)
 
-    h_eob_inj = eob_generator.time_domain_source_model(time_array, **inj_params)
-    h_eob_median = ml_generator.time_domain_source_model(time_array, **post_median_params)
-    h_eob_mode = ml_generator.time_domain_source_model(time_array, **post_mode_params)
+    logger.debug(f"Generating waveforms for injection parameters: {inj_params}")
 
+    h_eob_inj = eob_generator.time_domain_source_model(time_array, **inj_params)
+    logger.debug("Generated EOB injection waveform.")
     h_ml_inj = ml_generator.time_domain_source_model(time_array, **inj_params)
-    h_ml_median = ml_generator.time_domain_source_model(time_array, **post_median_params)
-    h_ml_mode = ml_generator.time_domain_source_model(time_array, **post_mode_params)
+    logger.debug("Generated ML injection waveform.")
 
     ax[0].plot(time_array, h_eob_inj['plus'], label='EOB Injection', color='blue')
     ax[0].plot(time_array, h_ml_inj['plus'], label='ML Injection', color='orange')
@@ -1106,6 +1110,13 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
     ax[0].set_ylabel('Strain')
     ax[0].legend()
 
+    logger.debug(f"Generating waveforms for posterior median parameters: {post_median_params}")
+
+    h_eob_median = eob_generator.time_domain_source_model(time_array, **post_median_params)
+    logger.debug("Generated EOB posterior median waveform.")
+    h_ml_median = ml_generator.time_domain_source_model(time_array, **post_median_params)
+    logger.debug("Generated ML posterior median waveform.")
+
     ax[1].plot(time_array, h_eob_median['plus'], label='EOB Posterior Median', color='green')
     ax[1].plot(time_array, h_ml_median['plus'], label='ML Posterior Median', color='red')
     ax[1].set_title('Waveforms at Posterior Median \\' \
@@ -1114,6 +1125,13 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
     ax[1].set_xlabel('Time (s)')
     ax[1].legend()
 
+    logger.debug(f"Generating waveforms for posterior mode parameters: {post_mode_params}")
+
+    h_eob_mode = eob_generator.time_domain_source_model(time_array, **post_mode_params)
+    logger.debug("Generated EOB posterior mode waveform.")
+    h_ml_mode = ml_generator.time_domain_source_model(time_array, **post_mode_params)
+    logger.debug("Generated ML posterior mode waveform.")
+    
     ax[2].plot(time_array, h_eob_mode['plus'], label='EOB Posterior Mode', color='purple')
     ax[2].plot(time_array, h_ml_mode['plus'], label='ML Posterior Mode', color='brown')
     ax[2].set_title('Waveforms at Posterior Mode \\' \
@@ -1127,6 +1145,7 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
     logger.info(f"Saving waveform comparison plot to: {plot_fname}")
     plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
     plt.close()
+    logger.info("Completed waveform comparison plotting.")
 
 
 

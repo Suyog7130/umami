@@ -132,7 +132,9 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     Additionally, the `**kwargs` should contain the `modelpath` and `configpath` for the ML model, which we will use to load the model and generate the waveform!
     """
     logger.info(f"Received parameters for waveform generation: {kwargs}")
+
     ml_wfmodel, ml_calmodel = get_cached_mlmodel()
+
     if ml_wfmodel is None:
         logger.warning("No ML model provided to get_td_SEOBNRv4ml. We will initialize the model using the provided model_path and config_path in kwargs!")
         # mlmodel=f'../{PROJECT_DIR}/trained-models/model-20251004_072338-10'
@@ -248,6 +250,7 @@ def convert_to_ml_parameters(parameters):
 
     spin_1z = parameters.get("chi_1", parameters.get("spin_1z", None))
     spin_2z = parameters.get("chi_2", parameters.get("spin_2z", None))
+
     if spin_1z is None and spin_2z is None:
         if "a_1" in parameters and "a_2" in parameters and "tilt_1" in parameters and "tilt_2" in parameters and "phi_12" in parameters and "phi_jl" in parameters and "theta_jn" in parameters:
             from bilby.gw.conversion import bilby_to_lalsimulation_spins
@@ -266,9 +269,11 @@ def convert_to_ml_parameters(parameters):
             )
         else:
             raise ValueError("Missing spin parameters for conversion. Please provide either (spin_1z, spin_2z) or (a_1, a_2, tilt_1, tilt_2, phi_12, phi_jl, theta_jn). Provided parameters: ", parameters)
+        
     new_parameters["spin_1z"] = spin_1z
     new_parameters["spin_2z"] = spin_2z
     logger.info(f"Converted (a_i, tilt_i, phi_i) to (spin_i_z): {spin_1z}, {spin_2z}")
+
     if "spin_1z" in parameters or "chi_1z" in parameters:
         spin_1z_input = parameters.get("chi_1z", parameters.get("spin_1z", None))
         assert new_parameters["spin_1z"]==spin_1z_input, "Spin parameter conversion failed!"
