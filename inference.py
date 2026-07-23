@@ -561,8 +561,8 @@ def ml_to_eob_param_conversion(parameters):
     [spin_1z, spin_2z] -> [chi_1, chi_2] for EOB model.
     """
     converted = parameters.copy()
-    converted["chi_1"] = converted.pop("spin_1z")
-    converted["chi_2"] = converted.pop("spin_2z")
+    converted["chi_1"] = converted.pop("spin_1z", converted.get("chi_1"))
+    converted["chi_2"] = converted.pop("spin_2z", converted.get("chi_2"))
     return converted, []
 
 
@@ -1096,6 +1096,14 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
 
     logger.debug(f"Generating waveforms for injection parameters: {inj_params}")
 
+    # copy fixed parameters from injection params to posterior median and mode params, if they are not present
+    for param in ['theta_jn', 'psi', 'ra', 'dec', 'phase', 'luminosity_distance']:
+        if param in inj_params:
+            if param not in post_median_params:
+                post_median_params[param] = inj_params[param]
+            if param not in post_mode_params:
+                post_mode_params[param] = inj_params[param]
+
     h_eob_inj = eob_generator.time_domain_strain(inj_params)
     logger.debug("Generated EOB injection waveform.")
     h_ml_inj = ml_generator.time_domain_strain(inj_params)
@@ -1105,7 +1113,7 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
     ax[0].plot(time_array, h_ml_inj['plus'], label='ML Injection', color='orange')
     ax[0].set_title('Waveforms at Injection Parameters \\' \
         f'$m_1$={inj_params["mass_1"]:.2f}, $m_2$={inj_params["mass_2"]:.2f}, ' \
-        f'$\\chi_1$={inj_params["chi_1"]:.2f}, $\\chi_2$={inj_params["chi_2"]:.2f}')
+        f'$\chi_1$={inj_params["chi_1"]:.2f}, $\chi_2$={inj_params["chi_2"]:.2f}')
     ax[0].set_xlabel('Time (s)')
     ax[0].set_ylabel('Strain')
     ax[0].legend()
