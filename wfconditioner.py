@@ -319,9 +319,11 @@ def build_8s_tapered_ml_waveform(
     phase_offset=0.0,
     shift_merger_after_embed=True,
     short_duration=1.0,
-    do_not_resample_length_to_one_second=False,
-    truncate_wf_to_1s=False,
-    use_passed_amplitude_phase=False
+    wf_type: {'ml', 'eob'} = 'ml',
+    use_full_wf_length=False,
+    resample_wf_to_short_duration=False,
+    truncate_wf_to_short_duration=False,
+    force=False
 ):
     """
     Full pipeline:
@@ -334,6 +336,7 @@ def build_8s_tapered_ml_waveform(
         FFT
     """
     if amplitude is None and phase is None:
+        logger.info("No amplitude and phase provided, generating from MLWaveGen.")
         amplitude_raw, phase_raw = get_amp_phase_from_mlwavegen(
             mass_1=mass_1,
             mass_2=mass_2,
@@ -341,10 +344,20 @@ def build_8s_tapered_ml_waveform(
             chi_2=chi_2,
         )
     else:
+        logger.info("Using provided amplitude and phase, skipping MLWaveGen generation.")
         amplitude_raw = as_1d_float_array(amplitude, "amplitude")
         phase_raw = as_1d_float_array(phase, "phase")
+
+    if wf_type == 'ml' and not force:
+        use_full_wf_length = False
+        resample_wf_to_short_duration = True
+        logger.info("Using ML waveform type: WILL resample to short duration and NOT use full waveform length.")
+    elif wf_type == 'eob' and not force:
+        use_full_wf_length = True
+        resample_wf_to_short_duration = False
+        logger.info("Using EOB waveform type: WILL use full waveform length and NOT resample to short duration.")
     
-    if do_not_resample_length_to_one_second:
+    if use_full_wf_length:
         # NOTE: Never resample real signals, that changes the actual physics!
 
         # Use the full length of the amp/phase without resampling to one second.
@@ -362,9 +375,16 @@ def build_8s_tapered_ml_waveform(
         logger.info(f"Amplitude length: {len(amplitude_raw)}, Phase length: {len(phase_raw)}")
         logger.info(f"Duration of the signal in seconds: {len(amplitude_raw) / sampling_frequency}")
 
-    elif truncate_wf_to_1s:
-        # -- Instead, if the actual waveform is longer than 1 second, then truncate part of the inspiral!
-        # -- This replicates how the ML model was trained, where the inspiral is truncated to 1 second.
+    elif resample_wf_to_short_duration:
+        # -- Otherwise, we assume conditioning is being done for the ML model and we resample 8191 to 8192 samples!
+        # -- This is not a problem since ML2ML PP plot is diagonal!
+        n_short = int(round(short_duration * sampling_frequency))
+        amplitude_raw = resample_to_length(amplitude_raw, n_short)
+        phase_raw = resample_to_length(phase_raw, n_short)
+
+    elif truncate_wf_to_short_duration:
+        # -- Instead, if the actual waveform is longer than the short duration, then truncate part of the inspiral!
+        # -- This replicates how the ML model was trained, where the inspiral is truncated to the short duration.
 
         n_short = int(round(short_duration * sampling_frequency))
 
@@ -373,18 +393,11 @@ def build_8s_tapered_ml_waveform(
             amplitude_raw = amplitude_raw[diff:]
             phase_raw = phase_raw[diff:]
 
-    elif use_passed_amplitude_phase:
+    else:
         # -- do not resample 8191 length arrays to 8192, instead, simply we append zeros later!
         n_short = len(amplitude)
         amplitude_raw = amplitude_raw.copy()
         phase_raw = phase_raw.copy()
-
-    else:
-        # -- Otherwise, we assume conditioning is being done for the ML model and we resample 8191 to 8192 samples!
-        # -- This is not a problem since ML2ML PP plot is diagonal!
-        n_short = int(round(short_duration * sampling_frequency))
-        amplitude_raw = resample_to_length(amplitude_raw, n_short)
-        phase_raw = resample_to_length(phase_raw, n_short)
 
     assert len(amplitude_raw) == len(phase_raw) == n_short, "Amplitude and phase must have the same length as n_short"
 
@@ -493,7 +506,8 @@ def build_8s_tapered_ml_waveform(
     }
 
 
-def get_conditioned_waveform(amplitude, phase, scale_factor=10**20, 
+def get_conditioned_waveform(amplitude, phase, 
+                             scale_factor=10**20, 
                              plot_result=False, **kwargs):
     """
     Get conditioned waveform from amplitude and phase, with optional parameters.
@@ -526,7 +540,8 @@ def get_conditioned_waveform(amplitude, phase, scale_factor=10**20,
     hp_cond, hc_cond = out["hp_8s_final"] / scale_factor, out["hc_8s_final"] / scale_factor
 
     if plot_result:
-        savedir = f"../v0p1/results/{TODAY}/taper_debug_plots_{NOW}/"
+        wf_type = kwargs.get("wf_type", "ml")
+        savedir = f"../v0p1/results/{TODAY}/taper_{wf_type}_debug_plots_{NOW}/"
         plot_tapered_waveform_stages(
             out,
             outdir=savedir,

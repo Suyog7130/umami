@@ -553,6 +553,7 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
 
 
 TRUNCATE_EOB_WAVEFORM_TO_1S = False
+FORCE_EOB_WF_TRUNCATION = False
 
 
 def ml_to_eob_param_conversion(parameters):
@@ -607,7 +608,9 @@ def pycbc_seobnrv4_time_domain_source_model(time_array,
     hplus, hcross = get_conditioned_waveform(amp_arr, phase_arr,
                                              scale_factor=1.0,  # No scaling req! 
                                              plot_result=False,
-                                             truncate_wf_to_1s=TRUNCATE_EOB_WAVEFORM_TO_1S)
+                                             wf_type='eob',
+                                             truncate_wf_to_short_duration=TRUNCATE_EOB_WAVEFORM_TO_1S,
+                                             force=FORCE_EOB_WF_TRUNCATION,)
     
     if luminosity_distance != 1.0:
         hplus /= luminosity_distance
@@ -746,8 +749,9 @@ def main(args, label='umamipe',
     logger.info(f"Using CALMODEL_PATH: {calmodel_path}")
 
     if args.truncate_eob_waveform_to_1s:
-        global TRUNCATE_EOB_WAVEFORM_TO_1S
+        global TRUNCATE_EOB_WAVEFORM_TO_1S, FORCE_EOB_WF_TRUNCATION
         TRUNCATE_EOB_WAVEFORM_TO_1S = True
+        FORCE_EOB_WF_TRUNCATION = True
         logger.warning("We will be truncating EOB waveforms to 1 second duration for injection and/or recovery.")
     else:
         logger.warning("Not truncating EOB waveforms to 1 second duration. It is assumed for waveform conditioning that the actual EOB waveform length is shorter than 8 second long data segment it will be embedded into.")
