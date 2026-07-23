@@ -21,7 +21,7 @@ from scipy.special import logsumexp
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
 
-plt.rcParams['text.usetex'] = True
+# plt.rcParams['text.usetex'] = True
 
 import torch
 import torch.multiprocessing as mp
@@ -1111,7 +1111,7 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
 
     ax[0].plot(time_array, h_eob_inj['plus'], label='EOB Injection', color='blue')
     ax[0].plot(time_array, h_ml_inj['plus'], label='ML Injection', color='orange')
-    ax[0].set_title('Waveforms at Injection Parameters \\' \
+    ax[0].set_title('$h_{\\mathrm{injection}}$' \
         f'$m_1$={inj_params["mass_1"]:.2f}, $m_2$={inj_params["mass_2"]:.2f}, ' \
         f'$\chi_1$={inj_params["chi_1"]:.2f}, $\chi_2$={inj_params["chi_2"]:.2f}')
     ax[0].set_xlabel('Time (s)')
@@ -1127,7 +1127,7 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
 
     ax[1].plot(time_array, h_eob_median['plus'], label='EOB Posterior Median', color='green')
     ax[1].plot(time_array, h_ml_median['plus'], label='ML Posterior Median', color='red')
-    ax[1].set_title('Waveforms at Posterior Median \\' \
+    ax[1].set_title('$h_{\\mathrm{post-median}}$' \
         f'$m_1$={post_median_params["mass_1"]:.2f}, $m_2$={post_median_params["mass_2"]:.2f}, ' \
         f'$\\chi_1$={post_median_params["chi_1"]:.2f}, $\\chi_2$={post_median_params["chi_2"]:.2f}')
     ax[1].set_xlabel('Time (s)')
@@ -1142,7 +1142,7 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
 
     ax[2].plot(time_array, h_eob_mode['plus'], label='EOB Posterior Mode', color='purple')
     ax[2].plot(time_array, h_ml_mode['plus'], label='ML Posterior Mode', color='brown')
-    ax[2].set_title('Waveforms at Posterior Mode \\' \
+    ax[2].set_title('$h_{\\mathrm{post-mode}}$' \
         f'$m_1$={post_mode_params["mass_1"]:.2f}, $m_2$={post_mode_params["mass_2"]:.2f}, '\
         f'$\\chi_1$={post_mode_params["chi_1"]:.2f}, $\\chi_2$={post_mode_params["chi_2"]:.2f}')
     ax[2].set_xlabel('Time (s)')
