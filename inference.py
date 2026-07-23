@@ -1091,7 +1091,7 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
     """
     Plot EOB and ML waveforms at injection parameters, posterior median, and posterior mode, for comparison.
     """
-    fig, ax = plt.subplots(1, 3, figsize=(18, 5), sharey=True)
+    fig, ax = plt.subplots(1, 3, figsize=(18, 5))
     time_array = np.arange(0, DURATION, 1/SAMPLE_RATE)
 
     logger.debug(f"Generating waveforms for injection parameters: {inj_params}")
@@ -1104,50 +1104,32 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
             if param not in post_mode_params:
                 post_mode_params[param] = inj_params[param]
 
-    h_eob_inj = eob_generator.time_domain_strain(inj_params)
-    logger.debug("Generated EOB injection waveform.")
-    h_ml_inj = ml_generator.time_domain_strain(inj_params)
-    logger.debug("Generated ML injection waveform.")
+    titles = ['Inj Params', 'Post Median Params', 'Post Mode Params']
 
-    ax[0].plot(time_array, h_eob_inj['plus'], label='EOB Injection', color='blue')
-    ax[0].plot(time_array, h_ml_inj['plus'], label='ML Injection', color='orange')
-    ax[0].set_title('$h_{\\mathrm{injection}}$' \
-        f'$m_1$={inj_params["mass_1"]:.2f}, $m_2$={inj_params["mass_2"]:.2f}, ' \
-        f'$\chi_1$={inj_params["chi_1"]:.2f}, $\chi_2$={inj_params["chi_2"]:.2f}')
-    ax[0].set_xlabel('Time (s)')
-    ax[0].set_ylabel('Strain')
-    ax[0].legend()
+    for i, param_arr in enumerate([inj_params, post_median_params, post_mode_params]):
+        logger.debug(f"Generating waveforms for parameter set {i}: {param_arr}")
+        h_eob = eob_generator.time_domain_strain(param_arr)
+        logger.debug("Generated EOB injection waveform.")
+        h_ml = ml_generator.time_domain_strain(param_arr)
+        logger.debug("Generated ML injection waveform.")
 
-    logger.debug(f"Generating waveforms for posterior median parameters: {post_median_params}")
+        # Truncate waveforms to 5-7 second window for better visualization
+        start_idx = int(5 * SAMPLE_RATE)
+        end_idx = int(7 * SAMPLE_RATE)
+        time_array = time_array[start_idx:end_idx]
+        h_eob_wf = h_eob['plus'][start_idx:end_idx]
+        h_ml_wf = h_ml['plus'][start_idx:end_idx]
 
-    h_eob_median = eob_generator.time_domain_strain(post_median_params)
-    logger.debug("Generated EOB posterior median waveform.")
-    h_ml_median = ml_generator.time_domain_strain(post_median_params)
-    logger.debug("Generated ML posterior median waveform.")
+        ax[i].plot(time_array, h_eob_wf, label='EOB wf', color='blue', alpha=0.75)
+        ax[i].plot(time_array, h_ml_wf, label='ML wf', color='orange', alpha=0.75)
+        ax[i].set_title(f'{titles[i]}  ' \
+            f'$m_1$={param_arr["mass_1"]:.2f}, $m_2$={param_arr["mass_2"]:.2f}, ' \
+            f'$\chi_1$={param_arr["chi_1"]:.2f}, $\chi_2$={param_arr["chi_2"]:.2f}')
+        ax[i].set_xlabel('Time (s)', fontsize=15)
+        ax[i].set_ylabel('Strain', fontsize=15)
+        ax[i].legend()
 
-    ax[1].plot(time_array, h_eob_median['plus'], label='EOB Posterior Median', color='green')
-    ax[1].plot(time_array, h_ml_median['plus'], label='ML Posterior Median', color='red')
-    ax[1].set_title('$h_{\\mathrm{post-median}}$' \
-        f'$m_1$={post_median_params["mass_1"]:.2f}, $m_2$={post_median_params["mass_2"]:.2f}, ' \
-        f'$\\chi_1$={post_median_params["chi_1"]:.2f}, $\\chi_2$={post_median_params["chi_2"]:.2f}')
-    ax[1].set_xlabel('Time (s)')
-    ax[1].legend()
-
-    logger.debug(f"Generating waveforms for posterior mode parameters: {post_mode_params}")
-
-    h_eob_mode = eob_generator.time_domain_strain(post_mode_params)
-    logger.debug("Generated EOB posterior mode waveform.")
-    h_ml_mode = ml_generator.time_domain_strain(post_mode_params)
-    logger.debug("Generated ML posterior mode waveform.")
-
-    ax[2].plot(time_array, h_eob_mode['plus'], label='EOB Posterior Mode', color='purple')
-    ax[2].plot(time_array, h_ml_mode['plus'], label='ML Posterior Mode', color='brown')
-    ax[2].set_title('$h_{\\mathrm{post-mode}}$' \
-        f'$m_1$={post_mode_params["mass_1"]:.2f}, $m_2$={post_mode_params["mass_2"]:.2f}, '\
-        f'$\\chi_1$={post_mode_params["chi_1"]:.2f}, $\\chi_2$={post_mode_params["chi_2"]:.2f}')
-    ax[2].set_xlabel('Time (s)')
-    ax[2].legend()
-
+    plt.tick_params(which="both", direction='in', top=True, right=True)
     plt.tight_layout()
     plot_fname = os.path.join(outdir, f'{label}_waveforms_comparison.png')
     logger.info(f"Saving waveform comparison plot to: {plot_fname}")
