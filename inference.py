@@ -21,7 +21,7 @@ from scipy.special import logsumexp
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
 
-# plt.rcParams['text.usetex'] = True
+plt.rcParams['text.usetex'] = True
 
 import torch
 import torch.multiprocessing as mp
@@ -554,6 +554,7 @@ def run_injection_campaign(num_injections=50, base_seed=1234,
 
 TRUNCATE_EOB_WAVEFORM_TO_1S = False
 FORCE_EOB_WF_TRUNCATION = False
+PLOT_CONDITIONED_WAVEFORM = False
 
 
 def ml_to_eob_param_conversion(parameters):
@@ -607,7 +608,7 @@ def pycbc_seobnrv4_time_domain_source_model(time_array,
     amp_arr, phase_arr = amp_phase_from_polarizations(hp, hc, use_pycbc=True)
     hplus, hcross = get_conditioned_waveform(amp_arr, phase_arr,
                                              scale_factor=1.0,  # No scaling req! 
-                                             plot_result=False,
+                                             plot_result=PLOT_CONDITIONED_WAVEFORM,
                                              wf_type='eob',
                                              truncate_wf_to_short_duration=TRUNCATE_EOB_WAVEFORM_TO_1S,
                                              force=FORCE_EOB_WF_TRUNCATION,)
@@ -1072,6 +1073,9 @@ def extract_marginalized_posteriors(
     eob_generator = make_wf_generator("eob")
     ml_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
 
+    global PLOT_CONDITIONED_WAVEFORM
+    PLOT_CONDITIONED_WAVEFORM = True  # Enable plotting of conditioned waveforms
+
     post_median_params = {param: np.median(marginalized_posteriors[param]) for param in marginalized_posteriors}
     post_mode_params = {param: scipy.stats.mode(marginalized_posteriors[param], keepdims=True).mode[0] 
                         for param in marginalized_posteriors}
@@ -1085,13 +1089,19 @@ def extract_marginalized_posteriors(
                                   injection_parameters, post_median_params, post_mode_params,
                                   outdir=savedir, 
                                   label=results_fname.replace('_result.json', ''))
+        plot_waveforms_comparison(eob_generator, ml_generator, 
+                                  injection_parameters, post_median_params, post_mode_params,
+                                  outdir=savedir, 
+                                  zoomed=True,
+                                  label=results_fname.replace('_result.json', '_zoomed'))
 
     return injection_parameters, marginalized_posteriors, param_distances, param_ratios
 
 
 def plot_waveforms_comparison(eob_generator, ml_generator,
                               inj_params, post_median_params, post_mode_params,
-                              outdir, label):
+                              outdir, label, 
+                              zoomed=False,):
     """
     Plot EOB and ML waveforms at injection parameters, posterior median, and posterior mode, for comparison.
     """
@@ -1108,7 +1118,7 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
             if param not in post_mode_params:
                 post_mode_params[param] = inj_params[param]
 
-    titles = ['Inj Params', 'Post Median Params', 'Post Mode Params']
+    titles = ['Inj', 'Post Median', 'Post Mode']
 
     for i, param_arr in enumerate([inj_params, post_median_params, post_mode_params]):
         logger.debug(f"Generating waveforms for parameter set {i}: {param_arr}")
@@ -1117,23 +1127,27 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
         h_ml = ml_generator.time_domain_strain(param_arr)
         logger.debug("Generated ML injection waveform.")
 
-        # Truncate waveforms to 5-7 second window for better visualization
-        start_idx = int(5 * SAMPLE_RATE)
-        end_idx = int(7 * SAMPLE_RATE)
-        time_array = time_array[start_idx:end_idx]
-        h_eob_wf = h_eob['plus'][start_idx:end_idx]
-        h_ml_wf = h_ml['plus'][start_idx:end_idx]
+        if zoomed:
+            # Zoom to 5-7 second window for better visualization
+            start_idx = int(5 * SAMPLE_RATE)
+            end_idx = int(7 * SAMPLE_RATE)
+            time_array = time_array[start_idx:end_idx]
+            h_eob_wf = h_eob['plus'][start_idx:end_idx]
+            h_ml_wf = h_ml['plus'][start_idx:end_idx]
+        else:
+            h_eob_wf = h_eob['plus']
+            h_ml_wf = h_ml['plus']
 
-        ax[i].plot(time_array, h_eob_wf, label='EOB wf', color='blue', alpha=0.75)
-        ax[i].plot(time_array, h_ml_wf, label='ML wf', color='orange', alpha=0.75)
-        ax[i].set_title(f'{titles[i]}  ' \
+        ax[i].plot(time_array, h_eob_wf, label='EOB', color='blue', alpha=0.75)
+        ax[i].plot(time_array, h_ml_wf, label='ML', color='orange', alpha=0.75)
+        ax[i].set_title(f'{titles[i]}:  ' \
             f'$m_1$={param_arr["mass_1"]:.2f}, $m_2$={param_arr["mass_2"]:.2f}, ' \
             f'$\chi_1$={param_arr["chi_1"]:.2f}, $\chi_2$={param_arr["chi_2"]:.2f}')
         ax[i].set_xlabel('Time (s)', fontsize=15)
         ax[i].set_ylabel('Strain', fontsize=15)
         ax[i].legend()
+        ax[i].tick_params(which="both", direction='in', top=True, right=True)
 
-    plt.tick_params(which="both", direction='in', top=True, right=True)
     plt.tight_layout()
     plot_fname = os.path.join(outdir, f'{label}_waveforms_comparison.png')
     logger.info(f"Saving waveform comparison plot to: {plot_fname}")

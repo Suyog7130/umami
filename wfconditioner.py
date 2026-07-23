@@ -228,7 +228,8 @@ def shift_merger_to_fraction(h_plus, h_cross, amplitude_for_merger=None, merger_
     return h_plus_shifted, h_cross_shifted, current_merger_idx, target_merger_idx, shift_samples
 
 
-def embed_1s_waveform_in_8s(h_plus_1s, h_cross_1s, sampling_frequency, segment_duration=8.0, insertion_start_seconds=3.5):
+def embed_short_waveform_in_long_segment(h_plus_1s, h_cross_1s, sampling_frequency, 
+                                         segment_duration=8.0, insertion_start_seconds=3.5):
     h_plus_1s = as_1d_float_array(h_plus_1s, "h_plus_1s")
     h_cross_1s = as_1d_float_array(h_cross_1s, "h_cross_1s")
 
@@ -240,9 +241,16 @@ def embed_1s_waveform_in_8s(h_plus_1s, h_cross_1s, sampling_frequency, segment_d
     end_idx = start_idx + len(h_plus_1s)
 
     if start_idx < 0 or end_idx > n_segment:
-        raise ValueError(
-            f"1s waveform does not fit in segment: start={start_idx}, end={end_idx}, n_segment={n_segment}"
-        )
+        # If the 1s waveform does not fit in the segment, try shifting to left by some amount
+        logger.warning(f"Short waveform does not fit in segment: start={start_idx}, end={end_idx}, n_segment={n_segment}. Attempting to shift left.")
+        shift_amount = max(0, end_idx - n_segment)
+        start_idx -= shift_amount
+        end_idx = start_idx + len(h_plus_1s)
+
+        if start_idx < 0 or end_idx > n_segment:
+            raise ValueError(
+                f"Short waveform does not fit in segment: start={start_idx}, end={end_idx}, n_segment={n_segment}"
+            )
 
     h_plus_8s = np.zeros(n_segment, dtype=np.float64)
     h_cross_8s = np.zeros(n_segment, dtype=np.float64)
@@ -336,6 +344,8 @@ def build_8s_tapered_ml_waveform(
         FFT
     """
     if amplitude is None and phase is None:
+        if wf_type == 'eob':
+            raise ValueError("For EOB waveform type, amplitude and phase must be provided!")
         logger.info("No amplitude and phase provided, generating from MLWaveGen.")
         amplitude_raw, phase_raw = get_amp_phase_from_mlwavegen(
             mass_1=mass_1,
@@ -359,12 +369,25 @@ def build_8s_tapered_ml_waveform(
     
     if use_full_wf_length:
         # NOTE: Never resample real signals, that changes the actual physics!
-
-        # Use the full length of the amp/phase without resampling to one second.
         # In this case, the `insertion_start_seconds` is interpreted from actual waveform length.
-        n_short = len(amplitude)
+
         amplitude_raw = amplitude_raw.copy()
         phase_raw = phase_raw.copy()
+
+        # -- If full length of waveform is even longer than the segment duration (e.g. 8 seconds),
+        # -- then we truncate the waveform to `segment_duration - 2` second length, by removing the some
+        # -- part of the inspiral!
+        if len(amplitude_raw) > int(round(segment_duration * sampling_frequency)):
+            truncation_length = int(round((segment_duration - 2) * sampling_frequency))
+            logger.warning(f"Full length of waveform ({len(amplitude_raw)} samples) exceeds \
+                           segment duration ({int(round(segment_duration * sampling_frequency))} samples). \
+                           Truncating the inspiral to fit the waveform into the segment, leaving 1 s on either end.")
+            diff = len(amplitude_raw) - truncation_length
+            amplitude_raw = amplitude_raw[diff:]
+            phase_raw = phase_raw[diff:]
+
+        # Use the full length of the amp/phase without resampling to one second.
+        n_short = len(amplitude_raw)
 
         # NOTE: My ML training has $f_{min}\in [11,60]$ with mean of 19.5 Hz
         # FIXME: This `FMIN` value should ideally be lower than the lowest f_low value used in ML model training.
@@ -437,7 +460,7 @@ def build_8s_tapered_ml_waveform(
     hp_1s_final = hp_start_tapered * end_window
     hc_1s_final = hc_start_tapered * end_window
 
-    hp_8s, hc_8s, insert_start_idx, insert_end_idx = embed_1s_waveform_in_8s(
+    hp_8s, hc_8s, insert_start_idx, insert_end_idx = embed_short_waveform_in_long_segment(
         hp_1s_final,
         hc_1s_final,
         sampling_frequency=sampling_frequency,
