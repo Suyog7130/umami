@@ -1067,10 +1067,12 @@ def extract_marginalized_posteriors(
 
     # Plot original injected EOB waveform and recovery ML and EOB waveforms at posterior median/mode
     logger.info("Generating waveform comparison plots for injected EOB waveform and recovered ML/EOB waveforms at posterior median/mode...")
+    eob_generator = make_wf_generator("eob")
     wfkwargs = {'wfmodel_modelpath': kwargs.get('model_path'),
                 'wfmodel_configpath': kwargs.get('config_path'),
-                'calibrator_modelpath': kwargs.get('calmodel_path')}
-    eob_generator = make_wf_generator("eob")
+                'calibrator_modelpath': kwargs.get('calmodel_path'),
+                'distance_scale_factor': injection_parameters.get('luminosity_distance', LUMINOSITY_DISTANCE)
+                }
     ml_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
 
     # global PLOT_CONDITIONED_WAVEFORM
@@ -1101,13 +1103,15 @@ def extract_marginalized_posteriors(
         injection_parameters['luminosity_distance'] = LUMINOSITY_DISTANCE
         post_median_params['luminosity_distance'] = LUMINOSITY_DISTANCE
         post_mode_params['luminosity_distance'] = LUMINOSITY_DISTANCE
+        wfkwargs['distance_scale_factor'] = LUMINOSITY_DISTANCE
+        ml_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
+
         plot_waveforms_comparison(eob_generator, ml_generator, 
                                   injection_parameters, post_median_params, post_mode_params,
                                   outdir=savedir, 
                                   zoomed=True,
                                   label=results_fname.replace('_result.json', '_zoomed_d0p4k')
                                   )
-
     return injection_parameters, marginalized_posteriors, param_distances, param_ratios
 
 
@@ -1136,7 +1140,7 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
             if param not in post_mode_params:
                 post_mode_params[param] = inj_params[param]
 
-    titles = ['Inj', 'Post Median', 'Post Mode']
+    titles = ['Inj', 'Post-Median', 'Post-Mode']
 
     for i, param_arr in enumerate([inj_params, post_median_params, post_mode_params]):
         logger.debug(f"Generating waveforms for parameter set {i}: {param_arr}")
