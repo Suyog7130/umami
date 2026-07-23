@@ -200,10 +200,11 @@ def get_td_SEOBNRv4ml(time_array, **kwargs):
     if distance_scale_factor is not None:
         hplus /= distance_scale_factor
         hcross /= distance_scale_factor
+        logger.info(f"Applied distance scale factor of {distance_scale_factor} to waveform amplitude.")
     elif luminosity_distance != 1.0:
         hplus /= luminosity_distance
         hcross /= luminosity_distance
-    logger.info(f"Applied distance scaling to waveforms with distance_scale_factor: {distance_scale_factor} and luminosity_distance: {luminosity_distance}")
+        logger.info(f"Applied luminosity distance of {luminosity_distance} to waveform amplitude.")
 
     # fig, ax = plt.subplots(figsize=(12, 5))
     # ax.plot(np.arange(len(hplus)), hplus, label='hp')

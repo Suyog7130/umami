@@ -1105,10 +1105,15 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
     """
     Plot EOB and ML waveforms at injection parameters, posterior median, and posterior mode, for comparison.
     """
+    logger.debug(f"Generating waveforms for injection parameters: {inj_params}")
     fig, ax = plt.subplots(1, 3, figsize=(18, 5))
     time_array = np.arange(0, DURATION, 1/SAMPLE_RATE)
 
-    logger.debug(f"Generating waveforms for injection parameters: {inj_params}")
+    if zoomed:
+        # Zoom to 5-7 second window for better visualization
+        start_idx = int(5/8 * len(time_array))
+        end_idx = int(7/8 * len(time_array))
+        time_array = time_array[start_idx:end_idx]
 
     # copy fixed parameters from injection params to posterior median and mode params, if they are not present
     for param in ['theta_jn', 'psi', 'ra', 'dec', 'phase', 'luminosity_distance']:
@@ -1128,10 +1133,6 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
         logger.debug("Generated ML injection waveform.")
 
         if zoomed:
-            # Zoom to 5-7 second window for better visualization
-            start_idx = int(5 * SAMPLE_RATE)
-            end_idx = int(7 * SAMPLE_RATE)
-            time_array = time_array[start_idx:end_idx]
             h_eob_wf = h_eob['plus'][start_idx:end_idx]
             h_ml_wf = h_ml['plus'][start_idx:end_idx]
         else:
@@ -1141,8 +1142,9 @@ def plot_waveforms_comparison(eob_generator, ml_generator,
         ax[i].plot(time_array, h_eob_wf, label='EOB', color='blue', alpha=0.75)
         ax[i].plot(time_array, h_ml_wf, label='ML', color='orange', alpha=0.75)
         ax[i].set_title(f'{titles[i]}:  ' \
-            f'$m_1$={param_arr["mass_1"]:.2f}, $m_2$={param_arr["mass_2"]:.2f}, ' \
-            f'$\chi_1$={param_arr["chi_1"]:.2f}, $\chi_2$={param_arr["chi_2"]:.2f}')
+            f'$m_1={param_arr["mass_1"]:.2f}$, $m_2={param_arr["mass_2"]:.2f}$, ' \
+            f'$\chi_1={param_arr["chi_1"]:.2f}$, $\chi_2={param_arr["chi_2"]:.2f}$, ' \
+            f'$d_L={param_arr["luminosity_distance"]:.2f}$ Mpc', fontsize=12)
         ax[i].set_xlabel('Time (s)', fontsize=15)
         ax[i].set_ylabel('Strain', fontsize=15)
         ax[i].legend()
