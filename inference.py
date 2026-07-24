@@ -21,7 +21,7 @@ from scipy.special import logsumexp
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
 
-plt.rcParams['text.usetex'] = True
+# plt.rcParams['text.usetex'] = True
 
 import torch
 import torch.multiprocessing as mp
