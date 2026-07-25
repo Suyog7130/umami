@@ -1647,15 +1647,17 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
     else:
         outdir = os.path.join(results_dir, f'pp_plots_{NOW}/')
     ensure_dir(outdir)
+    
     results = []
     for dirname in os.listdir(results_dir):
         if label in dirname and pe_run_type in dirname and sampler in dirname:
-            logger.info(f"Found result directory: {dirname} for PP plot generation...")
             for fname in os.listdir(f"{results_dir}/{dirname}"):
                 if fname.endswith('result.json'):
+                    logger.info(f"Found result directory: {dirname} for PP plot generation...")
                     result = bilby.gw.result.CBCResult.from_json(f"{results_dir}/{dirname}/{fname}")
                     results.append(result)
     logger.info(f"Loaded {len(results)} results from {results_dir} for PP plot generation...")
+
     savename = os.path.join(outdir, f"{label}_{pe_run_type}_{sampler}_pp-plot_{NOW}.png")
     fig, pvals = make_pp_plot(
         results,
