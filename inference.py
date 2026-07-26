@@ -1066,27 +1066,27 @@ def extract_marginalized_posteriors(
     logger.info("Completed extraction and plotting of marginalized posteriors.")
 
     # Plot original injected EOB waveform and recovery ML and EOB waveforms at posterior median/mode
-    logger.info("Generating waveform comparison plots for injected EOB waveform and recovered ML/EOB waveforms at posterior median/mode...")
-    eob_generator = make_wf_generator("eob")
-    wfkwargs = {'wfmodel_modelpath': kwargs.get('model_path'),
-                'wfmodel_configpath': kwargs.get('config_path'),
-                'calibrator_modelpath': kwargs.get('calmodel_path'),
-                'distance_scale_factor': injection_parameters.get('luminosity_distance', LUMINOSITY_DISTANCE)
-                }
-    ml_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
-
-    # global PLOT_CONDITIONED_WAVEFORM
-    # PLOT_CONDITIONED_WAVEFORM = True  # Enable plotting of conditioned waveforms
-
-    post_median_params = {param: np.median(marginalized_posteriors[param]) for param in marginalized_posteriors}
-    post_mode_params = {param: scipy.stats.mode(marginalized_posteriors[param], keepdims=True).mode[0] 
-                        for param in marginalized_posteriors}
-
-    logger.info(f"Injection parameters: {injection_parameters}")
-    logger.info(f"Posterior median parameters: {post_median_params}")
-    logger.info(f"Posterior mode parameters: {post_mode_params}")
-
     if plot_waveforms:
+        logger.info("Generating waveform comparison plots for injected EOB waveform and recovered ML/EOB waveforms at posterior median/mode...")
+        eob_generator = make_wf_generator("eob")
+        wfkwargs = {'wfmodel_modelpath': kwargs.get('model_path'),
+                    'wfmodel_configpath': kwargs.get('config_path'),
+                    'calibrator_modelpath': kwargs.get('calmodel_path'),
+                    'distance_scale_factor': injection_parameters.get('luminosity_distance', LUMINOSITY_DISTANCE)
+                    }
+        ml_generator = make_wf_generator("ml", wfkwargs=wfkwargs)
+
+        # global PLOT_CONDITIONED_WAVEFORM
+        # PLOT_CONDITIONED_WAVEFORM = True  # Enable plotting of conditioned waveforms
+
+        post_median_params = {param: np.median(marginalized_posteriors[param]) for param in marginalized_posteriors}
+        post_mode_params = {param: scipy.stats.mode(marginalized_posteriors[param], keepdims=True).mode[0] 
+                            for param in marginalized_posteriors}
+
+        logger.info(f"Injection parameters: {injection_parameters}")
+        logger.info(f"Posterior median parameters: {post_median_params}")
+        logger.info(f"Posterior mode parameters: {post_mode_params}")
+
         plot_waveforms_comparison(eob_generator, ml_generator, 
                                   injection_parameters, post_median_params, post_mode_params,
                                   outdir=savedir, 
