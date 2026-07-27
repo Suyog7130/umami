@@ -21,7 +21,7 @@ from scipy.special import logsumexp
 import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
 
-# plt.rcParams['text.usetex'] = True
+plt.rcParams['text.usetex'] = True
 
 import torch
 import torch.multiprocessing as mp
@@ -103,12 +103,12 @@ else:
 
 
 LATEX_LABELS = {
-    "mass_1": r"$m_1 \, [M_\odot]$",
-    "mass_2": r"$m_2 \, [M_\odot]$",
-    "chi_1": r"$\chi_1$",
-    "chi_2": r"$\chi_2$",
-    "chirp_mass": r"$\mathcal{M} \, [M_\odot]$",
-    "chi_eff": r"$\chi_{\rm eff}$",
+    "mass_1": "$m_1 \, [M_\odot]$",
+    "mass_2": "$m_2 \, [M_\odot]$",
+    "chi_1": "$\chi_1$",
+    "chi_2": "$\chi_2$",
+    "chirp_mass": "$\mathcal{M} \, [M_\odot]$",
+    "chi_eff": "$\chi_{\rm eff}$",
 }
 
 
