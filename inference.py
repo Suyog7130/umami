@@ -1240,9 +1240,9 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     all_param_ratios = {}
     all_inj_params = {}
 
-    subdirs = os.listdir(results_dir)
+    dirnames = []
 
-    for subdir in tqdm(subdirs, desc="Processing"):
+    for subdir in tqdm(os.listdir(results_dir), desc="Processing"):
         if not os.path.isdir(os.path.join(results_dir, subdir)):
             continue
 
@@ -1255,6 +1255,8 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
         for fname in os.listdir(os.path.join(results_dir, subdir)):
             if not fname.endswith('_result.json'):
                 continue
+            else:
+                dirnames.append(subdir)
             logger.debug(f"Processing result file: {fname} in subdir: {subdir}")
 
             extract_marginalized_posteriors(
@@ -1305,10 +1307,12 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
         'savedir': savedir,
         'num_injections': sum(len(all_param_distances[param]) for param in all_param_distances),
         'parameters_analyzed': list(all_param_distances.keys()),
-        'result_dirs': [d for d in os.listdir(results_dir) if os.path.isdir(os.path.join(results_dir, d))],
-        'result_files': [f for f in os.listdir(results_dir) if f.endswith('_result.json')],
+        'result_dirs': dirnames,
+        'result_files': [os.path.join(subdir, fname) for subdir in dirnames 
+                         for fname in os.listdir(os.path.join(results_dir, subdir)) 
+                         if fname.endswith('_result.json')],
     }
-    metadata_fname = os.path.join(savedir, f'analysis_metadata_{NOW}.json')
+    metadata_fname = os.path.join(savedir, f'{label}_{pe_run_type}_analysis_metadata_{NOW}.json')
     logger.info(f"Saving analysis metadata to: {metadata_fname}")
     save_json(analysis_metadata, metadata_fname)
     
@@ -1337,8 +1341,8 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     logger.info(f"Summary of parameter ratios: {summary_ratios}")
 
     # Save summary to JSON files
-    summary_distances_fname = os.path.join(savedir, 'summary_param_distances.json')
-    summary_ratios_fname = os.path.join(savedir, 'summary_param_ratios.json')
+    summary_distances_fname = os.path.join(savedir, f'{label}_{pe_run_type}_summary_param_distances.json')
+    summary_ratios_fname = os.path.join(savedir, f'{label}_{pe_run_type}_summary_param_ratios.json')
     logger.info(f"Saving summary of parameter distances to: {summary_distances_fname}")
     logger.info(f"Saving summary of parameter ratios to: {summary_ratios_fname}")
     save_json(summary_distances, summary_distances_fname)
