@@ -1015,10 +1015,21 @@ def extract_marginalized_posteriors(
     param_ratios = {}
     for i, param in enumerate(marginalized_posteriors):
         if param in injection_parameters:
-            # Calculate distance from true value
-            mode = scipy.stats.mode(marginalized_posteriors[param], keepdims=True).mode[0]
-            median = np.median(marginalized_posteriors[param])
             true_value = injection_parameters[param]
+
+            # mode = scipy.stats.mode(marginalized_posteriors[param], keepdims=True).mode[0]
+            # median = np.median(marginalized_posteriors[param])
+
+            # -- Calculate mode, mean and median of the data by first taking the average of all histogram bins,
+            # and then reporting the statistics of this data. This ensures that the mode reported will be the
+            # average value of the bin with the highest count, rather than some singleton value elsewhere in the data.
+            counts, bin_edges = np.histogram(marginalized_posteriors[param], bins=50, density=False)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            mode = bin_centers[np.argmax(counts)]
+            mean = np.average(bin_centers, weights=counts)
+            median = np.median(np.repeat(bin_centers, counts))
+            
+            # Calculate distance from true value
             param_distances[param] = {
                 "mode": np.abs(mode - true_value),
                 "median": np.abs(median - true_value)
@@ -1028,6 +1039,7 @@ def extract_marginalized_posteriors(
                 "mode": mode / true_value if true_value != 0 else np.inf,
                 "median": median / true_value if true_value != 0 else np.inf
             }
+
     distances_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_distances.json'))
     ratios_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_ratios.json'))
     logger.info(f"Saving parameter distances to: {distances_fname}")
@@ -1051,9 +1063,9 @@ def extract_marginalized_posteriors(
         ax.tick_params(labelsize=labelsize)
 
         # Put mode, median of posterior, and true value in the plot
-        mode = np.median(marginalized_posteriors[param])
-        median = np.median(marginalized_posteriors[param])
         true_value = injection_parameters[param]
+        mode = param_distances[param]["mode"] + true_value
+        median = param_distances[param]["median"] + true_value
         textstr = f'Mode: {mode:.3f}\nMedian: {median:.3f}\nTrue: {true_value:.3f}'
         props = dict(boxstyle='round', facecolor='white', alpha=0.5)
         ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=labelsize-2, verticalalignment='top', bbox=props)
