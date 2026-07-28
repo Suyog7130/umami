@@ -1360,6 +1360,12 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     save_json(summary_distances, summary_distances_fname)
     save_json(summary_ratios, summary_ratios_fname)
 
+    # -- Save `y=mx+c` linear fit slope and intercept value for the 
+    # -- inferred mode v/s mode ratio quantities, as the bias factor in a dictionary 
+    # -- for each parameter. These values are used to correct the bias in the marginalized
+    # -- posteriors of each parameter, by shifting the posterior samples by the bias factor.
+    bias_factors = {}
+
     # Plot distributions of distances and ratios for each parameter
     for quantity, all_param_data in zip(['distances', 'ratios'], [all_param_distances, all_param_ratios]):
         for xvalname in ['True', 'Inferred Mode', 'Inferred Median']:
@@ -1438,11 +1444,15 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                     plt.ylabel(f'Ratio of Inferred to True value for {LATEX_LABELS.get(param, param)}', fontsize=15)
 
                     # -- now, plot a linear fit line, `y=mx+c`
-                    for type, color in [('mode', 'green'), ('median', 'purple')]:
-                        x = np.array(all_inj_params[param])
+                    for type, color in zip(['mode', 'median'], ['green', 'purple']):
+                        x = np.array(xvals)
                         y = np.array([r[type] for r in all_param_ratios[param]])
                         m, c = np.polyfit(x, y, 1)
                         plt.plot(x, m*x + c, color=color, linestyle='--', label=f'$y={m:.2f}x+{c:.2f}$ ({type})')
+
+                        # -- Store slope, intercept with the mode, median ratios!
+                        bias_factors[param][f'{xvalname.lower().replace(" ", "-")}_{type}-ratio_slope'] = m
+                        bias_factors[param][f'{xvalname.lower().replace(" ", "-")}_{type}-ratio_intercept'] = c
 
                 plt.xlabel(f'{xvalname} Value of {LATEX_LABELS.get(param, param)}', fontsize=15)
                 plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=12, title_fontsize=14)
