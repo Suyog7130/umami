@@ -1370,6 +1370,7 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     for quantity, all_param_data in zip(['distances', 'ratios'], [all_param_distances, all_param_ratios]):
         for xvalname in ['True', 'Inferred Mode', 'Inferred Median']:
             for i, param in enumerate(all_param_data):
+                bias_factors[param] = {}
 
                 injection_values = all_inj_params[param]
                 if xvalname == 'True':
