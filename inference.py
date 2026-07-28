@@ -928,7 +928,7 @@ def correct_posterior_bias(posterior_samples: pd.DataFrame,
 
             pred_bias_factor = slope * posterior_mode + intercept
             corrected_samples[param] = corrected_samples[param] / pred_bias_factor
-            
+
     logger.info(f"Bias correction applied to posterior samples.")
     return corrected_samples
 
@@ -984,6 +984,7 @@ def extract_marginalized_posteriors(
     """
     if nolog:
         logger.setLevel(logging.WARNING)
+    logger.info(f"Extracting marginalized posteriors from results in: {results_dir}")
 
     if results_fname is None:
         raise ValueError("results_fname must be provided to extract marginalized posteriors.")
@@ -999,7 +1000,8 @@ def extract_marginalized_posteriors(
     # -- Check if extracted distance and ratio files already exist, and skip if they do!
     distances_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_distances.json'))
     ratios_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_ratios.json'))
-    if os.path.isfile(distances_fname) and os.path.isfile(ratios_fname) and not force:
+    if os.path.isfile(distances_fname) and os.path.isfile(ratios_fname) \
+        and not force and not apply_bias_correction:
         logger.info(f"Parameter distances and ratios files already exist: {distances_fname}, {ratios_fname}.")
         logger.info("Skipping extraction.")
         return
@@ -1015,14 +1017,20 @@ def extract_marginalized_posteriors(
             logger.warning("Bias factors dictionary must be provided if apply_bias_correction is True.")
             logger.warning("Proceeding without bias correction.")
 
+        # Check if bias correction was already performed
+        shifted_posterior_fname = os.path.join(savedir, results_fname.replace('_result.json', '_shifted_posterior.json'))
+        if os.path.isfile(shifted_posterior_fname) and not force:
+            logger.info(f"Bias-corrected posterior samples already exist: {shifted_posterior_fname}.")
+            logger.info("Skipping bias correction.")
+            # TODO: Write a bias-correction DONE file instead!
+            return
+
         posterior = correct_posterior_bias(result.posterior, bias_factors_dict)
         logger.info("Bias correction applied to posterior samples.")
 
         # Save the bias-corrected posterior samples to a new JSON file
-        shifted_posterior_fname = os.path.join(savedir, results_fname.replace('_result.json', '_shifted_posterior.json'))
         logger.info(f"Saving bias-corrected posterior samples to: {shifted_posterior_fname}")
         save_json(posterior, shifted_posterior_fname)
-
 
     # Extract marginalized posteriors for the specified parameters
     parameters_of_interest = ["mass_1", "mass_2", "chi_1", "chi_2"]
@@ -1040,9 +1048,11 @@ def extract_marginalized_posteriors(
                                                         injection_parameters["chi_1"], injection_parameters["chi_2"])
     
     # Save marginalized posteriors to JSON file
-    marginalized_posteriors_fname = os.path.join(savedir, results_fname.replace('_result.json', '_marginalized_posteriors.json'))
-    logger.info(f"Saving marginalized posteriors to: {marginalized_posteriors_fname}")
-    save_json(marginalized_posteriors, marginalized_posteriors_fname)
+    post_fname = os.path.join(savedir, results_fname.replace('_result.json', '_marginalized_posteriors.json'))
+    if apply_bias_correction:
+        post_fname = post_fname.replace('.json', '_shifted.json')
+    logger.info(f"Saving marginalized posteriors to: {post_fname}")
+    save_json(marginalized_posteriors, post_fname)
 
     # Store the distance and ratio, of posterior mode and median, from the true value, for each param!
     param_distances = {}
@@ -1076,6 +1086,9 @@ def extract_marginalized_posteriors(
 
     distances_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_distances.json'))
     ratios_fname = os.path.join(savedir, results_fname.replace('_result.json', '_param_ratios.json'))
+    if apply_bias_correction:
+        distances_fname = distances_fname.replace('.json', '_shifted.json')
+        ratios_fname = ratios_fname.replace('.json', '_shifted.json')
     logger.info(f"Saving parameter distances to: {distances_fname}")
     logger.info(f"Saving parameter ratios to: {ratios_fname}")
     save_json(param_distances, distances_fname)
@@ -1105,6 +1118,8 @@ def extract_marginalized_posteriors(
         ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=labelsize-2, verticalalignment='top', bbox=props)
 
         plot_fname = os.path.join(savedir, results_fname.replace('_result.json', f'_{param}_posterior.png'))
+        if apply_bias_correction:
+            plot_fname = plot_fname.replace('.png', '_shifted.png')
         logger.info(f"Saving marginalized posterior plot for {param} to: {plot_fname}")
         plt.tight_layout()
         plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
@@ -1270,6 +1285,7 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                   label: str = 'umamipe',
                   pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
                   sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',
+                  apply_bias_correction: bool = False,
                   outdir=None, force=False):
     """
     Extract the marginalized 1D posteriors from Bilby result objects, for all subdirs in the `results_dir`.
@@ -1504,6 +1520,25 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
     bias_factors_fname = os.path.join(savedir, f'{label}_{pe_run_type}_bias_factors_{NOW}.json')
     logger.info(f"Saving bias factors to: {bias_factors_fname}")
     save_json(bias_factors, bias_factors_fname)
+
+    # Now, apply bias correction to the marginalized posteriors, and resave them!
+    if apply_bias_correction:
+        logger.info("Applying bias correction to marginalized posteriors...")
+        # print(f"List of subdirectories to process for bias correction: {dirnames}")
+        for subdir in dirnames:
+            logger.debug(f"Processing subdir: {subdir} for bias correction...")
+            for fname in os.listdir(os.path.join(results_dir, subdir)):
+                if not fname.endswith('_result.json'):
+                    continue
+                logger.debug(f"Applying bias correction to result file: {fname} in subdir: {subdir}")
+                extract_marginalized_posteriors(
+                    results_fname=fname,
+                    results_dir=os.path.join(results_dir, subdir),
+                    nolog=True,
+                    force=force,
+                    apply_bias_correction=True,
+                    bias_factors_dict=bias_factors
+                )
 
     logger.info("Completed analysis of results and plotting of parameter distance distributions.")
 
@@ -2079,7 +2114,7 @@ if __name__ == "__main__":
     parser.add_argument('--use-set-injection-params', action='store_true',
                         help="Whether to use a fixed set of injection parameters instead of random sampling (default: False)")
     
-    parser.add_argument('--bias-correction', action='store_true',
+    parser.add_argument('--apply-bias-correction', action='store_true',
                         help="Whether to apply bias correction to the posterior samples (default: False)")
     
     parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml', 'eobbilby2ml'], default='ml2ml',
@@ -2165,7 +2200,7 @@ if __name__ == "__main__":
             pe_run_type=args.pe_run_type,
             sampler=args.sampler,
             force=args.force,
-            bias_correction=args.bias_correction,
+            apply_bias_correction=args.apply_bias_correction
         )
 
     else:
