@@ -108,7 +108,7 @@ LATEX_LABELS = {
     "chi_1": "$\chi_1$",
     "chi_2": "$\chi_2$",
     "chirp_mass": "$\mathcal{M} \, [M_\odot]$",
-    "chi_eff": "$\chi_{\rm eff}$",
+    "chi_eff": "$\chi_{\mathrm{eff}}$",
 }
 
 
@@ -1412,6 +1412,7 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                 # plot horizontal line at y=0 to indicate perfect inference
                 plt.axhline(0, color='black', linestyle='--', label='Perfect Inference')
                 plt.ylabel(f'Distance from True Value for {LATEX_LABELS.get(param, param)}', fontsize=15)
+
             else:
                 plt.scatter(all_inj_params[param],
                             [r['mode'] for r in all_param_ratios[param]], 
@@ -1419,11 +1420,20 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                 plt.scatter(all_inj_params[param],
                             [r['median'] for r in all_param_ratios[param]], 
                             marker='s', color='red', alpha=0.5, label='Post Median Ratio')
+                
                 # plot horizontal line at y=1 to indicate perfect inference
                 plt.axhline(1, color='black', linestyle='--', label='Perfect Inference')
                 plt.ylabel(f'Ratio of Inferred to True Value for {LATEX_LABELS.get(param, param)}', fontsize=15)
+
+                # -- now, plot a linear fit line, `y=mx+c`
+                for type, color in [('mode', 'green'), ('median', 'purple')]:
+                    x = np.array(all_inj_params[param])
+                    y = np.array([r[type] for r in all_param_ratios[param]])
+                    m, c = np.polyfit(x, y, 1)
+                    plt.plot(x, m*x + c, color=color, linestyle='--', label=f'$y={m:.2f}x+{c:.2f}$ ({type})')
+
             plt.xlabel(f'True Value of {LATEX_LABELS.get(param, param)}', fontsize=15)
-            plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=13, title_fontsize=15)
+            plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=12, title_fontsize=14)
             ax.tick_params(which="both", direction='in', top=True, right=True)
             ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
             ax.tick_params(labelsize=13)
