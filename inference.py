@@ -1362,86 +1362,98 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
 
     # Plot distributions of distances and ratios for each parameter
     for quantity, all_param_data in zip(['distances', 'ratios'], [all_param_distances, all_param_ratios]):
-        for i, param in enumerate(all_param_data):
-            if quantity == 'distances':
-                modes = [d['mode'] for d in all_param_distances[param]]
-                medians = [d['median'] for d in all_param_distances[param]]
-                xlabel = 'Distance from True Value'
-            else:
-                modes = [r['mode'] for r in all_param_ratios[param]]
-                medians = [r['median'] for r in all_param_ratios[param]]
-                xlabel = 'Ratio of Inferred to True Value'
+        for xvalname in ['True', 'Inferred Mode', 'Inferred Median']:
+            for i, param in enumerate(all_param_data):
 
-            bins = 30
-            mode_counts, mode_edges = np.histogram(modes, bins=bins)
-            mode_max_bin_idx = np.argmax(mode_counts)
-            mode_peak_center = 0.5 * (mode_edges[mode_max_bin_idx] + mode_edges[mode_max_bin_idx + 1])
+                injection_values = all_inj_params[param]
+                if xvalname == 'True':
+                    xvals = injection_values
+                elif xvalname == 'Inferred Mode':
+                    dist_from_mode = [d['mode'] for d in all_param_distances[param]]
+                    xvals = injection_values - np.array(dist_from_mode)
+                elif xvalname == 'Inferred Median':
+                    dist_from_median = [d['median'] for d in all_param_distances[param]]
+                    xvals = injection_values - np.array(dist_from_median)
 
-            median_counts, median_edges = np.histogram(medians, bins=bins)
-            median_max_bin_idx = np.argmax(median_counts)
-            median_peak_center = 0.5 * (median_edges[median_max_bin_idx] + median_edges[median_max_bin_idx + 1])
+                if quantity == 'distances':
+                    modes = [d['mode'] for d in all_param_distances[param]]
+                    medians = [d['median'] for d in all_param_distances[param]]
+                    xlabel = f'Distance from {xvalname} Value'
+                else:
+                    modes = [r['mode'] for r in all_param_ratios[param]]
+                    medians = [r['median'] for r in all_param_ratios[param]]
+                    xlabel = f'Ratio of {xvalname} to True Value'
 
-            fig, ax = plt.subplots(figsize=(8, 6))
-            plt.hist(modes, bins=bins, alpha=0.5,  edgecolor='black',
-                     label=f'with post mode (peak={mode_peak_center:.2f})')
-            plt.hist(medians, bins=bins, alpha=0.5,  edgecolor='black',
-                     label=f'with post median (peak={median_peak_center:.2f})')
-            plt.xlabel(f'{xlabel} for {LATEX_LABELS.get(param, param)}', fontsize=15)
-            plt.ylabel('Count', fontsize=15)
-            plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=13, title_fontsize=15)
-            ax.tick_params(which="both", direction='in', top=True, right=True)
-            ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
-            ax.tick_params(labelsize=13)
-            # ax.text(0.05, 0.95, f'Max (with mode): {np.max(modes):.3f}\nMax (with median): {np.max(medians):.3f}',
-            #         transform=ax.transAxes, fontsize=13, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
-            plot_fname = os.path.join(savedir, f'{param}_{quantity}_distribution_{NOW}.png')
-            logger.info(f"Saving {quantity} distribution plot for {param} to: {plot_fname}")
-            plt.tight_layout()
-            plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
-            plt.close()
+                bins = 30
+                mode_counts, mode_edges = np.histogram(modes, bins=bins)
+                mode_max_bin_idx = np.argmax(mode_counts)
+                mode_peak_center = 0.5 * (mode_edges[mode_max_bin_idx] + mode_edges[mode_max_bin_idx + 1])
 
-            # Now plot True value v/s distance/ratio from true value for different params, across all injections!
-            fig, ax = plt.subplots(figsize=(8, 6))
-            if quantity == 'distances':
-                plt.scatter(all_inj_params[param],
-                            [d['mode'] for d in all_param_distances[param]], 
-                            marker='o', color='blue', alpha=0.5, label='Post Mode Distance')
-                plt.scatter(all_inj_params[param],
-                            [d['median'] for d in all_param_distances[param]], 
-                            marker='s', color='red', alpha=0.5, label='Post Median Distance')
-                # plot horizontal line at y=0 to indicate perfect inference
-                plt.axhline(0, color='black', linestyle='--', label='Perfect Inference')
-                plt.ylabel(f'Distance from True Value for {LATEX_LABELS.get(param, param)}', fontsize=15)
+                median_counts, median_edges = np.histogram(medians, bins=bins)
+                median_max_bin_idx = np.argmax(median_counts)
+                median_peak_center = 0.5 * (median_edges[median_max_bin_idx] + median_edges[median_max_bin_idx + 1])
 
-            else:
-                plt.scatter(all_inj_params[param],
-                            [r['mode'] for r in all_param_ratios[param]], 
-                            marker='o', color='blue', alpha=0.5, label='Post Mode Ratio')
-                plt.scatter(all_inj_params[param],
-                            [r['median'] for r in all_param_ratios[param]], 
-                            marker='s', color='red', alpha=0.5, label='Post Median Ratio')
-                
-                # plot horizontal line at y=1 to indicate perfect inference
-                plt.axhline(1, color='black', linestyle='--', label='Perfect Inference')
-                plt.ylabel(f'Ratio of Inferred to True Value for {LATEX_LABELS.get(param, param)}', fontsize=15)
+                fig, ax = plt.subplots(figsize=(8, 6))
+                plt.hist(modes, bins=bins, alpha=0.5,  edgecolor='black',
+                        label=f'with post mode (peak={mode_peak_center:.2f})')
+                plt.hist(medians, bins=bins, alpha=0.5,  edgecolor='black',
+                        label=f'with post median (peak={median_peak_center:.2f})')
+                plt.xlabel(f'{xlabel} for {LATEX_LABELS.get(param, param)}', fontsize=15)
+                plt.ylabel('Count', fontsize=15)
+                plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=13, title_fontsize=15)
+                ax.tick_params(which="both", direction='in', top=True, right=True)
+                ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
+                ax.tick_params(labelsize=13)
+                # ax.text(0.05, 0.95, f'Max (with mode): {np.max(modes):.3f}\nMax (with median): {np.max(medians):.3f}',
+                #         transform=ax.transAxes, fontsize=13, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.5))
+                plot_fname = os.path.join(savedir, f'{param}_{quantity}_distribution_{NOW}.png')
+                logger.info(f"Saving {quantity} distribution plot for {param} to: {plot_fname}")
+                plt.tight_layout()
+                plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
+                plt.close()
 
-                # -- now, plot a linear fit line, `y=mx+c`
-                for type, color in [('mode', 'green'), ('median', 'purple')]:
-                    x = np.array(all_inj_params[param])
-                    y = np.array([r[type] for r in all_param_ratios[param]])
-                    m, c = np.polyfit(x, y, 1)
-                    plt.plot(x, m*x + c, color=color, linestyle='--', label=f'$y={m:.2f}x+{c:.2f}$ ({type})')
+                # Now plot True value v/s distance/ratio from true value for different params, across all injections!
+                fig, ax = plt.subplots(figsize=(8, 6))
+                if quantity == 'distances':
+                    plt.scatter(xvals,
+                                [d['mode'] for d in all_param_distances[param]], 
+                                marker='o', color='blue', alpha=0.5, label='Post Mode Distance')
+                    plt.scatter(xvals,
+                                [d['median'] for d in all_param_distances[param]], 
+                                marker='s', color='red', alpha=0.5, label='Post Median Distance')
+                    # plot horizontal line at y=0 to indicate perfect inference
+                    plt.axhline(0, color='black', linestyle='--', label='Perfect Inference')
+                    plt.ylabel(f'Distance from True value for {LATEX_LABELS.get(param, param)}', fontsize=15)
 
-            plt.xlabel(f'True Value of {LATEX_LABELS.get(param, param)}', fontsize=15)
-            plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=12, title_fontsize=14)
-            ax.tick_params(which="both", direction='in', top=True, right=True)
-            ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
-            ax.tick_params(labelsize=13)
-            plot_fname = os.path.join(savedir, f'{param}_true_vs_{quantity}_{NOW}.png')
-            logger.info(f"Saving True value v/s {quantity} plot for {param} to: {plot_fname}")
-            plt.tight_layout()
-            plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
-            plt.close()
+                else:
+                    plt.scatter(xvals,
+                                [r['mode'] for r in all_param_ratios[param]], 
+                                marker='o', color='blue', alpha=0.5, label='Post Mode Ratio')
+                    plt.scatter(xvals,
+                                [r['median'] for r in all_param_ratios[param]], 
+                                marker='s', color='red', alpha=0.5, label='Post Median Ratio')
+                    
+                    # plot horizontal line at y=1 to indicate perfect inference
+                    plt.axhline(1, color='black', linestyle='--', label='Perfect Inference')
+                    plt.ylabel(f'Ratio of Inferred to True value for {LATEX_LABELS.get(param, param)}', fontsize=15)
+
+                    # -- now, plot a linear fit line, `y=mx+c`
+                    for type, color in [('mode', 'green'), ('median', 'purple')]:
+                        x = np.array(all_inj_params[param])
+                        y = np.array([r[type] for r in all_param_ratios[param]])
+                        m, c = np.polyfit(x, y, 1)
+                        plt.plot(x, m*x + c, color=color, linestyle='--', label=f'$y={m:.2f}x+{c:.2f}$ ({type})')
+
+                plt.xlabel(f'{xvalname} Value of {LATEX_LABELS.get(param, param)}', fontsize=15)
+                plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=12, title_fontsize=14)
+                ax.tick_params(which="both", direction='in', top=True, right=True)
+                ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
+                ax.tick_params(labelsize=13)
+                plot_fname = os.path.join(savedir, f'{param}_{xvalname.lower().replace(" ", "-")}_vs_{quantity}_{NOW}.png')
+                logger.info(f"Saving {xvalname} value v/s {quantity} plot for {param} to: {plot_fname}")
+                plt.tight_layout()
+                plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
+                plt.close()
 
     logger.info("Completed analysis of results and plotting of parameter distance distributions.")
 
