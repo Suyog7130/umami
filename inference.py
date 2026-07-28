@@ -894,29 +894,42 @@ def main(args, label='umamipe',
 
 
 def correct_posterior_bias(posterior_samples: pd.DataFrame,
-                           primary_mass_factor: float = 1.1) -> pd.DataFrame:
+                           bias_factors: dict,) -> pd.DataFrame:
     """
-    Corrects for bias in the posterior samples assuming that it only occurs in the
-    primary mass parameter (mass_1), which is often overestimated. We correct the
-    bias by simply shifting the posterior samples by some fixed amount, which we already
-    estimated from previous runs!
+    Applies bias correction to the posterior samples based on the provided bias factors.
+    These bias factors are the slope and intercept of the `y=mx+c` linear fit line between
+    the inferred posterior mode and the ratio of the inferred posterior mode to the true injection value, 
+    for each parameter.
+    A bias factor is first predicted based on the inferred posterior mode and these linear fit slope
+    and intercept values. And then the corrected posterior is a shifted version of the original posterior,
+    where each sample is divided by the predicted bias factor for that parameter.
 
     Arguments
     ---------
         posterior_samples: (pd.DataFrame)
             The posterior samples to correct.
-        primary_mass_factor: (float)
-            The factor by which to correct the primary mass bias.
+        bias_factors: (dict)
+            A dictionary containing the bias factors for each parameter.
 
     Returns:
         pd.DataFrame: The bias-corrected posterior samples.
     """
+    logger.info(f"Correcting posterior samples for bias ...")
     corrected_samples = posterior_samples.copy()
+
     for param in corrected_samples.columns:
-        if param == "mass_1":
-            corrected_samples[param] = corrected_samples[param] / primary_mass_factor
-        else:
-            corrected_samples[param] = corrected_samples[param]
+        if param in bias_factors:
+            slope = bias_factors[param]['inferred-mode_mode-ratio_slope']
+            intercept = bias_factors[param]['inferred-mode_mode-ratio_intercept']
+
+            counts, bin_edges = np.histogram(corrected_samples[param], bins=50, density=False)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            posterior_mode = bin_centers[np.argmax(counts)]
+
+            pred_bias_factor = slope * posterior_mode + intercept
+            corrected_samples[param] = corrected_samples[param] / pred_bias_factor
+            
+    logger.info(f"Bias correction applied to posterior samples.")
     return corrected_samples
 
 
@@ -925,8 +938,9 @@ def extract_marginalized_posteriors(
         results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         save_to_outdir: bool = False,
-        correct_bias: bool = False,
         plot_waveforms: bool = False,
+        apply_bias_correction: bool = False,
+        bias_factors_dict: dict = None,
         fontsize=15, labelsize=13,
         nolog=False, force=False, **kwargs):
     """
@@ -953,6 +967,18 @@ def extract_marginalized_posteriors(
         Directory to save the marginalized posterior plots and JSON files.
     save_to_outdir : bool
         If True, save the marginalized posterior plots and JSON files to the specified outdir.
+    plot_waveforms : bool
+        If True, plot the injected and recovered waveforms for each parameter estimation run.
+    apply_bias_correction : bool
+        If True, apply bias correction to the posterior samples.
+    bias_factors_dict : dict
+        Dictionary containing bias correction factors for the posterior samples.
+    fontsize : int
+        Font size for the plots.
+    labelsize : int
+        Label size for the plots.
+    nolog : bool
+        If True, suppress logging output.
     force : bool
         If True, overwrite existing files.
     """
@@ -981,14 +1007,22 @@ def extract_marginalized_posteriors(
     result = bilby.gw.result.CBCResult.from_json(fname)
     logger.info(f"Loaded Bilby result from: {fname}")
 
-    if correct_bias:
-        logger.info("Correcting for bias in the posterior samples assuming that .")
-        result.posterior = correct_posterior_bias(result.posterior)
-        logger.info("Bias correction applied to posterior samples.")
-    else:
-        posterior = result.posterior
-
+    posterior = result.posterior
     injection_parameters = result.injection_parameters
+
+    if apply_bias_correction:
+        if bias_factors_dict is None:
+            logger.warning("Bias factors dictionary must be provided if apply_bias_correction is True.")
+            logger.warning("Proceeding without bias correction.")
+
+        posterior = correct_posterior_bias(result.posterior, bias_factors_dict)
+        logger.info("Bias correction applied to posterior samples.")
+
+        # Save the bias-corrected posterior samples to a new JSON file
+        shifted_posterior_fname = os.path.join(savedir, results_fname.replace('_result.json', '_shifted_posterior.json'))
+        logger.info(f"Saving bias-corrected posterior samples to: {shifted_posterior_fname}")
+        save_json(posterior, shifted_posterior_fname)
+
 
     # Extract marginalized posteriors for the specified parameters
     parameters_of_interest = ["mass_1", "mass_2", "chi_1", "chi_2"]
@@ -1368,9 +1402,9 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
 
     # Plot distributions of distances and ratios for each parameter
     for quantity, all_param_data in zip(['distances', 'ratios'], [all_param_distances, all_param_ratios]):
-        for xvalname in ['True', 'Inferred Mode', 'Inferred Median']:
-            for i, param in enumerate(all_param_data):
-                bias_factors[param] = {}
+        for i, param in enumerate(all_param_data):
+            bias_factors[param] = {}
+            for xvalname in ['True', 'Inferred Mode', 'Inferred Median']:
 
                 injection_values = all_inj_params[param]
                 if xvalname == 'True':
@@ -2045,6 +2079,9 @@ if __name__ == "__main__":
     parser.add_argument('--use-set-injection-params', action='store_true',
                         help="Whether to use a fixed set of injection parameters instead of random sampling (default: False)")
     
+    parser.add_argument('--bias-correction', action='store_true',
+                        help="Whether to apply bias correction to the posterior samples (default: False)")
+    
     parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml', 'eobbilby2ml'], default='ml2ml',
                         help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
     parser.add_argument('--sampler', type=str, choices=['nessai', 'dynesty', 'pocomc'], default='nessai',
@@ -2128,6 +2165,7 @@ if __name__ == "__main__":
             pe_run_type=args.pe_run_type,
             sampler=args.sampler,
             force=args.force,
+            bias_correction=args.bias_correction,
         )
 
     else:
