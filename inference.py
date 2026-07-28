@@ -1449,7 +1449,7 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                         x = np.array(xvals)
                         y = np.array([r[type] for r in all_param_ratios[param]])
                         m, c = np.polyfit(x, y, 1)
-                        plt.plot(x, m*x + c, color=color, linestyle='--', label=f'$y={m:.2f}x+{c:.2f}$ ({type})')
+                        plt.plot(x, m*x + c, color=color, linestyle='--', label=f'$y={m:.2e}x+{c:.2f}$ ({type})')
 
                         # -- Store slope, intercept with the mode, median ratios!
                         bias_factors[param][f'{xvalname.lower().replace(" ", "-")}_{type}-ratio_slope'] = m
@@ -1465,6 +1465,11 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                 plt.tight_layout()
                 plt.savefig(plot_fname, dpi=300, bbox_inches='tight')
                 plt.close()
+
+    # Save bias factors to JSON file
+    bias_factors_fname = os.path.join(savedir, f'{label}_{pe_run_type}_bias_factors_{NOW}.json')
+    logger.info(f"Saving bias factors to: {bias_factors_fname}")
+    save_json(bias_factors, bias_factors_fname)
 
     logger.info("Completed analysis of results and plotting of parameter distance distributions.")
 
