@@ -1793,7 +1793,7 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
 
                         logger.info(f"Found shifted posteriors at: {shifted_post_fname}")
                         shifted_posterior = load_json(shifted_post_fname)
-                        result.posterior = shifted_posterior
+                        result.posterior = pd.DataFrame(shifted_posterior)
 
                         # Make new corner plot with bias-corrected posteriors
                         corner_plot_fname = os.path.join(outdir,
