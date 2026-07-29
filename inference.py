@@ -1791,7 +1791,7 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                             logger.debug(f"Skipping bias correction for result: {fname}. No shifted posteriors file found.")
                             continue
 
-                        logger.info(f"Applying bias correction to result: {fname} using shifted posteriors from: {shifted_post_fname}")
+                        logger.info(f"Found shifted posteriors at: {shifted_post_fname}")
                         shifted_posterior = load_json(shifted_post_fname)
                         result.posterior = shifted_posterior
 
