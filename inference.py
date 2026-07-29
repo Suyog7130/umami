@@ -1801,10 +1801,10 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                         logger.info(f"Found shifted posteriors at: {shifted_post_fname}")
 
                         # Make new corner plot with bias-corrected posteriors
-                        corner_plot_fname = os.path.join(outdir,
-                                                         f"{label}_{pe_run_type}_{sampler}_corner_bias_corrected.png")
-                        logger.info(f"Saving corner plot with bias-corrected posteriors to: {corner_plot_fname}")
-                        result.plot_corner(filename=corner_plot_fname, save=True)
+                        corner_fname = os.path.join(results_dir, dirname,
+                                                         fname.replace('_result.json', '_corner_bias-fixed.png'))
+                        logger.info(f"Saving corner plot with bias-corrected posteriors to: {corner_fname}")
+                        result.plot_corner(filename=corner_fname, save=True)
 
                     results.append(result)
                     logger.debug(f"Loaded result from {results_dir}/{dirname}/{fname} for PP plot generation...")
@@ -1815,6 +1815,8 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
     logger.info(f"Loaded {len(results)} results from {results_dir} for PP plot generation...")
 
     savename = os.path.join(outdir, f"{label}_{pe_run_type}_{sampler}_pp-plot_{NOW}.png")
+    if apply_bias_correction:
+        savename = savename.replace('_pp-plot', '_pp-plot_bias-fixed')
     fig, pvals = make_pp_plot(
         results,
         filename=savename,
@@ -1845,10 +1847,7 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         for r in results
     ]
 
-    savename_ordered = os.path.join(
-        outdir, 
-        f"{label}_{pe_run_type}_{sampler}_pp-plot_ordered_{NOW}.png"
-        )
+    savename_ordered = savename.replace('_pp-plot', '_pp-plot_ordered')
     fig, pvals = make_pp_plot(
         ordered_results,
         keys=["mass_1", "mass_2", "chi_1", "chi_2"],
@@ -1869,10 +1868,7 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         keys=("mass_1", "mass_2", "chi_1", "chi_2"),
     )
 
-    savename_swapped = os.path.join(
-        outdir,
-        f"{label}_{pe_run_type}_{sampler}_pp-plot_swapped_labels_{NOW}.png",
-    )
+    savename_swapped = savename.replace('_pp-plot', '_pp-plot_swapped-labels')
     fig, pvals = make_pp_plot(
         swapped_results,
         keys=["mass_1", "mass_2", "chi_1", "chi_2"],
@@ -1922,10 +1918,7 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
         for r in results
     ]
 
-    savename_derived = os.path.join(
-        outdir, 
-        f"{label}_{pe_run_type}_{sampler}_pp-plot_derived_{NOW}.png"
-        )
+    savename_derived = savename.replace('_pp-plot', '_pp-plot_derived')
     fig, pvals = make_pp_plot(
         derived_results,
         keys=derived_keys,
