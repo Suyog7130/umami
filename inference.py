@@ -1788,8 +1788,7 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                                                           fname.replace('_result.json', '_shifted_posteriors.json'))
                         
                         if not os.path.exists(shifted_post_fname):
-                            logger.warning(f"Bias correction requested, but shifted posteriors file not found!")
-                            logger.info(f"Skipping bias correction for result: {fname}. Using original posteriors.")
+                            logger.debug(f"Skipping bias correction for result: {fname}. No shifted posteriors file found.")
                             continue
 
                         logger.info(f"Applying bias correction to result: {fname} using shifted posteriors from: {shifted_post_fname}")
