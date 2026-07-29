@@ -1756,10 +1756,13 @@ def print_quantile_summary(results, keys=("mass_1", "mass_2", "chi_1", "chi_2"))
     print(df.describe())
     return df
 
+
 def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                   label: str = 'umamipe',
                   pe_run_type: {'eob2eob', 'ml2ml', 'eob2ml'} = 'ml2ml',
                   sampler: {'nessai', 'dynesty', 'pocomc'} = 'nessai',
+                  apply_bias_correction: bool = False,
+                  max_injections_to_include: int = None,
                   outdir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                   save_to_outdir: bool = False):
     """
@@ -1778,7 +1781,33 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                 if fname.endswith('result.json'):
                     logger.info(f"Found result directory: {dirname} for PP plot generation...")
                     result = bilby.gw.result.CBCResult.from_json(f"{results_dir}/{dirname}/{fname}")
+
+                    if apply_bias_correction:
+                        # Read bias shifted posteriors from `~shifted_posteriors.json` file, if it exists
+                        shifted_post_fname = os.path.join(results_dir, dirname, 
+                                                          fname.replace('_result.json', '_shifted_posteriors.json'))
+                        
+                        if not os.path.exists(shifted_post_fname):
+                            logger.warning(f"Bias correction requested, but shifted posteriors file not found!")
+                            logger.info(f"Skipping bias correction for result: {fname}. Using original posteriors.")
+                            continue
+
+                        logger.info(f"Applying bias correction to result: {fname} using shifted posteriors from: {shifted_post_fname}")
+                        shifted_posterior = load_json(shifted_post_fname)
+                        result.posterior = shifted_posterior
+
+                        # Make new corner plot with bias-corrected posteriors
+                        corner_plot_fname = os.path.join(outdir,
+                                                         f"{label}_{pe_run_type}_{sampler}_corner_bias_corrected.png")
+                        logger.info(f"Saving corner plot with bias-corrected posteriors to: {corner_plot_fname}")
+                        result.plot_corner(filename=corner_plot_fname, save=True)
+
                     results.append(result)
+                    logger.debug(f"Loaded result from {results_dir}/{dirname}/{fname} for PP plot generation...")
+                    if max_injections_to_include is not None and len(results) >= max_injections_to_include:
+                        logger.info(f"Reached max_injections_to_include={max_injections_to_include}. Breaking out!")
+                        break
+
     logger.info(f"Loaded {len(results)} results from {results_dir} for PP plot generation...")
 
     savename = os.path.join(outdir, f"{label}_{pe_run_type}_{sampler}_pp-plot_{NOW}.png")
@@ -2116,6 +2145,8 @@ if __name__ == "__main__":
     
     parser.add_argument('--apply-bias-correction', action='store_true',
                         help="Whether to apply bias correction to the posterior samples (default: False)")
+    parser.add_argument('--max-injections-to-include', type=int, default=None,
+                        help="Maximum number of injections to include in the analysis (default: %(default)s)")
     
     parser.add_argument('--pe-run-type', type=str, choices=['eob2eob', 'ml2ml', 'eob2ml', 'eobbilby2ml'], default='ml2ml',
                         help="Type of PE run: 'eob2eob' for EOB injection and EOB recovery, 'ml2ml' for ML injection and ML recovery, 'eob2ml' for EOB injection and ML recovery (default: ml2ml)")
@@ -2178,6 +2209,8 @@ if __name__ == "__main__":
         logger.info("Running in make-PP-plots mode. Will generate PP plots from previous results.")
         make_pp_plots(results_dir=args.results_dir, label=args.label, 
                       pe_run_type=args.pe_run_type, sampler=args.sampler,
+                      apply_bias_correction=args.apply_bias_correction,
+                      max_injections_to_include=args.max_injections_to_include,
                       outdir=f'../{PROJECT_DIR}/results/{TODAY}/')
         
     elif args.extract_marginalized_posteriors:
