@@ -15,6 +15,8 @@ import datetime
 import numpy as np
 import pandas as pd
 
+from collections import OrderedDict
+
 import scipy
 from scipy.special import logsumexp
 
@@ -1022,13 +1024,15 @@ def extract_marginalized_posteriors(
         if os.path.isfile(shifted_posterior_fname) and not force:
             logger.info(f"Bias-corrected posterior samples already exist: {shifted_posterior_fname}.")
             logger.info("Skipping bias correction.")
-            # TODO: Write a bias-correction DONE file instead!
+            # TODO: Write a bias-correction DONE file instead
             return
 
         posterior = correct_posterior_bias(result.posterior, bias_factors_dict)
         logger.info("Bias correction applied to posterior samples.")
 
         # Save the bias-corrected posterior samples to a new JSON file
+        # FIXME: This json file is saved as a string, not good!
+        # NOTE: The `marginalized_posteriors_shifted` extracted later makes this redundant as well!
         logger.info(f"Saving bias-corrected posterior samples to: {shifted_posterior_fname}")
         save_json(posterior, shifted_posterior_fname)
 
@@ -1785,15 +1789,16 @@ def make_pp_plots(results_dir: str = f'../{PROJECT_DIR}/results/{TODAY}/',
                     if apply_bias_correction:
                         # Read bias shifted posteriors from `~shifted_posteriors.json` file, if it exists
                         shifted_post_fname = os.path.join(results_dir, dirname, 
-                                                          fname.replace('_result.json', '_shifted_posterior.json'))
+                                                          fname.replace('_result.json', '_marginalized_posteriors_shifted.json'))
                         
                         if not os.path.isfile(shifted_post_fname):
                             logger.debug(f"Skipping bias correction for result: {fname}. No shifted posterior file found at {shifted_post_fname}.")
                             continue
 
-                        logger.info(f"Found shifted posteriors at: {shifted_post_fname}")
                         shifted_posterior = load_json(shifted_post_fname)
-                        result.posterior = pd.DataFrame(shifted_posterior)
+                        print(f"Shifted posterior keys: {list(shifted_posterior.keys())}")
+                        result.posterior = pd.DataFrame.from_dict(shifted_posterior, orient='index').T
+                        logger.info(f"Found shifted posteriors at: {shifted_post_fname}")
 
                         # Make new corner plot with bias-corrected posteriors
                         corner_plot_fname = os.path.join(outdir,
