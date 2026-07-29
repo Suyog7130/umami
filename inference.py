@@ -1499,14 +1499,14 @@ def analyze_results(results_dir=f'../{PROJECT_DIR}/results/{TODAY}/',
                         x = np.array(xvals)
                         y = np.array([r[type] for r in all_param_ratios[param]])
                         m, c = np.polyfit(x, y, 1)
-                        plt.plot(x, m*x + c, color=color, linestyle='--', label=f'$y={m:.2e}x+{c:.2f}$ ({type})')
+                        plt.plot(x, m*x + c, color=color, linestyle='--', label=f'$y={m:.5f}x+{c:.2f}$ ({type})')
 
                         # -- Store slope, intercept with the mode, median ratios!
                         bias_factors[param][f'{xvalname.lower().replace(" ", "-")}_{type}-ratio_slope'] = m
                         bias_factors[param][f'{xvalname.lower().replace(" ", "-")}_{type}-ratio_intercept'] = c
 
                 plt.xlabel(f'{xvalname} Value of {LATEX_LABELS.get(param, param)}', fontsize=15)
-                plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=12, title_fontsize=14)
+                plt.legend(title=f'N={len(medians)}', loc='upper right', fontsize=10, title_fontsize=12)
                 ax.tick_params(which="both", direction='in', top=True, right=True)
                 ax.xaxis.set_minor_locator(tck.AutoMinorLocator())
                 ax.tick_params(labelsize=13)
