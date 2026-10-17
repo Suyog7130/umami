@@ -1,5 +1,5 @@
 
-[![Static Badge](https://img.shields.io/badge/https%3A%2F%2Fdoi.org%2F10.1103%2Fh92m-k44j?style=flat-square&logo=doi&logoColor=white&label=Paper&color=blue)](https://doi.org/10.1103/h92m-k44j)
+[![Static Badge](https://img.shields.io/badge/https%3A%2F%2Fdoi.org%2F10.1103%2Fh92m-k44j?style=flat-square&logo=doi&logoColor=white&label=Code&color=blue)](https://doi.org/10.5281/zenodo.23441038)
 
 
 # UMAMI
@@ -229,35 +229,15 @@ The codebase shows careful handling of waveform parameter conventions:
 
 This is important for matching waveform interfaces across analytic and ML sources.
 
-## Development status
-
-The repository appears to be actively evolving and includes extensive debugging hooks. Some scripts are aimed at:
-
-- proving correctness of the waveform interface
-- checking sampler behavior
-- ensuring ML and analytic generators are compatible with Bilby
-- validating output serialization and reweighting
-
-If you are extending the project, it is a good idea to start with the debug scripts before running large campaigns.
-
-## Suggested next steps
-
-If you plan to use or extend UMAMI, consider documenting:
-
-- exact environment setup and package versions
-- how to obtain trained waveform and calibration models
-- expected directory structure for `trained-models/`
-- supported waveform approximants and parameterizations
-- example notebooks or plots for validating results
-
 ## License
 
-No license file was visible from the available repository metadata. Add one if you want to clarify reuse and distribution terms.
+Released under the MIT license.
 
 ## Acknowledgements
 
-UMAMI builds on the excellent open-source gravitational-wave inference ecosystem, especially:
+Please refer to the following papers:
 
-- Bilby
-- PyTorch
-- the broader gravitational-wave modeling and parameter-estimation community
+[![Static Badge](https://img.shields.io/badge/https%3A%2F%2Fdoi.org%2F10.1103%2Fh92m-k44j?style=flat-square&logo=doi&logoColor=white&label=Paper&color=blue)](https://doi.org/10.1103/h92m-k44j)
+
+[![Static Badge](https://img.shields.io/badge/https%3A%2F%2Fdoi.org%2F10.1103%2Fh92m-k44j?style=flat-square&logo=doi&logoColor=white&label=Paper&color=blue)](https://doi.org/10.1103/z1n3-tbnc)
+
