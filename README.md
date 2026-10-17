@@ -1,5 +1,5 @@
 
-[![Static Badge](https://img.shields.io/badge/https%3A%2F%2Fdoi.org%2F10.1103%2Fh92m-k44j?style=flat-square&logo=doi&logoColor=white&label=Code&color=blue)](https://doi.org/10.5281/zenodo.23441038)
+[![Static Badge](https://img.shields.io/badge/https%3A%2F%2Fdoi.org%2F10.5281%2Fzenodo.23441038?style=flat-square&logo=doi&logoColor=white&label=Code&color=blue)](https://doi.org/10.5281/zenodo.23441038)
 
 
 # UMAMI
@@ -239,5 +239,5 @@ Please refer to the following papers:
 
 [![Static Badge](https://img.shields.io/badge/https%3A%2F%2Fdoi.org%2F10.1103%2Fh92m-k44j?style=flat-square&logo=doi&logoColor=white&label=Paper&color=blue)](https://doi.org/10.1103/h92m-k44j)
 
-[![Static Badge](https://img.shields.io/badge/https%3A%2F%2Fdoi.org%2F10.1103%2Fh92m-k44j?style=flat-square&logo=doi&logoColor=white&label=Paper&color=blue)](https://doi.org/10.1103/z1n3-tbnc)
+[![Static Badge](https://img.shields.io/badge/https%3A%2F%2Fdoi.org%2F10.1103%2Fz1n3-tbnc?style=flat-square&logo=doi&logoColor=white&label=Paper&color=blue)](https://doi.org/10.1103/z1n3-tbnc)
 
